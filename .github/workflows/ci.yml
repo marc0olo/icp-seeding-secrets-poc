@@ -28,6 +28,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Trust the workspace
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       # rust-toolchain.toml pins a version the image does not ship, so rustup
       # fetches it on first use. Caching that plus the registry is the
       # difference between a ~4 minute job and a ~1 minute one.
@@ -105,9 +108,11 @@ jobs:
           candid-extractor target/wasm32-unknown-unknown/release/sealed_secrets_canister.wasm \
             > crates/canister/sealed_secrets_canister.did
           npm --prefix seed run bindings
-          if ! git diff --quiet -- crates/canister/sealed_secrets_canister.did seed/src/declarations; then
+          changed=$(git status --porcelain -- \
+            crates/canister/sealed_secrets_canister.did seed/src/declarations)
+          if [ -n "$changed" ]; then
             echo "::error::the .did or seed/src/declarations is stale — run 'npm --prefix seed run bindings' and commit"
-            git diff --stat -- crates/canister/sealed_secrets_canister.did seed/src/declarations
+            echo "$changed"
             exit 1
           fi
           echo "ok — declarations match the canister"
@@ -120,6 +125,9 @@ jobs:
       image: ghcr.io/dfinity/icp-dev-env-all:v2.0.0
     steps:
       - uses: actions/checkout@v4
+
+      - name: Trust the workspace
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Cache cargo and rustup
         uses: actions/cache@v4

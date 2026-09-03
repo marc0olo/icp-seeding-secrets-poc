@@ -28,7 +28,7 @@ OUTCALL_GOOD='Basic cG9zdG1hbjpwYXNzd29yZA=='
 OUTCALL_BAD='Basic d3Jvbmc6d3Jvbmc='
 
 SECRET_VALUE="sk-local-test-$(date +%s)-do-not-use"
-PEM="$(mktemp -t sealed-secrets-id)"
+PEM="$(mktemp -t sealed-secrets-id.XXXXXX)"
 TEST_IDENTITY=sealed-secrets-test
 
 say()  { printf '\n\033[1m== %s\033[0m\n' "$*"; }
