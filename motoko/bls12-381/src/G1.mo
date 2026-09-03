@@ -170,16 +170,16 @@ module {
         BYTES_COMPRESSED,
         func i = if (i == 0) { 0xc0 } else { 0 },
       );
-      return Array.toBlob(bytes);
+      return bytes.toBlob();
     };
 
-    let xBytes = Blob.toArray(Fp.toBytes(a.x));
+    let xBytes = Fp.toBytes(a.x).toArray();
     let sortBit : Nat8 = if (Fp.lexicographicallyLargest(a.y)) { 0x20 } else { 0 };
-    let bytes = Array.tabulate<Nat8>(
+    let bytes = Array.tabulate(
       BYTES_COMPRESSED,
       func i = if (i == 0) { xBytes[0] | 0x80 | sortBit } else { xBytes[i] },
     );
-    Array.toBlob(bytes);
+    bytes.toBlob();
   };
 
   /// Parses the 48-byte compressed form, recovering `y` from `x`.
@@ -188,7 +188,7 @@ module {
   /// infinity encoding with a non-zero `x` or a set sort bit, a non-canonical
   /// `x`, or an `x` for which `x^3 + 4` is not a square.
   public func fromCompressed(b : Blob) : ?Affine {
-    let arr = Blob.toArray(b);
+    let arr = b.toArray();
     if (arr.size() != BYTES_COMPRESSED) { return null };
 
     let flags = arr[0];
@@ -198,12 +198,12 @@ module {
 
     if (not compressed) { return null };
 
-    let masked = Array.tabulate<Nat8>(
+    let masked = Array.tabulate(
       BYTES_COMPRESSED,
       func i = if (i == 0) { arr[0] & 0x1f } else { arr[i] },
     );
 
-    let x = switch (Fp.fromBytes(Array.toBlob(masked))) {
+    let x = switch (Fp.fromBytes(masked.toBlob())) {
       case (?v) v;
       case null { return null };
     };

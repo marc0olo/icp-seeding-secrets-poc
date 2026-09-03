@@ -162,12 +162,12 @@ module {
       );
     };
 
-    let xBytes = Blob.toArray(Fp2.toBytes(a.x));
+    let xBytes = Fp2.toBytes(a.x).toArray();
     let sortBit : Nat8 = if (Fp2.lexicographicallyLargest(a.y)) { 0x20 } else {
       0;
     };
     Array.toBlob(
-      Array.tabulate<Nat8>(
+      Array.tabulate(
         BYTES_COMPRESSED,
         func i = if (i == 0) { xBytes[0] | 0x80 | sortBit } else { xBytes[i] },
       )
@@ -175,7 +175,7 @@ module {
   };
 
   public func fromCompressed(b : Blob) : ?Affine {
-    let arr = Blob.toArray(b);
+    let arr = b.toArray();
     if (arr.size() != BYTES_COMPRESSED) { return null };
 
     let flags = arr[0];
@@ -185,12 +185,12 @@ module {
 
     if (not compressed) { return null };
 
-    let masked = Array.tabulate<Nat8>(
+    let masked = Array.tabulate(
       BYTES_COMPRESSED,
       func i = if (i == 0) { arr[0] & 0x1f } else { arr[i] },
     );
 
-    let x = switch (Fp2.fromBytes(Array.toBlob(masked))) {
+    let x = switch (Fp2.fromBytes(masked.toBlob())) {
       case (?v) v;
       case null { return null };
     };

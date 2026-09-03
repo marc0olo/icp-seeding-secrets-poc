@@ -130,15 +130,13 @@ module {
   /// the reference exactly.
   public func toBytes(a : Fp12) : [Nat8] {
     func fp6Bytes(x : Fp6.Fp6) : [Nat8] {
-      Array.concat<Nat8>(
-        Blob.toArray(Fp2.toBytes(x.c2)),
-        Array.concat<Nat8>(
-          Blob.toArray(Fp2.toBytes(x.c1)),
-          Blob.toArray(Fp2.toBytes(x.c0)),
+      Fp2.toBytes(x.c2).toArray().concat(
+        Fp2.toBytes(x.c1).toArray().concat(
+          Fp2.toBytes(x.c0).toArray(),
         ),
       );
     };
-    Array.concat<Nat8>(fp6Bytes(a.c1), fp6Bytes(a.c0));
+    fp6Bytes(a.c1).concat(fp6Bytes(a.c0));
   };
 
   public func pow(a : Fp12, e : Nat) : Fp12 {

@@ -112,14 +112,14 @@ module {
 
   /// Big-endian, 48 bytes, as in the reference's `to_bytes`.
   public func toBytes(a : Fp) : Blob {
-    let out = Array.tabulate<Nat8>(
+    let out = Array.tabulate(
       BYTES,
       func i {
         let shift = (BYTES - 1 - i : Nat) * 8;
         Nat.toNat8((a / (2 ** shift)) % 256);
       },
     );
-    Array.toBlob(out);
+    out.toBlob();
   };
 
   /// Parses 48 big-endian bytes, rejecting anything not already reduced.
@@ -128,10 +128,10 @@ module {
   /// encodings of one element would break the equality that point compression
   /// and signature verification depend on.
   public func fromBytes(b : Blob) : ?Fp {
-    let arr = Blob.toArray(b);
+    let arr = b.toArray();
     if (arr.size() != BYTES) { return null };
     var acc : Nat = 0;
-    for (byte in arr.vals()) { acc := acc * 256 + Nat8.toNat(byte) };
+    for (byte in arr.vals()) { acc := acc * 256 + byte.toNat() };
     if (acc >= P) { null } else { ?acc };
   };
 }

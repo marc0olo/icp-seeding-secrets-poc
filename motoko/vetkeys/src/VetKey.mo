@@ -47,7 +47,7 @@ module {
   public func deserialize(bytes : [Nat8]) : ?EncryptedVetKey {
     if (bytes.size() != BYTES) { return null };
     let slice = func(from : Nat, to : Nat) : Blob {
-      Array.toBlob(Array.sliceToArray<Nat8>(bytes, from, to));
+      bytes.sliceToArray(from, to).toBlob();
     };
     switch (
       G1.fromCompressed(slice(0, 48)),
@@ -82,8 +82,8 @@ module {
   /// It is not optional here regardless of the threat model — `ic-vetkeys` signs
   /// this way, so anything else simply fails to verify.
   public func augmentedHashToG1(pk : G2.Affine, data : [Nat8]) : G1.Affine {
-    let prefix = Blob.toArray(G2.toCompressed(pk));
-    HashToCurve.hashToCurveText(Array.concat<Nat8>(prefix, data), SIGNATURE_DST);
+    let prefix = G2.toCompressed(pk).toArray();
+    HashToCurve.hashToCurveText(prefix.concat(data), SIGNATURE_DST);
   };
 
   /// True when `signature` is a valid BLS signature on `input` under `dpk`.

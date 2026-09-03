@@ -75,5 +75,5 @@ module {
 
   public type Secrets = Map.Map<Text, SealedRecord>;
 
-  public func emptySecrets() : Secrets = Map.empty<Text, SealedRecord>();
+  public func emptySecrets() : Secrets = Map.empty();
 }

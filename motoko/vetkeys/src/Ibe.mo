@@ -42,7 +42,7 @@ module {
   /// `ic-vetkd-bls12-381-ibe-mask-msg-` with the length zero-padded to 20
   /// digits, so every separator in the family is the same length.
   func dsMaskMsg(len : Nat) : Text {
-    var digits = Nat.toText(len);
+    var digits = len.toText();
     while (digits.size() < 20) { digits := "0" # digits };
     "ic-vetkd-bls12-381-ibe-mask-msg-" # digits;
   };
@@ -59,23 +59,22 @@ module {
   public func deserialize(bytes : [Nat8]) : ?Ciphertext {
     if (bytes.size() < OVERHEAD) { return null };
 
-    let header = Array.sliceToArray<Nat8>(bytes, 0, HEADER_BYTES);
+    let header = bytes.sliceToArray(0, HEADER_BYTES);
     for (i in Nat.range(0, HEADER_BYTES)) {
       if (header[i] != HEADER[i]) { return null };
     };
 
-    let c1Bytes = Array.sliceToArray<Nat8>(bytes, HEADER_BYTES, HEADER_BYTES + G2_BYTES);
-    let c1 = switch (G2.fromCompressed(Array.toBlob(c1Bytes))) {
+    let c1Bytes = bytes.sliceToArray(HEADER_BYTES, HEADER_BYTES + G2_BYTES);
+    let c1 = switch (G2.fromCompressed(c1Bytes.toBlob())) {
       case (?p) p;
       case null { return null };
     };
 
-    let c2 = Array.sliceToArray<Nat8>(
-      bytes,
+    let c2 = bytes.sliceToArray(
       HEADER_BYTES + G2_BYTES,
       HEADER_BYTES + G2_BYTES + SEED_BYTES,
     );
-    let c3 = Array.sliceToArray<Nat8>(bytes, OVERHEAD, bytes.size());
+    let c3 = bytes.sliceToArray(OVERHEAD, bytes.size());
 
     ?{ header; c1; c2; c3 };
   };
@@ -83,19 +82,19 @@ module {
   /// XORs a buffer with an HKDF-derived mask of the same length.
   func maskSeed(seed : [Nat8], t : Fp12.Fp12) : [Nat8] {
     let mask = Hash.hkdf(Fp12.toBytes(t), DS_MASK_SEED, SEED_BYTES);
-    Array.tabulate<Nat8>(SEED_BYTES, func i = mask[i] ^ seed[i]);
+    Array.tabulate(SEED_BYTES, func i = mask[i] ^ seed[i]);
   };
 
   /// XORs the message with a SHAKE256 stream keyed by an HKDF of the seed.
   func maskMsg(msg : [Nat8], seed : [Nat8]) : [Nat8] {
     let shakeSeed = Hash.hkdf(seed, dsMaskMsg(msg.size()), SEED_BYTES);
     let mask = Hash.shake256(shakeSeed, msg.size());
-    Array.tabulate<Nat8>(msg.size(), func i = mask[i] ^ msg[i]);
+    Array.tabulate(msg.size(), func i = mask[i] ^ msg[i]);
   };
 
   /// The scalar the ciphertext commits to.
   func hashToMask(header : [Nat8], seed : [Nat8], msg : [Nat8]) : Scalar.Scalar {
-    let input = Array.concat<Nat8>(Array.concat<Nat8>(header, seed), msg);
+    let input = header.concat(seed).concat(msg);
     Scalar.hashToScalar(input, DS_HASH_TO_MASK);
   };
 

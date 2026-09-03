@@ -14,6 +14,9 @@ sealed-secrets-bls = "../bls12-381"
 test = "2.1.1"
 bench = "2.0.1"
 
+[moc]
+args = ["-W", "M0236,M0237,M0223"]
+
 [toolchain]
 moc = "1.15.1"
 pocket-ic = "15.0.0"

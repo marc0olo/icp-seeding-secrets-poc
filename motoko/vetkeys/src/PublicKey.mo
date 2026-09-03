@@ -60,7 +60,7 @@ module {
       case (#PocketIc, "dfx_test_key") POCKETIC_DFX_TEST_KEY;
       case _ { return null };
     };
-    G2.fromCompressed(Array.toBlob(hexBytes(hex)));
+    G2.fromCompressed(hexBytes(hex).toBlob());
   };
 
   /// Derives the key belonging to a canister (`utils/mod.rs:392`).
@@ -82,7 +82,7 @@ module {
   /// knows the master secret, while knowing a derived public key tells you
   /// nothing about its siblings.
   func offsetBy(point : G2.Affine, input : [Nat8], domainSep : Text) : G2.Affine {
-    let serialized = Blob.toArray(G2.toCompressed(point));
+    let serialized = G2.toCompressed(point).toArray();
     let offset = hashToScalarTwoInputs(serialized, input, domainSep);
     G2.toAffine(
       G2.add(G2.mul(G2.fromAffine(G2.generator), offset), G2.fromAffine(point))
@@ -95,24 +95,24 @@ module {
   /// `("ab", "c")` and `("a", "bc")` would hash identically, and a caller able to
   /// choose one input could shift the boundary to land on another pair's key.
   func hashToScalarTwoInputs(a : [Nat8], b : [Nat8], domainSep : Text) : Scalar.Scalar {
-    let combined = Array.flatten<Nat8>([beU64(a.size()), a, beU64(b.size()), b]);
+    let combined = [beU64(a.size()), a, beU64(b.size()), b].flatten();
     Scalar.hashToScalar(combined, domainSep);
   };
 
   /// A length as eight big-endian bytes, matching `(len as u64).to_be_bytes()`.
   func beU64(n : Nat) : [Nat8] =
-    Array.tabulate<Nat8>(8, func i = Nat.toNat8((n / (256 ** (7 - i : Nat))) % 256));
+    Array.tabulate(8, func i = Nat.toNat8((n / (256 ** (7 - i : Nat))) % 256));
 
   func hexBytes(hex : Text) : [Nat8] {
-    let chars = Iter.toArray<Char>(Text.toIter(hex));
-    Array.tabulate<Nat8>(
+    let chars = hex.toIter().toArray();
+    Array.tabulate(
       chars.size() / 2,
       func(i) = Nat.toNat8(hexVal(chars[i * 2]) * 16 + hexVal(chars[i * 2 + 1])),
     );
   };
 
   func hexVal(c : Char) : Nat {
-    let n = Nat32.toNat(Char.toNat32(c));
+    let n = c.toNat32().toNat();
     if (n >= 48 and n <= 57) { n - 48 } else if (n >= 97 and n <= 102) {
       n - 87;
     } else { 16 };

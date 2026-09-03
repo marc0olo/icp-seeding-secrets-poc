@@ -26,7 +26,7 @@ module {
 
   /// Big-endian, 32 bytes.
   public func toBytes(s : Scalar) : [Nat8] {
-    Array.tabulate<Nat8>(
+    Array.tabulate(
       BYTES,
       func i {
         let shift = (BYTES - 1 - i : Nat) * 8;
@@ -39,7 +39,7 @@ module {
   public func fromBytes(b : [Nat8]) : ?Scalar {
     if (b.size() != BYTES) { return null };
     var acc : Nat = 0;
-    for (byte in b.vals()) { acc := acc * 256 + Nat8.toNat(byte) };
+    for (byte in b.vals()) { acc := acc * 256 + byte.toNat() };
     if (acc >= R) { null } else { ?acc };
   };
 
@@ -52,10 +52,10 @@ module {
   /// using 32 instead would produce different scalars *and* a biased
   /// distribution.
   public func hashToScalar(input : [Nat8], domainSep : Text) : Scalar {
-    let dst = Blob.toArray(Text.encodeUtf8(domainSep));
+    let dst = domainSep.encodeUtf8().toArray();
     let expanded = Hash.expandMessageXmd(input, dst, 48);
     var acc : Nat = 0;
-    for (byte in expanded.vals()) { acc := acc * 256 + Nat8.toNat(byte) };
+    for (byte in expanded.vals()) { acc := acc * 256 + byte.toNat() };
     acc % R;
   };
 }

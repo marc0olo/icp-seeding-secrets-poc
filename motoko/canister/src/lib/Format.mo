@@ -65,15 +65,15 @@ module {
   /// Both variable-length fields are length-prefixed, so no two distinct
   /// `(SUITE, app_separator)` pairs encode to the same bytes.
   public func context(appSeparator : Text) : { #ok : [Nat8]; #err : FormatError } {
-    let sep = Blob.toArray(Text.encodeUtf8(appSeparator));
+    let sep = appSeparator.encodeUtf8().toArray();
     if (sep.size() > MAX_APP_SEPARATOR_LEN) {
       return #err(#AppSeparatorTooLong(sep.size()));
     };
     #ok(
-      Array.flatten<Nat8>([
-        [CONTEXT_FORMAT_VERSION, Nat.toNat8(SUITE.size())],
+      Array.flatten([
+        [CONTEXT_FORMAT_VERSION, SUITE.size().toNat8()],
         SUITE,
-        [Nat.toNat8(sep.size())],
+        [sep.size().toNat8()],
         sep,
       ])
     );
@@ -91,11 +91,11 @@ module {
   /// there is no privilege boundary inside a canister, since its code can derive
   /// the key for any identity whenever it likes.
   public func identity(epoch : Nat32) : [Nat8] {
-    let e = Nat32.toNat(epoch);
-    Array.flatten<Nat8>([
-      [IDENTITY_FORMAT_VERSION, Nat.toNat8(SUITE.size())],
+    let e = epoch.toNat();
+    Array.flatten([
+      [IDENTITY_FORMAT_VERSION, SUITE.size().toNat8()],
       SUITE,
-      Array.tabulate<Nat8>(4, func i = Nat.toNat8((e / (256 ** (3 - i : Nat))) % 256)),
+      Array.tabulate(4, func i = Nat.toNat8((e / (256 ** (3 - i : Nat))) % 256)),
     ]);
   };
 
@@ -106,17 +106,17 @@ module {
   /// arbitrary Candid `text` would admit — two names that look identical must
   /// not become two different entries.
   public func validateSecretName(name : Text) : { #ok; #err : FormatError } {
-    let bytes = Blob.toArray(Text.encodeUtf8(name));
+    let bytes = name.encodeUtf8().toArray();
     if (bytes.size() == 0) { return #err(#EmptyName) };
     if (bytes.size() > MAX_NAME_LEN) { return #err(#NameTooLong(bytes.size())) };
-    for (c in Text.toIter(name)) {
+    for (c in name.toIter()) {
       if (not isAllowed(c)) { return #err(#InvalidNameChar(c)) };
     };
     #ok;
   };
 
   func isAllowed(c : Char) : Bool {
-    let n = Nat32.toNat(Char.toNat32(c));
+    let n = c.toNat32().toNat();
     (n >= 48 and n <= 57) // 0-9
     or (n >= 65 and n <= 90) // A-Z
     or (n >= 97 and n <= 122) // a-z
@@ -128,20 +128,20 @@ module {
   /// Renders a `FormatError` for a Candid `text` field.
   public func errorText(e : FormatError) : Text {
     switch (e) {
-      case (#AppSeparatorTooLong(n)) "application domain separator is " # Nat.toText(n) # " bytes, maximum is " # Nat.toText(MAX_APP_SEPARATOR_LEN);
+      case (#AppSeparatorTooLong(n)) "application domain separator is " # n.toText() # " bytes, maximum is " # MAX_APP_SEPARATOR_LEN.toText();
       case (#EmptyName) "secret name must not be empty";
-      case (#NameTooLong(n)) "secret name is " # Nat.toText(n) # " bytes, maximum is " # Nat.toText(MAX_NAME_LEN);
-      case (#InvalidNameChar(c)) "secret name contains '" # Char.toText(c) # "'; only A-Z a-z 0-9 _ . - are allowed";
+      case (#NameTooLong(n)) "secret name is " # n.toText() # " bytes, maximum is " # MAX_NAME_LEN.toText();
+      case (#InvalidNameChar(c)) "secret name contains '" # c.toText() # "'; only A-Z a-z 0-9 _ . - are allowed";
     };
   };
 
   /// Lowercase hex, for logging and for the tests that pin these encodings.
   public func toHex(bytes : [Nat8]) : Text {
-    let digits = Iter.toArray<Char>(Text.toIter("0123456789abcdef"));
+    let digits = Text.toIter("0123456789abcdef").toArray();
     var out = "";
     for (b in bytes.vals()) {
-      let n = Nat8.toNat(b);
-      out #= Char.toText(digits[n / 16]) # Char.toText(digits[n % 16]);
+      let n = b.toNat();
+      out #= digits[n / 16].toText() # digits[n % 16].toText();
     };
     out;
   };

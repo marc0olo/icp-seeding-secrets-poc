@@ -21,7 +21,7 @@ import Nat "mo:core/Nat";
 
 module {
   public func sha256(data : [Nat8]) : [Nat8] =
-    Blob.toArray(Sha256.fromArray(#sha256, data));
+    Sha256.fromArray(#sha256, data).toArray();
 
   /// HMAC-SHA256, per RFC 2104.
   public func hmacSha256(key : [Nat8], message : [Nat8]) : [Nat8] {
@@ -31,10 +31,10 @@ module {
       blockSize,
       func i = if (i < k.size()) { k[i] } else { 0 },
     );
-    let inner = Array.tabulate<Nat8>(blockSize, func i = padded[i] ^ 0x36);
-    let outer = Array.tabulate<Nat8>(blockSize, func i = padded[i] ^ 0x5c);
-    let innerHash = sha256(Array.concat<Nat8>(inner, message));
-    sha256(Array.concat<Nat8>(outer, innerHash));
+    let inner = Array.tabulate(blockSize, func i = padded[i] ^ 0x36);
+    let outer = Array.tabulate(blockSize, func i = padded[i] ^ 0x5c);
+    let innerHash = sha256(inner.concat(message));
+    sha256(outer.concat(innerHash));
   };
 
   /// HKDF-SHA256 with an empty salt, matching `ic-vetkeys`' `hkdf`
@@ -45,20 +45,20 @@ module {
     let prk = hmacSha256(salt, input);
 
     // Expand.
-    let info = Blob.toArray(Text.encodeUtf8(domainSep));
+    let info = domainSep.encodeUtf8().toArray();
     var okm : [Nat8] = [];
     var previous : [Nat8] = [];
     var counter : Nat8 = 1;
     while (okm.size() < len) {
       let block = hmacSha256(
         prk,
-        Array.concat<Nat8>(Array.concat<Nat8>(previous, info), [counter]),
+        previous.concat(info).concat([counter]),
       );
-      okm := Array.concat<Nat8>(okm, block);
+      okm := okm.concat(block);
       previous := block;
       counter += 1;
     };
-    Array.sliceToArray<Nat8>(okm, 0, len);
+    okm.sliceToArray(0, len);
   };
 
   /// SHAKE256 as an extendable-output function.
@@ -86,13 +86,12 @@ module {
     var out : [Nat8] = [];
     while (out.size() < outputLen) {
       let take = Nat.min(rate, outputLen - out.size() : Nat);
-      out := Array.concat<Nat8>(
-        out,
-        Array.tabulate<Nat8>(take, func i = Sha3.get_nat8(st, i)),
+      out := out.concat(
+        Array.tabulate(take, func i = Sha3.get_nat8(st, i)),
       );
       if (out.size() < outputLen) { Sha3.keccakf(st) };
     };
-    Array.sliceToArray<Nat8>(out, 0, outputLen);
+    out.sliceToArray(0, outputLen);
   };
 
   /// `expand_message_xmd` with SHA-256, from RFC 9380 section 5.3.1.
@@ -109,36 +108,35 @@ module {
     assert ell <= 255;
 
     // DST longer than 255 bytes is hashed down; short ones are used as-is.
-    let dstPrime = Array.concat<Nat8>(dst, [Nat.toNat8(dst.size())]);
+    let dstPrime = dst.concat([dst.size().toNat8()]);
     let zPad = Array.tabulate<Nat8>(sInBytes, func _ = 0);
     let lIBStr : [Nat8] = [
       Nat.toNat8(lenInBytes / 256),
       Nat.toNat8(lenInBytes % 256),
     ];
 
-    let msgPrime = Array.concat<Nat8>(
-      Array.concat<Nat8>(
-        Array.concat<Nat8>(zPad, msg),
-        Array.concat<Nat8>(lIBStr, [0 : Nat8]),
+    let msgPrime = Array.concat(
+      zPad.concat(msg).concat(
+        lIBStr.concat([0 : Nat8]),
       ),
       dstPrime,
     );
 
     let b0 = sha256(msgPrime);
     var bi = sha256(
-      Array.concat<Nat8>(Array.concat<Nat8>(b0, [1 : Nat8]), dstPrime)
+      b0.concat([1 : Nat8]).concat(dstPrime)
     );
     var out = bi;
 
     var i : Nat8 = 2;
     while (out.size() < lenInBytes) {
-      let xored = Array.tabulate<Nat8>(bInBytes, func j = b0[j] ^ bi[j]);
+      let xored = Array.tabulate(bInBytes, func j = b0[j] ^ bi[j]);
       bi := sha256(
-        Array.concat<Nat8>(Array.concat<Nat8>(xored, [i]), dstPrime)
+        xored.concat([i]).concat(dstPrime)
       );
-      out := Array.concat<Nat8>(out, bi);
+      out := out.concat(bi);
       i += 1;
     };
-    Array.sliceToArray<Nat8>(out, 0, lenInBytes);
+    out.sliceToArray(0, lenInBytes);
   };
 }

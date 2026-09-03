@@ -124,12 +124,12 @@ module {
   public func hashToField(msg : [Nat8], dst : [Nat8], count : Nat) : [Fp.Fp] {
     let l = 64;
     let expanded = Hash.expandMessageXmd(msg, dst, count * l);
-    Array.tabulate<Fp.Fp>(
+    Array.tabulate(
       count,
       func i {
         var acc : Nat = 0;
-        for (j in Array.keys(Array.tabulate<Nat>(l, func k = k))) {
-          acc := acc * 256 + Nat8.toNat(expanded[i * l + j]);
+        for (j in Array.tabulate(l, func k = k).keys()) {
+          acc := acc * 256 + expanded[i * l + j].toNat();
         };
         acc % Fp.P;
       },
@@ -200,7 +200,7 @@ module {
   func isoMap(p : G1.Point) : G1.Point {
     // zp[i] = z^(i+1), the powers the Horner evaluation needs to homogenise
     // each coefficient up to the degree of the polynomial.
-    let zp = Array.tabulate<Fp.Fp>(
+    let zp = Array.tabulate(
       15,
       func i {
         var acc = p.z;
@@ -269,5 +269,5 @@ module {
 
   /// Convenience wrapper taking the domain separator as text.
   public func hashToCurveText(msg : [Nat8], dst : Text) : G1.Affine =
-    hashToCurve(msg, Blob.toArray(Text.encodeUtf8(dst)));
+    hashToCurve(msg, dst.encodeUtf8().toArray());
 }

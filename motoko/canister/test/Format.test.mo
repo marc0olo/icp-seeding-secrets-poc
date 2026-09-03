@@ -8,7 +8,7 @@
 /// time.
 
 import { test } "mo:test";
-import Format "../src/Format";
+import Format "../src/lib/Format";
 import Blob "mo:core/Blob";
 import Text "mo:core/Text";
 import Nat8 "mo:core/Nat8";

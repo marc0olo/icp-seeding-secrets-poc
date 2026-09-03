@@ -140,17 +140,17 @@ module {
 
   /// 96 bytes, `c1 || c0`, big-endian.
   public func toBytes(a : Fp2) : Blob {
-    let c1 = Blob.toArray(Fp.toBytes(a.c1));
-    let c0 = Blob.toArray(Fp.toBytes(a.c0));
-    Array.toBlob(Array.concat<Nat8>(c1, c0));
+    let c1 = Fp.toBytes(a.c1).toArray();
+    let c0 = Fp.toBytes(a.c0).toArray();
+    c1.concat(c0).toBlob();
   };
 
   /// Parses 96 bytes as `c1 || c0`, rejecting non-canonical components.
   public func fromBytes(b : Blob) : ?Fp2 {
-    let arr = Blob.toArray(b);
+    let arr = b.toArray();
     if (arr.size() != BYTES) { return null };
-    let c1 = Array.toBlob(Array.sliceToArray<Nat8>(arr, 0, Fp.BYTES));
-    let c0 = Array.toBlob(Array.sliceToArray<Nat8>(arr, Fp.BYTES, BYTES));
+    let c1 = arr.sliceToArray(0, Fp.BYTES).toBlob();
+    let c0 = arr.sliceToArray(Fp.BYTES, BYTES).toBlob();
     switch (Fp.fromBytes(c1), Fp.fromBytes(c0)) {
       case (?v1, ?v0) ?{ c0 = v0; c1 = v1 };
       case _ null;

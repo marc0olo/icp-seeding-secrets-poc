@@ -14,6 +14,18 @@ sealed-secrets-vetkeys = "../vetkeys"
 [dev-dependencies]
 test = "2.1.1"
 
+[canisters.sealed_secrets_motoko]
+main = "src/Main.mo"
+
+[moc]
+# Deliberately without --default-persistent-actors, even though the Motoko
+# project-setup guidance suggests it. This canister is built by icp.yaml with a
+# direct `moc` invocation, which does not see mops' [moc] args — so an actor that
+# was persistent only because of a default-on flag would silently lose that
+# property in the build that actually ships. `Main.mo` says `persistent actor`
+# explicitly instead, which holds under both build paths.
+args = ["-W", "M0236,M0237,M0223"]
+
 [toolchain]
 moc = "1.15.1"
 pocket-ic = "15.0.0"
