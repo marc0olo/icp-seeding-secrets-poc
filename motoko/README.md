@@ -116,7 +116,8 @@ toward it.
 | `Fp2` — quadratic extension | ✅ 11 tests, anchored on the G2 curve equation |
 | `Fp6` — sextic extension | ✅ 9 tests, incl. Frobenius re-derived and checked as `x^p` |
 | `Fp12` — dodecic extension, the pairing target | ✅ 9 tests, incl. conjugation-is-inversion in the cyclotomic subgroup |
-| `G1`, `G2` — curve groups, compression | ⬜ not started |
+| `G1` — curve group over `Fp` | ✅ 9 tests, incl. scalar mult reproducing reference multiples |
+| `G2` — curve group over `Fp2` | ✅ 8 tests, same |
 | Pairing — Miller loop, final exponentiation | ⬜ not started |
 | `hash_to_curve` | ⬜ not started — needed only if the canister verifies the vetKey |
 | IBE decryption | ⬜ not started |
