@@ -35,19 +35,21 @@ const STANDARD_VERSION: u32 = 1;
 
 /// Where `call_api_with_secret` sends its authenticated request.
 ///
-/// GitHub's `/user` is chosen because it genuinely **evaluates** the credential:
-/// a wrong value gets `401 Bad credentials`, a real personal access token gets
-/// `200`. An endpoint that ignores `Authorization` — an unauthenticated status
-/// or health route — would return `200` no matter what the canister sent, which
-/// demonstrates the plumbing while proving nothing about the secret.
+/// postman-echo's `/basic-auth` genuinely **evaluates** the credential — the
+/// documented `postman:password` gets `200 {"authenticated":true}`, anything else
+/// gets `401` — and it does not echo the credential back, which matters because
+/// the response body enters replicated state on every node.
 ///
-/// It also does not echo the credential in its response body, which matters
-/// because that body enters replicated state on every node.
+/// Using a *publicly documented* credential is right for a demo and wrong for
+/// production, and the distinction is worth being precise about. A published
+/// credential proves nothing about **secrecy**. But it is ideal for proving the
+/// **mechanism**, because the test can seal the correct value and see `200`, then
+/// seal a wrong one and see `401`, with no setup and no real key anywhere. An
+/// endpoint that ignores `Authorization` could not show that: it answers `200`
+/// whatever the canister sends.
 ///
-/// Point this at whatever API you actually hold a key for. There is deliberately
-/// no "public endpoint with a known API key" here, because a published key is not
-/// a secret and testing against one would demonstrate nothing.
-const DEMO_API_ENDPOINT: &str = "https://api.github.com/user";
+/// Point this at your own API for anything real.
+const DEMO_API_ENDPOINT: &str = "https://postman-echo.com/basic-auth";
 
 /// Installation arguments.
 ///
@@ -309,10 +311,14 @@ async fn icp_sealed_secret_self_test(
 ///
 /// This is what the whole exercise is for, so read it as the template.
 ///
-/// Seal a real GitHub personal access token and this returns `200`; seal anything
-/// else and it returns `401`. Both outcomes prove the outcall completed and the
-/// credential was evaluated — which is the property an unauthenticated health
-/// endpoint could never demonstrate, since it answers `200` regardless.
+/// The sealed secret is the **complete `Authorization` header value**, not just a
+/// token, so it works for any scheme — `Bearer ghp_…`, `Basic dXNlcjpwYXNz`, or
+/// whatever an API expects — without this code baking one in.
+///
+/// Seal the correct credential and this returns `200`; seal a wrong one and it
+/// returns `401`. That both branches are observable is the point: it proves the
+/// secret's *value* reached the API and was evaluated, not merely that a request
+/// went out.
 ///
 /// **The endpoint is a constant, not a parameter.** A `call_api(url, ...)` taking
 /// the URL from the caller would be an exfiltration primitive: point it at a
@@ -336,7 +342,10 @@ async fn icp_sealed_secret_self_test(
 /// checkpoints behind it are encrypted; on any other subnet the secret is
 /// readable by every node operator the moment this runs.
 #[update]
-async fn call_api_with_secret(name: String) -> Result<u16, SealedSecretsError> {
+async fn call_api_with_secret(
+    name: String,
+    idempotency_key: String,
+) -> Result<u16, SealedSecretsError> {
     require_controller()?;
 
     let record = store::get_record(&name).ok_or(SealedSecretsError::NotFound)?;
@@ -348,11 +357,16 @@ async fn call_api_with_secret(name: String) -> Result<u16, SealedSecretsError> {
         url: DEMO_API_ENDPOINT.to_string(),
         method: HttpMethod::GET,
         headers: vec![
+            // The secret is the whole header value. See above.
             HttpHeader {
                 name: "Authorization".to_string(),
-                value: format!("Bearer {token}"),
+                value: token.to_string(),
             },
-            // GitHub requires a User-Agent and rejects requests without one.
+            // Not optional for anything that mutates — see the doc comment.
+            HttpHeader {
+                name: "Idempotency-Key".to_string(),
+                value: idempotency_key,
+            },
             HttpHeader {
                 name: "User-Agent".to_string(),
                 value: "icp-sealed-secrets-poc".to_string(),

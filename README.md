@@ -164,60 +164,86 @@ serves them all. That is why cost is no reason to deviate from IBE.
 
 Sealing a secret is only useful if the canister can *use* it. The canonical case is an
 authenticated HTTPS outcall, and `call_api_with_secret` in
-[`crates/canister/src/lib.rs`](./crates/canister/src/lib.rs) is a working one, exercised by
-`local-test.sh` step 10.
+[`crates/canister/src/lib.rs`](./crates/canister/src/lib.rs) is a working one.
+`local-test.sh` step 10 asserts **both** branches:
 
-It calls `https://api.github.com/user`, which **genuinely evaluates the credential**: seal
-a real GitHub personal access token and you get `200`; seal anything else and you get
-`401 Bad credentials`. Both prove the call completed and the header built from the sealed
-secret was read — which an unauthenticated health endpoint could never show, because it
-answers `200` no matter what you send it.
-
-> **Why not a public endpoint with a known API key?** There isn't one, and there can't be:
-> a published key is not a secret, so testing against one would demonstrate nothing. Point
-> the constant at whichever API you actually hold a key for.
+```
+== 10. the actual use case: an authenticated HTTPS outcall
+  ok — the call SUCCEEDS with the sealed credential (200)
+  ok — and FAILS with a wrong one (401): the value is what authenticated
+```
 
 ```rust
-let plaintext = keys::open(&name, &record).await?;          // decrypt (cached)
+let plaintext = keys::open(&name, &record).await?;      // decrypt (cached)
 let token = core::str::from_utf8(plaintext.as_slice())?;
 
 let request = HttpRequestArgs {
-    url: DEMO_API_ENDPOINT.to_string(),                     // a CONSTANT — see below
+    url: DEMO_API_ENDPOINT.to_string(),                 // a CONSTANT — see below
     method: HttpMethod::GET,
-    headers: vec![HttpHeader {
-        name: "Authorization".to_string(),
-        value: format!("Bearer {token}"),
-    }],
+    headers: vec![
+        HttpHeader { name: "Authorization".into(),    value: token.to_string() },
+        HttpHeader { name: "Idempotency-Key".into(),  value: idempotency_key },
+        HttpHeader { name: "User-Agent".into(),       value: "…".into() },
+    ],
     max_response_bytes: Some(2_048),
-    transform: Some(transform_context_from_query("strip_response".to_string(), vec![])),
+    transform: Some(transform_context_from_query("strip_response".into(), vec![])),
     ..Default::default()
 };
 
 let response = http_request(&request).await?;
-u16::try_from(response.status.0)                            // ONLY the status
+u16::try_from(response.status.0)                        // ONLY the status
 ```
 
-Three things in there are not stylistic:
+Four things in there are not stylistic.
 
-**The URL is a constant, not a parameter.** `call_api(url, secret_name)` would be an
-exfiltration primitive — point it at a server you control and the secret is yours. A
-controller could do that anyway by installing code, but shipping the capability as an
-endpoint is gratuitous, and real canisters call a known API.
+**The URL is a constant, not a parameter.** `call_api(url, name)` would be an exfiltration
+primitive — point it at a server you control and the secret is yours. A controller could
+do that anyway by installing code, but shipping the capability as an endpoint is
+gratuitous, and real canisters call a known API.
 
-**Only the status code is returned.** Plenty of endpoints echo request headers — `/headers`,
-`/anything`, most debug routes — so returning the body risks handing your own
+**Only the status code is returned.** Plenty of endpoints echo request headers —
+`/headers`, `/anything`, most debug routes — so returning the body risks handing your own
 `Authorization` header back to the caller, undoing the sealing completely.
 
 **The transform is mandatory.** Every node performs the call independently and consensus
-requires byte-identical responses, so per-node variation (`Date`, request ids, cookies) has
-to be stripped or the call simply fails. Stripping headers also stops a hostile endpoint
-from reflecting the secret into replicated state.
+requires byte-identical responses, so per-node variation (`Date`, request ids, cookies)
+has to be stripped or the call simply fails. Stripping headers also stops a hostile
+endpoint reflecting the secret into replicated state.
 
-And the exposure this creates, spelled out under
-[HTTPS outcalls](#https-outcalls): the request context, headers included, enters replicated
-state on **every** node before any of them executes the call. On a SEV-SNP subnet that is
-encrypted memory and measurement-keyed disk; on any other subnet the secret is readable by
-every node operator the moment this runs.
+**The idempotency key is mandatory for anything that mutates**, and for a reason specific
+to ICP: that same fan-out means one logical outcall becomes **N real HTTP requests**, one
+per node. A `GET` does not care. A `POST` that charges a card, sends an email or creates a
+resource would happen N times unless the API deduplicates — so any non-idempotent call
+needs a key the provider honours.
+
+The key is a *parameter*, for the same reason Stripe makes it one: only the caller knows
+whether this is a retry of one logical operation or a new one. Generating it inside would
+make every retry a fresh operation, which is exactly the bug the header prevents. It needs
+no special derivation — the request is built once during replicated execution and every
+node sends those same bytes, so the value is already identical across the fan-out.
+
+#### Why postman-echo, and why a public credential is fine here
+
+The demo calls `https://postman-echo.com/basic-auth`, which accepts the documented
+`postman:password` and rejects anything else. That distinction matters: an endpoint that
+*ignores* `Authorization` — a status or health route — answers `200` whatever the canister
+sends, which would demonstrate the plumbing while proving nothing about the secret.
+
+Using a **published** credential is right for a demo and wrong for production, and the
+difference is worth being precise about. A published credential proves nothing about
+*secrecy*. But it is ideal for proving the *mechanism*, because the test can seal the
+correct value and see `200`, then seal a wrong one and see `401`, with no setup and no real
+key anywhere in the repo. Point the constant at your own API for anything real.
+
+The sealed secret is the **complete `Authorization` header value**, not just a token, so
+the same code works for `Bearer ghp_…`, `Basic dXNlcjpwYXNz`, or whatever scheme an API
+expects.
+
+And the exposure this creates, spelled out under [HTTPS outcalls](#https-outcalls): the
+request context, headers included, enters replicated state on **every** node before any of
+them executes the call. On a SEV-SNP subnet that is encrypted memory and measurement-keyed
+disk; on any other subnet the secret is readable by every node operator the moment this
+runs.
 
 ### Three decisions worth understanding
 
@@ -509,7 +535,7 @@ icp_sealed_secret_list      : ()               -> (variant { Ok : vec SealedSecr
 icp_sealed_secret_self_test : (opt KeySource)  -> (variant { Ok : SelfTestReport; Err : … });
 
 // not part of the proposed standard — the worked example of USING a secret
-call_api_with_secret        : (text)           -> (variant { Ok : nat16; Err : SealedSecretsError });
+call_api_with_secret        : (text, text)     -> (variant { Ok : nat16; Err : SealedSecretsError });
 strip_response              : (TransformArgs)  -> (HttpRequestResult) query;
 ```
 

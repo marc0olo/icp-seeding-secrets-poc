@@ -327,7 +327,7 @@ export enum KeySource {
     PocketIc = "PocketIc"
 }
 export interface sealed_secrets_canisterInterface {
-    call_api_with_secret(arg0: string): Promise<Result>;
+    call_api_with_secret(arg0: string, arg1: string): Promise<Result>;
     icp_sealed_secret_info(): Promise<Result_1>;
     icp_sealed_secret_list(): Promise<Result_2>;
     icp_sealed_secret_matches(arg0: string, arg1: Uint8Array): Promise<Result_3>;
@@ -340,8 +340,8 @@ export interface sealed_secrets_canisterInterface {
 import type { KeySource as _KeySource, Result as _Result, Result_1 as _Result_1, Result_2 as _Result_2, Result_3 as _Result_3, Result_4 as _Result_4, Result_5 as _Result_5, Result_6 as _Result_6, Result_7 as _Result_7, SealedSecretEntry as _SealedSecretEntry, SealedSecretInfo as _SealedSecretInfo, SealedSecretsError as _SealedSecretsError, SelfTestReport as _SelfTestReport } from "./sealed_secrets_canister.did";
 export class Sealed_secrets_canister implements sealed_secrets_canisterInterface {
     constructor(private actor: ActorSubclass<_SERVICE>){}
-    async call_api_with_secret(arg0: string): Promise<Result> {
-        const result = await this.actor.call_api_with_secret(arg0);
+    async call_api_with_secret(arg0: string, arg1: string): Promise<Result> {
+        const result = await this.actor.call_api_with_secret(arg0, arg1);
         return from_candid_Result_n1(result);
     }
     async icp_sealed_secret_info(): Promise<Result_1> {

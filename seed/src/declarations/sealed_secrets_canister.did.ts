@@ -303,10 +303,14 @@ export interface _SERVICE {
    * 
    * This is what the whole exercise is for, so read it as the template.
    * 
-   * Seal a real GitHub personal access token and this returns `200`; seal anything
-   * else and it returns `401`. Both outcomes prove the outcall completed and the
-   * credential was evaluated — which is the property an unauthenticated health
-   * endpoint could never demonstrate, since it answers `200` regardless.
+   * The sealed secret is the **complete `Authorization` header value**, not just a
+   * token, so it works for any scheme — `Bearer ghp_…`, `Basic dXNlcjpwYXNz`, or
+   * whatever an API expects — without this code baking one in.
+   * 
+   * Seal the correct credential and this returns `200`; seal a wrong one and it
+   * returns `401`. That both branches are observable is the point: it proves the
+   * secret's *value* reached the API and was evaluated, not merely that a request
+   * went out.
    * 
    * **The endpoint is a constant, not a parameter.** A `call_api(url, ...)` taking
    * the URL from the caller would be an exfiltration primitive: point it at a
@@ -330,7 +334,7 @@ export interface _SERVICE {
    * checkpoints behind it are encrypted; on any other subnet the secret is
    * readable by every node operator the moment this runs.
    */
-  'call_api_with_secret' : ActorMethod<[string], Result>,
+  'call_api_with_secret' : ActorMethod<[string, string], Result>,
   /**
    * Everything a client needs to seal for this canister.
    * 
@@ -527,7 +531,7 @@ export const idlFactory: IDL.InterfaceFactory = ({ IDL }) => {
   });
   
   return IDL.Service({
-    'call_api_with_secret' : IDL.Func([IDL.Text], [Result], []),
+    'call_api_with_secret' : IDL.Func([IDL.Text, IDL.Text], [Result], []),
     'icp_sealed_secret_info' : IDL.Func([], [Result_1], []),
     'icp_sealed_secret_list' : IDL.Func([], [Result_2], ['query']),
     'icp_sealed_secret_matches' : IDL.Func(

@@ -19,6 +19,14 @@ CANISTER=sealed-secrets
 ENV=local
 HOST=http://127.0.0.1:8010
 SECRET_NAME=DUMMY_API_KEY
+# postman-echo's /basic-auth accepts this documented credential and rejects
+# anything else, which lets the outcall test assert BOTH branches with no setup.
+# A published credential proves nothing about secrecy — but this is proving the
+# mechanism, and for that it is exactly right.
+OUTCALL_SECRET_NAME=DEMO_AUTH_HEADER
+OUTCALL_GOOD='Basic cG9zdG1hbjpwYXNzd29yZA=='
+OUTCALL_BAD='Basic d3Jvbmc6d3Jvbmc='
+
 SECRET_VALUE="sk-local-test-$(date +%s)-do-not-use"
 PEM="$(mktemp -t sealed-secrets-id)"
 TEST_IDENTITY=sealed-secrets-test
@@ -87,7 +95,10 @@ else
 fi
 
 say "5. deploy (with --features test-hooks, per icp.yaml)"
-icp deploy -e "$ENV" >/dev/null
+# --yes skips the Candid compatibility prompt: this script tests whatever is in
+# the working tree, and an interface change mid-development is expected here in a
+# way it would not be for a production upgrade.
+icp deploy -e "$ENV" --yes >/dev/null
 CID=$(icp canister status "$CANISTER" -e "$ENV" --json | jq -r .id)
 echo "  canister: $CID"
 
@@ -127,20 +138,38 @@ say "10. the actual use case: an authenticated HTTPS outcall"
 # The point of the whole exercise. The canister reads the plaintext, puts it in
 # an Authorization header, calls out, and returns only the status code — never
 # the body, which on an echoing endpoint would hand the header straight back.
-#
-# The target genuinely evaluates the credential, so BOTH outcomes are proof that
-# the call completed and the header was read: 401 for the dummy value this test
-# seals, 200 if you seal a real GitHub token. Only a network failure gives
-# neither, which is what this asserts.
-STATUS=$(icp canister call "$CANISTER" call_api_with_secret "(\"$SECRET_NAME\")" -e "$ENV" 2>&1 | tr -d '\n ')
-case "$STATUS" in
-  *"Ok=401"*) echo "  ok — outcall reached the API, which evaluated and rejected the dummy credential" ;;
-  *"Ok=200"*) echo "  ok — outcall authenticated successfully (a real token is sealed)" ;;
-  *) fail "the authenticated outcall did not complete: $STATUS" ;;
+seal_secret() {
+  SEAL_IDENTITY_PEM="$PEM" env "$OUTCALL_SECRET_NAME=$1" \
+    npm --prefix seed run --silent seal -- \
+      --canister "$CID" --name "$OUTCALL_SECRET_NAME" --host "$HOST" \
+      --source pocketic --local >/dev/null
+}
+outcall_status() {
+  icp canister call "$CANISTER" call_api_with_secret \
+    "(\"$OUTCALL_SECRET_NAME\", \"$1\")" -e "$ENV" 2>&1 | tr -d '\n '
+}
+
+seal_secret "$OUTCALL_GOOD"
+GOOD_STATUS=$(outcall_status "demo-op-0001")
+case "$GOOD_STATUS" in
+  *"Ok=200"*) echo "  ok — the call SUCCEEDS with the sealed credential (200)" ;;
+  *Ok=*)      fail "expected 200 with the correct credential, got: $GOOD_STATUS" ;;
+  *)          echo "  WARN could not reach the API; skipping (external dependency): $GOOD_STATUS" ;;
 esac
 
+# And prove the secret's VALUE is what did it, not merely that a request went out.
+if [[ "$GOOD_STATUS" == *"Ok=200"* ]]; then
+  seal_secret "$OUTCALL_BAD"
+  BAD_STATUS=$(outcall_status "demo-op-0002")
+  case "$BAD_STATUS" in
+    *"Ok=401"*) echo "  ok — and FAILS with a wrong one (401): the value is what authenticated" ;;
+    *)          fail "expected 401 with a wrong credential, got: $BAD_STATUS" ;;
+  esac
+  seal_secret "$OUTCALL_GOOD"
+fi
+
 say "11. it survives an upgrade with no re-seeding"
-icp deploy -e "$ENV" >/dev/null
+icp deploy -e "$ENV" --yes >/dev/null
 AFTER=$(icp canister call "$CANISTER" secret_reveal "(\"$SECRET_NAME\")" -e "$ENV" 2>/dev/null \
   | tr -d '\n' | sed -n 's/.*= "\(.*\)".*/\1/p')
 [ "$AFTER" = "$SECRET_VALUE" ] || fail "the secret did not survive the upgrade"
