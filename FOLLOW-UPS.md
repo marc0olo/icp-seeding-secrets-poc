@@ -425,9 +425,7 @@ and let clients do standard ECIES. Motoko would then need one scalar multiplicat
 (`motoko-bitcoin` already has secp256k1), and no pairings.
 
 Rejected on two grounds. It is a construction we would be inventing, and the cost
-argument that motivated it does not hold: one `vetkd_derive_key` is 1 SDR cent at the
-13-node reference, scaling with replication factor — a few US cents on a 34-node subnet
-(`VETKD_FEE`, 10B cycles —
-`ic/rs/config/src/subnet_config.rs:130`), paid once per canister lifetime plus once per
-upgrade, because one identity serves every secret. Recorded here so the decision is not
-relitigated.
+argument that motivated it does not hold: one `vetkd_derive_key` with `key_1` costs
+26_153_846_153 cycles (`test_key_1`: 10_000_000_000), paid once per canister lifetime plus
+once per upgrade, because one identity serves every secret. Recorded here so the decision
+is not relitigated.

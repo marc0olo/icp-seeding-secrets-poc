@@ -175,7 +175,7 @@ sequenceDiagram
         Can->>Heap: vetKey cache, keyed by epoch
         alt vetKey miss — once per epoch per canister lifetime
             Can->>Mgmt: raw_rand() then vetkd_derive_key
-            Note over Can,Mgmt: 10B cycles at the 13-node reference, scaled by<br/>replication factor — 1 SDR cent. One identity<br/>serves ALL secrets, so this happens once.
+            Note over Can,Mgmt: key_1 costs 26_153_846_153 cycles<br/>(test_key_1: 10_000_000_000), the same locally<br/>and on mainnet. One identity serves ALL<br/>secrets, so this happens once per epoch.
             Mgmt-->>Can: EncryptedVetKey
             Can->>Can: decrypt_and_verify gives vk
         end
@@ -190,11 +190,14 @@ sequenceDiagram
     Can-->>User: 200 — the status only, never the body
 ```
 
-**Cost.** `VETKD_FEE` is 10B cycles at the 13-node reference subnet, scaled by
-replication factor (`ic/rs/config/src/subnet_config.rs:130`), and the comment there puts
-10B cycles at **1 SDR cent** — a few US cents on a 34-node subnet. It is paid once per
-canister lifetime plus once after each upgrade, *not* per secret, because one identity
-serves them all. That is why cost is no reason to deviate from IBE.
+**Cost.** A `vetkd_derive_key` with `key_1` costs **26_153_846_153 cycles**
+(`test_key_1`: 10_000_000_000), the same locally and on mainnet. `vetkd_public_key` is
+free. The figure comes from `VETKD_FEE` — 10B cycles at the 13-node reference subnet,
+scaled by replication factor (`ic/rs/config/src/subnet_config.rs:130`), which the comment
+there puts at 1 SDR cent per 10B.
+
+It is paid once per canister lifetime plus once after each upgrade, **not per secret**,
+because one identity serves them all. That is why cost is no reason to deviate from IBE.
 
 ### Using the secret — the point of all this
 

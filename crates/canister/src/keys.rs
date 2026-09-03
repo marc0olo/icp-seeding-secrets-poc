@@ -45,8 +45,9 @@ thread_local! {
     /// only the first call after a cold start pays for it.
     static DPK_CACHE: RefCell<HashMap<Vec<u8>, DerivedPublicKey>> = RefCell::new(HashMap::new());
 
-    /// vetKeys by epoch. Each entry costs one `vetkd_derive_key` — on the order
-    /// of 10B cycles at a 13-node subnet, scaled by replication factor.
+    /// vetKeys by epoch. Each entry costs one `vetkd_derive_key`:
+    /// 26_153_846_153 cycles for `key_1`, 10_000_000_000 for `test_key_1`, the
+    /// same locally and on mainnet. Hence the cache.
     static VETKEY_CACHE: RefCell<HashMap<u32, Rc<VetKey>>> = RefCell::new(HashMap::new());
 
     /// Decrypted secrets, keyed by (name, revision) so that overwriting a secret
