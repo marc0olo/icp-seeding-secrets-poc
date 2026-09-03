@@ -428,6 +428,46 @@ fn strip_response(args: TransformArgs) -> HttpRequestResult {
     }
 }
 
+/// Measures what an IBE decryption costs in this canister, in instructions.
+/// **Requires the `test-hooks` feature.**
+///
+/// Exists so the Rust and Motoko implementations can be compared on the same
+/// footing. Native benchmarks are not comparable — what matters is the
+/// instruction count the replica charges, and that is wasm-specific.
+///
+/// Takes the vetKey and ciphertext as arguments so both implementations can be
+/// pointed at the identical vector from `motoko/test/vectors.json`.
+///
+/// **The first call costs about three times the rest.** `ic-vetkeys` holds a
+/// `lazy_static` precomputed multiplication table for the `G2` generator
+/// (`utils/mod.rs:219`), built on first use and reused thereafter. Quote the
+/// steady-state figure when comparing, and remember the Motoko port has no such
+/// table — a plain double-and-add ladder — so the gap is partly a missing
+/// optimisation rather than a property of the language.
+#[cfg(feature = "test-hooks")]
+#[update]
+fn bench_ibe_decrypt(vetkey: ByteBuf, ciphertext: ByteBuf) -> Result<u64, SealedSecretsError> {
+    require_controller()?;
+
+    let key = ic_vetkeys::VetKey::deserialize(&vetkey)
+        .map_err(|e| SealedSecretsError::Internal(format!("bad vetkey: {e}")))?;
+    let ct = ic_vetkeys::IbeCiphertext::deserialize(&ciphertext)
+        .map_err(|e| SealedSecretsError::InvalidCiphertext(e))?;
+
+    let before = ic_cdk::api::performance_counter(0);
+    let plaintext = ct
+        .decrypt(&key)
+        .map_err(|_| SealedSecretsError::InvalidCiphertext("decrypt failed".to_string()))?;
+    let after = ic_cdk::api::performance_counter(0);
+
+    // Touch the result so the optimiser cannot elide the work being measured.
+    if plaintext.is_empty() {
+        return Err(SealedSecretsError::Internal("empty plaintext".to_string()));
+    }
+
+    Ok(after - before)
+}
+
 /// Returns a decrypted secret **in the clear**. Requires the `test-hooks` feature.
 ///
 /// It exists so you can see with your own eyes that decryption worked. It must

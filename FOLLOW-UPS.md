@@ -362,16 +362,43 @@ verification and the no-getter rule are the same design decision viewed from two
 
 ## 3. A Motoko library
 
-**Status: started.** `motoko/` now holds an experimental, unaudited port —
-`Fp` implemented and tested against vectors generated from the Rust reference,
-with the feasibility question answered by measurement rather than argument. See
-[motoko/README.md](./motoko/README.md).
+**Status: there is a working implementation in this repo.** `motoko/` holds an
+experimental, unaudited BLS12-381 port that **decrypts a ciphertext produced by
+the Rust reference** — see [motoko/README.md](./motoko/README.md). 81 tests.
 
-**The measured answer to "is it fast enough": yes, with headroom.** A field
-multiplication costs ~53,500 instructions, so a pairing at roughly 30,000
-multiplications lands near 1.6 billion — about 4% of the 40 billion an update
-call gets. Note queries get only 5 billion, so decryption must be an update,
-which it already is.
+That changes what this section is. It was a problem statement and two asks; it is
+now a demonstration that the problem is tractable, plus a much shorter list of
+what is missing.
+
+**What works:** the whole field tower (`Fp`, `Fp2`, `Fp6`, `Fp12`), both curve
+groups with compression, the optimal ate pairing, HKDF-SHA256, SHAKE256,
+`expand_message_xmd`, `hash_to_scalar`, and IBE decryption. Every layer is tested
+against vectors generated from `ic_bls12_381` itself, and the hash layer against
+Python's `hashlib` — a third implementation unrelated to either.
+
+**What it costs:** 1.79 billion instructions for a decryption, against the 40
+billion an update call gets. About 10.8× the Rust implementation measured the
+same way, and 85% of the gap is one thing — this port reduces with `%` where the
+reference uses Montgomery form, so it divides where the reference multiplies.
+Fixing that, not switching to limb representation, is the optimisation if anyone
+ever needs one.
+
+**What is missing:** `hash_to_curve`, roughly 3,200 reference lines. Decryption
+does not need it. `decrypt_and_verify` does — the check that a vetKey returned by
+the subnet is a genuine BLS signature. A Motoko canister today would decrypt
+correctly but trust the subnet's reply rather than verify it, which is a real
+difference in a security property and the first thing to close.
+
+**And it is unaudited.** Nothing here should reach production before a
+cryptographer has been through it. The value is that the conversation can now be
+about reviewing an implementation rather than speculating about whether one is
+possible.
+
+**The asks, revised.** The vetKeys team question stands: IBE in the Motoko
+library, so `mo:ic-vetkeys` reaches parity. This port is evidence it can be done
+and a starting point for doing it properly. The Motoko-team question about the
+component model becomes less urgent — worth pursuing, since reusing audited Rust
+beats maintaining a second implementation, but no longer the only path.
 
 **The gap.** Canister-side IBE decryption needs BLS12-381 **pairings**, plus G1/G2
 decompression and a G2 scalar multiplication. `backend/mo/ic_vetkeys/src/` has only

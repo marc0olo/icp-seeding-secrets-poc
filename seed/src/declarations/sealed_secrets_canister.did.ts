@@ -79,17 +79,17 @@ export type KeySource = {
      */
     'PocketIc' : null
   };
-export type Result = { 'Ok' : number } |
+export type Result = { 'Ok' : bigint } |
   { 'Err' : SealedSecretsError };
-export type Result_1 = { 'Ok' : SealedSecretInfo } |
+export type Result_1 = { 'Ok' : number } |
   { 'Err' : SealedSecretsError };
-export type Result_2 = { 'Ok' : Array<SealedSecretEntry> } |
+export type Result_2 = { 'Ok' : SealedSecretInfo } |
   { 'Err' : SealedSecretsError };
-export type Result_3 = { 'Ok' : boolean } |
+export type Result_3 = { 'Ok' : Array<SealedSecretEntry> } |
   { 'Err' : SealedSecretsError };
-export type Result_4 = { 'Ok' : SelfTestReport } |
+export type Result_4 = { 'Ok' : boolean } |
   { 'Err' : SealedSecretsError };
-export type Result_5 = { 'Ok' : bigint } |
+export type Result_5 = { 'Ok' : SelfTestReport } |
   { 'Err' : SealedSecretsError };
 export type Result_6 = { 'Ok' : null } |
   { 'Err' : SealedSecretsError };
@@ -301,6 +301,18 @@ export interface TransformArgs {
 }
 export interface _SERVICE {
   /**
+   * Measures what an IBE decryption costs in this canister, in instructions.
+   * **Requires the `test-hooks` feature.**
+   * 
+   * Exists so the Rust and Motoko implementations can be compared on the same
+   * footing. Native benchmarks are not comparable — what matters is the
+   * instruction count the replica charges, and that is wasm-specific.
+   * 
+   * Takes the vetKey and ciphertext as arguments so both implementations can be
+   * pointed at the identical vector from `motoko/test/vectors.json`.
+   */
+  'bench_ibe_decrypt' : ActorMethod<[Uint8Array, Uint8Array], Result>,
+  /**
    * The actual use case: authenticate an outbound HTTPS request with a sealed
    * secret, without the secret ever leaving the canister.
    * 
@@ -337,7 +349,7 @@ export interface _SERVICE {
    * checkpoints behind it are encrypted; on any other subnet the secret is
    * readable by every node operator the moment this runs.
    */
-  'call_api_with_secret' : ActorMethod<[string, string], Result>,
+  'call_api_with_secret' : ActorMethod<[string, string], Result_1>,
   /**
    * Everything a client needs to seal for this canister.
    * 
@@ -350,7 +362,7 @@ export interface _SERVICE {
    * defence: this response crosses boundary nodes, and a client that trusted it
    * could be handed a key an attacker controls.
    */
-  'icp_sealed_secret_info' : ActorMethod<[], Result_1>,
+  'icp_sealed_secret_info' : ActorMethod<[], Result_2>,
   /**
    * Lists stored secrets.
    * 
@@ -363,7 +375,7 @@ export interface _SERVICE {
    * ciphertext reveals nothing, while still letting a client confirm its upload
    * landed.
    */
-  'icp_sealed_secret_list' : ActorMethod<[], Result_2>,
+  'icp_sealed_secret_list' : ActorMethod<[], Result_3>,
   /**
    * Answers "is the value I hold the one you have stored?" without either side
    * disclosing it.
@@ -388,7 +400,7 @@ export interface _SERVICE {
    * guesses. For a controller it discloses nothing new — they can already read
    * the secret by installing code that decrypts it.
    */
-  'icp_sealed_secret_matches' : ActorMethod<[string, Uint8Array], Result_3>,
+  'icp_sealed_secret_matches' : ActorMethod<[string, Uint8Array], Result_4>,
   /**
    * Exercises the full decryption path and reports what actually happened.
    * 
@@ -401,7 +413,7 @@ export interface _SERVICE {
    * not the subnet vouching for itself. Do this once per deployment with the
    * network you believe you are on.
    */
-  'icp_sealed_secret_self_test' : ActorMethod<[[] | [KeySource]], Result_4>,
+  'icp_sealed_secret_self_test' : ActorMethod<[[] | [KeySource]], Result_5>,
   /**
    * Stores a sealed secret, after proving it can actually be decrypted.
    * 
@@ -412,7 +424,7 @@ export interface _SERVICE {
    * 
    * Returns the new revision.
    */
-  'icp_sealed_secret_set' : ActorMethod<[string, Uint8Array], Result_5>,
+  'icp_sealed_secret_set' : ActorMethod<[string, Uint8Array], Result>,
   /**
    * Removes a secret and drops its cached plaintext.
    */
@@ -476,7 +488,11 @@ export const idlFactory: IDL.InterfaceFactory = ({ IDL }) => {
       'key_name' : IDL.Text,
     }),
   });
-  const Result = IDL.Variant({ 'Ok' : IDL.Nat16, 'Err' : SealedSecretsError });
+  const Result = IDL.Variant({ 'Ok' : IDL.Nat64, 'Err' : SealedSecretsError });
+  const Result_1 = IDL.Variant({
+    'Ok' : IDL.Nat16,
+    'Err' : SealedSecretsError,
+  });
   const SealedSecretInfo = IDL.Record({
     'context' : IDL.Vec(IDL.Nat8),
     'max_secrets' : IDL.Nat64,
@@ -487,7 +503,7 @@ export const idlFactory: IDL.InterfaceFactory = ({ IDL }) => {
     'identity' : IDL.Vec(IDL.Nat8),
     'standard_version' : IDL.Nat32,
   });
-  const Result_1 = IDL.Variant({
+  const Result_2 = IDL.Variant({
     'Ok' : SealedSecretInfo,
     'Err' : SealedSecretsError,
   });
@@ -500,11 +516,11 @@ export const idlFactory: IDL.InterfaceFactory = ({ IDL }) => {
     'created_at_ns' : IDL.Nat64,
     'revision' : IDL.Nat64,
   });
-  const Result_2 = IDL.Variant({
+  const Result_3 = IDL.Variant({
     'Ok' : IDL.Vec(SealedSecretEntry),
     'Err' : SealedSecretsError,
   });
-  const Result_3 = IDL.Variant({ 'Ok' : IDL.Bool, 'Err' : SealedSecretsError });
+  const Result_4 = IDL.Variant({ 'Ok' : IDL.Bool, 'Err' : SealedSecretsError });
   const KeySource = IDL.Variant({
     'Mainnet' : IDL.Null,
     'PocketIc' : IDL.Null,
@@ -519,12 +535,8 @@ export const idlFactory: IDL.InterfaceFactory = ({ IDL }) => {
     'vetkd_derive_ok' : IDL.Bool,
     'vetkd_public_key_ok' : IDL.Bool,
   });
-  const Result_4 = IDL.Variant({
-    'Ok' : SelfTestReport,
-    'Err' : SealedSecretsError,
-  });
   const Result_5 = IDL.Variant({
-    'Ok' : IDL.Nat64,
+    'Ok' : SelfTestReport,
     'Err' : SealedSecretsError,
   });
   const Result_6 = IDL.Variant({ 'Ok' : IDL.Null, 'Err' : SealedSecretsError });
@@ -541,22 +553,27 @@ export const idlFactory: IDL.InterfaceFactory = ({ IDL }) => {
   });
   
   return IDL.Service({
-    'call_api_with_secret' : IDL.Func([IDL.Text, IDL.Text], [Result], []),
-    'icp_sealed_secret_info' : IDL.Func([], [Result_1], []),
-    'icp_sealed_secret_list' : IDL.Func([], [Result_2], ['query']),
+    'bench_ibe_decrypt' : IDL.Func(
+        [IDL.Vec(IDL.Nat8), IDL.Vec(IDL.Nat8)],
+        [Result],
+        [],
+      ),
+    'call_api_with_secret' : IDL.Func([IDL.Text, IDL.Text], [Result_1], []),
+    'icp_sealed_secret_info' : IDL.Func([], [Result_2], []),
+    'icp_sealed_secret_list' : IDL.Func([], [Result_3], ['query']),
     'icp_sealed_secret_matches' : IDL.Func(
         [IDL.Text, IDL.Vec(IDL.Nat8)],
-        [Result_3],
+        [Result_4],
         [],
       ),
     'icp_sealed_secret_self_test' : IDL.Func(
         [IDL.Opt(KeySource)],
-        [Result_4],
+        [Result_5],
         [],
       ),
     'icp_sealed_secret_set' : IDL.Func(
         [IDL.Text, IDL.Vec(IDL.Nat8)],
-        [Result_5],
+        [Result],
         [],
       ),
     'icp_sealed_secret_unset' : IDL.Func([IDL.Text], [Result_6], []),

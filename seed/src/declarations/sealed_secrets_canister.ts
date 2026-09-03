@@ -53,7 +53,7 @@ function record_opt_to_undefined<T>(arg: T | null): T | undefined {
 }
 export type Result_2 = {
     __kind__: "Ok";
-    Ok: Array<SealedSecretEntry>;
+    Ok: SealedSecretInfo;
 } | {
     __kind__: "Err";
     Err: SealedSecretsError;
@@ -139,14 +139,14 @@ export type SealedSecretsError = {
 };
 export type Result_5 = {
     __kind__: "Ok";
-    Ok: bigint;
+    Ok: SelfTestReport;
 } | {
     __kind__: "Err";
     Err: SealedSecretsError;
 };
 export type Result_1 = {
     __kind__: "Ok";
-    Ok: SealedSecretInfo;
+    Ok: number;
 } | {
     __kind__: "Err";
     Err: SealedSecretsError;
@@ -203,7 +203,7 @@ export interface SealedSecretInfo {
 }
 export type Result_4 = {
     __kind__: "Ok";
-    Ok: SelfTestReport;
+    Ok: boolean;
 } | {
     __kind__: "Err";
     Err: SealedSecretsError;
@@ -240,14 +240,14 @@ export interface SealedSecretEntry {
 }
 export type Result = {
     __kind__: "Ok";
-    Ok: number;
+    Ok: bigint;
 } | {
     __kind__: "Err";
     Err: SealedSecretsError;
 };
 export type Result_3 = {
     __kind__: "Ok";
-    Ok: boolean;
+    Ok: Array<SealedSecretEntry>;
 } | {
     __kind__: "Err";
     Err: SealedSecretsError;
@@ -330,12 +330,13 @@ export enum KeySource {
     PocketIc = "PocketIc"
 }
 export interface sealed_secrets_canisterInterface {
-    call_api_with_secret(arg0: string, arg1: string): Promise<Result>;
-    icp_sealed_secret_info(): Promise<Result_1>;
-    icp_sealed_secret_list(): Promise<Result_2>;
-    icp_sealed_secret_matches(arg0: string, arg1: Uint8Array): Promise<Result_3>;
-    icp_sealed_secret_self_test(arg0: KeySource | null): Promise<Result_4>;
-    icp_sealed_secret_set(arg0: string, arg1: Uint8Array): Promise<Result_5>;
+    bench_ibe_decrypt(arg0: Uint8Array, arg1: Uint8Array): Promise<Result>;
+    call_api_with_secret(arg0: string, arg1: string): Promise<Result_1>;
+    icp_sealed_secret_info(): Promise<Result_2>;
+    icp_sealed_secret_list(): Promise<Result_3>;
+    icp_sealed_secret_matches(arg0: string, arg1: Uint8Array): Promise<Result_4>;
+    icp_sealed_secret_self_test(arg0: KeySource | null): Promise<Result_5>;
+    icp_sealed_secret_set(arg0: string, arg1: Uint8Array): Promise<Result>;
     icp_sealed_secret_unset(arg0: string): Promise<Result_6>;
     secret_reveal(arg0: string): Promise<Result_7>;
     strip_response(arg0: TransformArgs): Promise<HttpRequestResult>;
@@ -343,29 +344,33 @@ export interface sealed_secrets_canisterInterface {
 import type { KeySource as _KeySource, Result as _Result, Result_1 as _Result_1, Result_2 as _Result_2, Result_3 as _Result_3, Result_4 as _Result_4, Result_5 as _Result_5, Result_6 as _Result_6, Result_7 as _Result_7, SealedSecretEntry as _SealedSecretEntry, SealedSecretInfo as _SealedSecretInfo, SealedSecretsError as _SealedSecretsError, SelfTestReport as _SelfTestReport } from "./sealed_secrets_canister.did";
 export class Sealed_secrets_canister implements sealed_secrets_canisterInterface {
     constructor(private actor: ActorSubclass<_SERVICE>){}
-    async call_api_with_secret(arg0: string, arg1: string): Promise<Result> {
-        const result = await this.actor.call_api_with_secret(arg0, arg1);
+    async bench_ibe_decrypt(arg0: Uint8Array, arg1: Uint8Array): Promise<Result> {
+        const result = await this.actor.bench_ibe_decrypt(arg0, arg1);
         return from_candid_Result_n1(result);
     }
-    async icp_sealed_secret_info(): Promise<Result_1> {
-        const result = await this.actor.icp_sealed_secret_info();
+    async call_api_with_secret(arg0: string, arg1: string): Promise<Result_1> {
+        const result = await this.actor.call_api_with_secret(arg0, arg1);
         return from_candid_Result_1_n5(result);
     }
-    async icp_sealed_secret_list(): Promise<Result_2> {
-        const result = await this.actor.icp_sealed_secret_list();
+    async icp_sealed_secret_info(): Promise<Result_2> {
+        const result = await this.actor.icp_sealed_secret_info();
         return from_candid_Result_2_n7(result);
     }
-    async icp_sealed_secret_matches(arg0: string, arg1: Uint8Array): Promise<Result_3> {
-        const result = await this.actor.icp_sealed_secret_matches(arg0, arg1);
+    async icp_sealed_secret_list(): Promise<Result_3> {
+        const result = await this.actor.icp_sealed_secret_list();
         return from_candid_Result_3_n9(result);
     }
-    async icp_sealed_secret_self_test(arg0: KeySource | null): Promise<Result_4> {
-        const result = await this.actor.icp_sealed_secret_self_test(to_candid_opt_n11(arg0));
-        return from_candid_Result_4_n14(result);
+    async icp_sealed_secret_matches(arg0: string, arg1: Uint8Array): Promise<Result_4> {
+        const result = await this.actor.icp_sealed_secret_matches(arg0, arg1);
+        return from_candid_Result_4_n11(result);
     }
-    async icp_sealed_secret_set(arg0: string, arg1: Uint8Array): Promise<Result_5> {
+    async icp_sealed_secret_self_test(arg0: KeySource | null): Promise<Result_5> {
+        const result = await this.actor.icp_sealed_secret_self_test(to_candid_opt_n13(arg0));
+        return from_candid_Result_5_n16(result);
+    }
+    async icp_sealed_secret_set(arg0: string, arg1: Uint8Array): Promise<Result> {
         const result = await this.actor.icp_sealed_secret_set(arg0, arg1);
-        return from_candid_Result_5_n19(result);
+        return from_candid_Result_n1(result);
     }
     async icp_sealed_secret_unset(arg0: string): Promise<Result_6> {
         const result = await this.actor.icp_sealed_secret_unset(arg0);
@@ -389,11 +394,11 @@ function from_candid_Result_2_n7(value: _Result_2): Result_2 {
 function from_candid_Result_3_n9(value: _Result_3): Result_3 {
     return from_candid_variant_n10(value);
 }
-function from_candid_Result_4_n14(value: _Result_4): Result_4 {
-    return from_candid_variant_n15(value);
+function from_candid_Result_4_n11(value: _Result_4): Result_4 {
+    return from_candid_variant_n12(value);
 }
-function from_candid_Result_5_n19(value: _Result_5): Result_5 {
-    return from_candid_variant_n20(value);
+function from_candid_Result_5_n16(value: _Result_5): Result_5 {
+    return from_candid_variant_n17(value);
 }
 function from_candid_Result_6_n21(value: _Result_6): Result_6 {
     return from_candid_variant_n22(value);
@@ -407,13 +412,13 @@ function from_candid_Result_n1(value: _Result): Result {
 function from_candid_SealedSecretsError_n3(value: _SealedSecretsError): SealedSecretsError {
     return from_candid_variant_n4(value);
 }
-function from_candid_SelfTestReport_n16(value: _SelfTestReport): SelfTestReport {
-    return from_candid_record_n17(value);
+function from_candid_SelfTestReport_n18(value: _SelfTestReport): SelfTestReport {
+    return from_candid_record_n19(value);
 }
-function from_candid_opt_n18(value: [] | [boolean]): boolean | null {
+function from_candid_opt_n20(value: [] | [boolean]): boolean | null {
     return value.length === 0 ? null : value[0];
 }
-function from_candid_record_n17(value: {
+function from_candid_record_n19(value: {
     effective_context: Uint8Array;
     public_key_matches_master: [] | [boolean];
     epoch: number;
@@ -434,7 +439,7 @@ function from_candid_record_n17(value: {
 } {
     return {
         effective_context: value.effective_context,
-        public_key_matches_master: record_opt_to_undefined(from_candid_opt_n18(value.public_key_matches_master)),
+        public_key_matches_master: record_opt_to_undefined(from_candid_opt_n20(value.public_key_matches_master)),
         epoch: value.epoch,
         effective_key_name: value.effective_key_name,
         num_secrets: value.num_secrets,
@@ -444,6 +449,25 @@ function from_candid_record_n17(value: {
     };
 }
 function from_candid_variant_n10(value: {
+    Ok: Array<_SealedSecretEntry>;
+} | {
+    Err: _SealedSecretsError;
+}): {
+    __kind__: "Ok";
+    Ok: Array<SealedSecretEntry>;
+} | {
+    __kind__: "Err";
+    Err: SealedSecretsError;
+} {
+    return "Ok" in value ? {
+        __kind__: "Ok",
+        Ok: value.Ok
+    } : "Err" in value ? {
+        __kind__: "Err",
+        Err: from_candid_SealedSecretsError_n3(value.Err)
+    } : value;
+}
+function from_candid_variant_n12(value: {
     Ok: boolean;
 } | {
     Err: _SealedSecretsError;
@@ -462,7 +486,7 @@ function from_candid_variant_n10(value: {
         Err: from_candid_SealedSecretsError_n3(value.Err)
     } : value;
 }
-function from_candid_variant_n15(value: {
+function from_candid_variant_n17(value: {
     Ok: _SelfTestReport;
 } | {
     Err: _SealedSecretsError;
@@ -475,32 +499,13 @@ function from_candid_variant_n15(value: {
 } {
     return "Ok" in value ? {
         __kind__: "Ok",
-        Ok: from_candid_SelfTestReport_n16(value.Ok)
+        Ok: from_candid_SelfTestReport_n18(value.Ok)
     } : "Err" in value ? {
         __kind__: "Err",
         Err: from_candid_SealedSecretsError_n3(value.Err)
     } : value;
 }
 function from_candid_variant_n2(value: {
-    Ok: number;
-} | {
-    Err: _SealedSecretsError;
-}): {
-    __kind__: "Ok";
-    Ok: number;
-} | {
-    __kind__: "Err";
-    Err: SealedSecretsError;
-} {
-    return "Ok" in value ? {
-        __kind__: "Ok",
-        Ok: value.Ok
-    } : "Err" in value ? {
-        __kind__: "Err",
-        Err: from_candid_SealedSecretsError_n3(value.Err)
-    } : value;
-}
-function from_candid_variant_n20(value: {
     Ok: bigint;
 } | {
     Err: _SealedSecretsError;
@@ -639,6 +644,25 @@ function from_candid_variant_n4(value: {
     } : value;
 }
 function from_candid_variant_n6(value: {
+    Ok: number;
+} | {
+    Err: _SealedSecretsError;
+}): {
+    __kind__: "Ok";
+    Ok: number;
+} | {
+    __kind__: "Err";
+    Err: SealedSecretsError;
+} {
+    return "Ok" in value ? {
+        __kind__: "Ok",
+        Ok: value.Ok
+    } : "Err" in value ? {
+        __kind__: "Err",
+        Err: from_candid_SealedSecretsError_n3(value.Err)
+    } : value;
+}
+function from_candid_variant_n8(value: {
     Ok: _SealedSecretInfo;
 } | {
     Err: _SealedSecretsError;
@@ -657,32 +681,13 @@ function from_candid_variant_n6(value: {
         Err: from_candid_SealedSecretsError_n3(value.Err)
     } : value;
 }
-function from_candid_variant_n8(value: {
-    Ok: Array<_SealedSecretEntry>;
-} | {
-    Err: _SealedSecretsError;
-}): {
-    __kind__: "Ok";
-    Ok: Array<SealedSecretEntry>;
-} | {
-    __kind__: "Err";
-    Err: SealedSecretsError;
-} {
-    return "Ok" in value ? {
-        __kind__: "Ok",
-        Ok: value.Ok
-    } : "Err" in value ? {
-        __kind__: "Err",
-        Err: from_candid_SealedSecretsError_n3(value.Err)
-    } : value;
+function to_candid_KeySource_n14(value: KeySource): _KeySource {
+    return to_candid_variant_n15(value);
 }
-function to_candid_KeySource_n12(value: KeySource): _KeySource {
-    return to_candid_variant_n13(value);
+function to_candid_opt_n13(value: KeySource | null): [] | [_KeySource] {
+    return value === null ? candid_none() : candid_some(to_candid_KeySource_n14(value));
 }
-function to_candid_opt_n11(value: KeySource | null): [] | [_KeySource] {
-    return value === null ? candid_none() : candid_some(to_candid_KeySource_n12(value));
-}
-function to_candid_variant_n13(value: KeySource): {
+function to_candid_variant_n15(value: KeySource): {
     Mainnet: null;
 } | {
     PocketIc: null;

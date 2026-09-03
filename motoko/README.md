@@ -60,6 +60,64 @@ The number that matters is the last one: reading a sealed secret costs about
 4.5% of what a single update call is allowed. And it is paid once — the Rust PoC
 caches the decrypted value, and a Motoko port would do the same.
 
+### Against the Rust implementation
+
+Measured the only way that is meaningful — the same operation, on the same
+vector, counted as **canister instructions** inside a deployed canister. Native
+benchmarks would not compare, because what the replica charges is wasm-specific.
+The Rust side is `bench_ibe_decrypt` in `crates/canister`, behind `test-hooks`.
+
+| | Instructions | |
+|---|---:|---|
+| Rust, first call | 535,470,526 | includes one-time setup |
+| **Rust, steady state** | **165,592,933** | |
+| **Motoko** | **1,792,820,565** | **≈ 10.8× the Rust steady state** |
+
+Two things to read from that.
+
+**The first Rust call costs three times the rest**, because `ic-vetkeys` builds a
+`lazy_static` precomputed multiplication table for the `G2` generator
+(`utils/mod.rs:219`) on first use. Quoting that number as "the Rust cost" would
+flatter this port considerably — it was the first figure measured here, and it is
+the wrong one.
+
+**Roughly 10× is far better than a `Nat`-based port has any right to expect**,
+and the reason is that the comparison is wasm-to-wasm. Rust's `[u64; 6]`
+Montgomery arithmetic needs 64×64→128 multiplication, which wasm does not have
+natively either, so much of its advantage over arbitrary-precision `Nat`
+evaporates before it reaches the replica.
+
+### Where the remaining gap actually is
+
+Measured, not guessed. Splitting a field multiplication into its two halves, per
+operation:
+
+| | Instructions | Share |
+|---|---:|---:|
+| `(a * b) % P` — the whole thing | 53,789 | 100% |
+| the multiplication alone | 8,868 | 16% |
+| **the reduction (`%`) alone** | **46,010** | **85%** |
+
+**The modulus is the cost, not the arithmetic.** Multiplying two 381-bit numbers
+is cheap; dividing the 762-bit product by a 381-bit prime is not, and that
+division happens tens of thousands of times per pairing.
+
+Which is precisely what Montgomery form exists to avoid. The reference never
+divides: it keeps elements in a transformed representation where reduction is a
+multiply-and-shift, costing about what the multiplication costs rather than five
+times more. That one difference accounts for most of the 10×.
+
+So the optimisation path is clear, and it is not "rewrite in limbs":
+
+1. **Montgomery reduction** on the existing `Nat` representation would remove
+   that 85%, and could plausibly bring this within 2–3× of Rust.
+2. **A precomputed `G2` table**, which the reference has and this does not — the
+   plain double-and-add in `decrypt` looks to be around 700 million of the 1.79
+   billion, going by the pairing figures.
+
+Neither is worth doing yet. At 4.5% of an update call there is nothing to buy
+with the savings, and both add code that would need reviewing.
+
 One caveat stands: **queries get 5 billion instructions, not 40**, so decryption
 must happen in an update call — which is what the Rust PoC already does.
 
