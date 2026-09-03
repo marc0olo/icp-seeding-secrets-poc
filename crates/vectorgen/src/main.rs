@@ -85,9 +85,55 @@ fn main() {
         hex::encode(G2Affine::identity().to_compressed())
     );
 
+    emit_hash_to_scalar_vectors();
     emit_ibe_vector();
 
     println!("}}");
+}
+
+/// `hash_to_scalar` vectors.
+///
+/// The IBE scheme derives its per-message scalar this way, so the Motoko port
+/// must agree byte for byte or nothing decrypts. This replicates
+/// `ic-vetkeys`' private `hash_to_scalar` (`utils/mod.rs:245`) using the same
+/// public primitive it calls.
+fn emit_hash_to_scalar_vectors() {
+    use ic_bls12_381::hash_to_curve::HashToField;
+
+    let cases: &[(&str, &str)] = &[
+        ("", "ic-vetkd-bls12-381-ibe-hash-to-mask"),
+        ("abc", "ic-vetkd-bls12-381-ibe-hash-to-mask"),
+        (
+            "a longer input than one hash block, to exercise the expansion loop properly",
+            "ic-vetkd-bls12-381-ibe-hash-to-mask",
+        ),
+    ];
+
+    println!("  \"hash_to_scalar\": [");
+    let mut first = true;
+    for (input, dst) in cases {
+        let mut s = [Scalar::zero()];
+        <Scalar as HashToField>::hash_to_field::<ExpandMsgXmd<sha2::Sha256>>(
+            input.as_bytes(),
+            dst.as_bytes(),
+            &mut s,
+        );
+        if !first {
+            println!(",");
+        }
+        first = false;
+        // Scalar::to_bytes is little-endian; reverse for the big-endian form
+        // the Motoko port uses.
+        let mut le = s[0].to_bytes();
+        le.reverse();
+        print!(
+            "    {{ \"input\": \"{}\", \"dst\": \"{}\", \"scalar_be\": \"{}\" }}",
+            input,
+            dst,
+            hex::encode(le)
+        );
+    }
+    println!("\n  ],");
 }
 
 /// The finish line for the Motoko port: a complete, valid IBE triple.

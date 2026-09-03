@@ -1,21 +1,39 @@
 {
   "version": 3,
-  "mopsTomlDepsHash": "5cf3bc42c76bab0ea4dc2f645191e8da96380017d6f231383abc49b7c97710c7",
+  "mopsTomlDepsHash": "83e94de5039207c6bddba13dec6cd9aeac873fbdb35edc4a2c4e9d321dc2ec8d",
   "deps": {
     "base": "0.14.5",
     "bench": "2.0.1",
     "core": "2.6.1",
+    "iterext": "https://github.com/timohanke/motoko-iterext#v2.0.0",
+    "sha2": "0.2.5",
+    "sha3": "0.1.1",
     "test": "2.1.1"
   },
   "graph": {
     "base@0.14.5": {},
+    "base@0.8.2": {},
     "bench@2.0.1": {
       "core": "2.0.0"
     },
     "core@2.0.0": {},
+    "core@2.5.0": {},
     "core@2.6.1": {},
+    "sha2@0.2.5": {
+      "core": "2.5.0"
+    },
+    "sha3@0.1.1": {
+      "base": "0.8.2",
+      "iterext": "https://github.com/timohanke/motoko-iterext#v2.0.0"
+    },
     "test@2.1.1": {
       "base": "0.14.5"
+    }
+  },
+  "github": {
+    "iterext": {
+      "resolved": "6c05ff069e00eabdd2fc700d7457878d72dafaa9",
+      "hash": "9c0ddd55b0932d27a29add2c1e2f0a1a3abc5561aeaf21babefc065ccb191d0a"
     }
   },
   "hashes": {
@@ -138,6 +156,57 @@
       "core@2.6.1/src/pure/Queue.mo": "129647e8a3dd65404f8ad28fc8f299fd4586bc32802ad9ede9c1f21249d4e54b",
       "core@2.6.1/src/pure/RealTimeQueue.mo": "60e1f118e1fd728c64ac769396b2441a3e9be5208051139b3dd652125a81a0cb",
       "core@2.6.1/src/pure/Set.mo": "c8f6f193a4b42b2df65ce8c05d610ccbcdc8befddc72acd44445e7290224373e"
+    },
+    "sha2@0.2.5": {
+      "sha2@0.2.5/LICENSE": "ab81130a0a5f64eb71f0c0f84ff643fdd13b0d3d24c5e741b73768760d9f62dc",
+      "sha2@0.2.5/NOTICE": "263c783b30440460b9a046b117b686dcc24e6fe912d8f78013ab00836de79b69",
+      "sha2@0.2.5/README.md": "e90038080d0aa7450a6c3d7507e6943be6d1bd02cfbbbd3dfda50797d1e2104c",
+      "sha2@0.2.5/examples/Merkle.mo": "8b22324c056e564b75711e046203873608203ade7f754d1181605d3e2c4d4a13",
+      "sha2@0.2.5/examples/NFold.mo": "6865e355a7e08d0fbc70501251fcb5a0c7a509d79eb7eccbd72de61e28ec4945",
+      "sha2@0.2.5/mops.toml": "71c8abf548ff55ae220c0c333515be1a3003bc167a0762829797beeec73ef78b",
+      "sha2@0.2.5/src/Sha256.mo": "76ec5683c22c86245d5156400617cb9a5e9f289f680bf27989a665d4794bf548",
+      "sha2@0.2.5/src/Sha512.mo": "805ccfbc23f2dd13b1ee2dff586b2572d6b9a6b26f4e866c1fb6bac0c26420a8",
+      "sha2@0.2.5/src/sha256/buffer/lib.mo": "d87dccc5c4802c1d402a69e5448fb22d7bc173a916cc49362bb1123510fff928",
+      "sha2@0.2.5/src/sha256/digest/lib.mo": "a4270166623d43b222b552eabf0366258aca8410a64922d7b3fb8889dd7d1312",
+      "sha2@0.2.5/src/sha256/state/lib.mo": "35be2bba9635a6e3641b8715ea08d2c3175b571732fbaf5e85e51a1ae4a4ea6f",
+      "sha2@0.2.5/src/sha256/state/process/blocks/accessor.mo": "0e4aa600469b13cda78d9814a1c71da30234631906f74805527b833334dbd147",
+      "sha2@0.2.5/src/sha256/state/process/blocks/array.mo": "af83641e36a46959895844b84872536429ab70a915bf9b8a9e3a4a6ddfeb5f89",
+      "sha2@0.2.5/src/sha256/state/process/blocks/blob.mo": "d834ead0f15ee63feacf90bcc600984dd838b52ff8aa91d522472485d916977c",
+      "sha2@0.2.5/src/sha256/state/process/blocks/iter.mo": "4001f759362c8096d0b5e56fed6594c9f6736c2e2790f6c3f047c873660ebe5f",
+      "sha2@0.2.5/src/sha256/state/process/blocks/leaf.mo": "3625e9ab03e474d711c429493c7808c0627570cf01b9344eae1158e0e3d1f127",
+      "sha2@0.2.5/src/sha256/state/process/blocks/merge.mo": "3a665665a830e36ad2a894b847e70d0a24ef9d69dbd4beb776e35b7676618198",
+      "sha2@0.2.5/src/sha256/state/process/blocks/reader.mo": "e00d7b5f8df00307296b038d715792dea6d4cd874c91a1f38a2c07109cc7f507",
+      "sha2@0.2.5/src/sha256/state/process/blocks/varArray.mo": "c2671d9f101f2bfea564703f89cc6f0f2e74b897805f53952aa850d271d7fc83",
+      "sha2@0.2.5/src/sha256/state/process/constants.mo": "326a2be008dfe08c8719b681d46ecd06091511961873444b19d3332e6b77f7ab",
+      "sha2@0.2.5/src/sha256/state/process/fold.mo": "9d060771d02a36f33d500667a816d4dfbbbd0699a610163242a90a16613b89a1",
+      "sha2@0.2.5/src/sha256/state/process/msg_buffer.mo": "0dd2efe4686f6f99fd4d4e9403bfa662ce0e4558b3bb75ab982f24729e436502",
+      "sha2@0.2.5/src/sha256/state/process/padding.mo": "ac48f6c1dafe55a4516daf8e6c5b76e3347942beb0896cd9a50bc63d9f34ba23",
+      "sha2@0.2.5/src/sha256/types.mo": "ef2fc9f7179e7895b7398fbae20bd374e14bd68325e56c297a348d3b6f9030cf",
+      "sha2@0.2.5/src/sha512/constants.mo": "4e18cf2b0b74cfe961dedc756f6e2461e05c5b6eb69ac9aec92cea00cad73b97",
+      "sha2@0.2.5/src/sha512/digest/lib.mo": "a0dc389cfa080e3b8c4d4aa3022866562434223a954d7c08ccc826d66080588b",
+      "sha2@0.2.5/src/sha512/padding.mo": "ddcd9fe1b212de8120fd66fc9b6db1699626b1244d05dcb2c9bffff44fc25930",
+      "sha2@0.2.5/src/sha512/process_block.mo": "4cbba34d75a7b868e582fa17c212455ab73192ec62411b5819e67ea8a1fbfe91",
+      "sha2@0.2.5/src/sha512/types.mo": "885efe7fcd464446a689184d5723d4fafbebee08fee449096f5fbc847f7498e9",
+      "sha2@0.2.5/src/sha512/whole_blocks/accessor.mo": "43d22931e4a7ea2ea06c43cf9558e3fcd1a37f405f4d6585d8cd1dec4956a86a",
+      "sha2@0.2.5/src/sha512/whole_blocks/array.mo": "41e476db604b0d81876316ea844a4ebf420aa032b8fcc1412de92af337083631",
+      "sha2@0.2.5/src/sha512/whole_blocks/blob.mo": "944ad1b09e3e1e19f478f6b1d7e339897c870ce0ae574c43c970d6df3b3667ba",
+      "sha2@0.2.5/src/sha512/whole_blocks/iter.mo": "b10ab448ead77fd3858924c963d65bda1a17bc42b9fccbf183746611a6aa3d3e",
+      "sha2@0.2.5/src/sha512/whole_blocks/reader.mo": "ea5621981c5404abe9b9506230d5985c1e4bf047a09bdd0fa76ab7f753b0be01",
+      "sha2@0.2.5/src/sha512/whole_blocks/varArray.mo": "22bf05c4bfc24f79c3d48c99258148ceb6ca09e9e000dcb6b86b5e075e4a7766",
+      "sha2@0.2.5/src/sha512/write/accessor.mo": "e87edabac0da4781ca0c73cd0bd6ef6b0798b5449c4fb19f170d4fab748ee85c",
+      "sha2@0.2.5/src/sha512/write/array.mo": "0ff7bf6469e4f93053a28ea3e4a43833eb43e5f1390ccf5aaff6034d2ce2bba3",
+      "sha2@0.2.5/src/sha512/write/blob.mo": "2d031c57963f265a54307956d0c8cf05555cfc391f3536d7c39f1f48dfcfd2f6",
+      "sha2@0.2.5/src/sha512/write/byte.mo": "37e9e349a9c666cb6e9f273fafa2a91a92a05b962094c1d7aab1d6a1ad9affdb",
+      "sha2@0.2.5/src/sha512/write/iter.mo": "e06f0562813537871da60d3a965599e6ad3dc915ff8905ca05a5768313856063",
+      "sha2@0.2.5/src/sha512/write/lib.mo": "9aa271369a4a5bbb560e9c6fdc5d3ba4e16bfcf2d342f04ff155915e89cb66ba",
+      "sha2@0.2.5/src/sha512/write/reader.mo": "cc3a5027d00aca8c7f761cb939cec91e496369006c52f36d67855d71717a7b2c",
+      "sha2@0.2.5/src/sha512/write/varArray.mo": "8aa1ddc8ee1b6669f86a0fac9a0fa545b1402cb7cc9bf162e51f27b4f03d3905"
+    },
+    "sha3@0.1.1": {
+      "sha3@0.1.1/LICENSE": "d8d6d16630a5c26202efdc264fb926154c8c5a19115aff6ee5b21a4defd3d430",
+      "sha3@0.1.1/README.md": "80674416dba195c8838a08dc92c0d6f5d03f650fb8be946341acc2b78a5ff058",
+      "sha3@0.1.1/mops.toml": "4428621816bdfc3439fba82a9fac23fd306ec13b0473b050d8db46b1fefe9595",
+      "sha3@0.1.1/src/lib.mo": "2d5c2314b44572b52efaf68d2d9867e5aae3482c9be4c82001821f6472757243"
     },
     "test@2.1.1": {
       "test@2.1.1/LICENSE": "9323eded2cdf2129732f5b7cd812f350eba0cf68451bb2e1726eaa749b9b1885",

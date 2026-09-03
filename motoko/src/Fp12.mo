@@ -10,6 +10,9 @@
 
 import Fp2 "Fp2";
 import Fp6 "Fp6";
+import Array "mo:core/Array";
+import Blob "mo:core/Blob";
+import Nat8 "mo:core/Nat8";
 
 module {
   public type Fp12 = { c0 : Fp6.Fp6; c1 : Fp6.Fp6 };
@@ -117,6 +120,25 @@ module {
     t := Fp6.mulBy01(t, c0, o);
     t := Fp6.sub(Fp6.sub(t, aa), bb);
     { c0 = Fp6.add(Fp6.mulByNonresidue(bb), aa); c1 = t };
+  };
+
+  /// 576 bytes, highest coefficient first at every level of the tower:
+  /// `c1 || c0` for `Fp12`, `c2 || c1 || c0` for each `Fp6`, `c1 || c0` for each
+  /// `Fp2` (`fp12.rs:198`).
+  ///
+  /// The IBE scheme hashes this to mask the seed, so the byte order has to match
+  /// the reference exactly.
+  public func toBytes(a : Fp12) : [Nat8] {
+    func fp6Bytes(x : Fp6.Fp6) : [Nat8] {
+      Array.concat<Nat8>(
+        Blob.toArray(Fp2.toBytes(x.c2)),
+        Array.concat<Nat8>(
+          Blob.toArray(Fp2.toBytes(x.c1)),
+          Blob.toArray(Fp2.toBytes(x.c0)),
+        ),
+      );
+    };
+    Array.concat<Nat8>(fp6Bytes(a.c1), fp6Bytes(a.c0));
   };
 
   public func pow(a : Fp12, e : Nat) : Fp12 {

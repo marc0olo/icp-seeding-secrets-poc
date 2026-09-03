@@ -23,6 +23,11 @@
   ],
   "g1_identity_compressed": "c00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
   "g2_identity_compressed": "c00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+  "hash_to_scalar": [
+    { "input": "", "dst": "ic-vetkd-bls12-381-ibe-hash-to-mask", "scalar_be": "6d25b5e3885b94a7bd804d45124b4ab7fcedb1a1934a92616df347000f88d1f2" },
+    { "input": "abc", "dst": "ic-vetkd-bls12-381-ibe-hash-to-mask", "scalar_be": "046bdda073b85f06ca894cee8f21433550b68f61c08d5f34ddefbad67e683b4e" },
+    { "input": "a longer input than one hash block, to exercise the expansion loop properly", "dst": "ic-vetkd-bls12-381-ibe-hash-to-mask", "scalar_be": "0b93ac92dfe8e08f456e2adff61d68633f4385d444bbe486f6a5609676612226" }
+  ],
   "ibe": {
     "_comment": "decrypting ciphertext with vetkey must yield plaintext",
     "derived_public_key": "966b6cd9f89b6362e2d414d597cf4dd25eac6b58f4d0fb9cf9d580733797b302fafdf575943990fe9faf0b0303cfbaf8128c91eba30804b0d8ec8bd93f3c2e3a0b023c98d4b222d8b54e77cc0096e90ffc1cbeaf2acde393f3adf945292df177",

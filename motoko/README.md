@@ -54,9 +54,11 @@ of `Fp` multiplications, plus a final exponentiation of similar magnitude. So:
 | Miller loop | 487,669,141 | 1.2% |
 | Final exponentiation | 590,961,027 | 1.5% |
 | **Full pairing** | **1,078,628,674** | **2.7%** |
+| **Full IBE decryption** | **1,792,820,565** | **4.5%** |
 
-So a decrypt path needing one pairing plus a `G2` scalar multiplication lands
-comfortably inside the budget, with room for several more.
+The number that matters is the last one: reading a sealed secret costs about
+4.5% of what a single update call is allowed. And it is paid once — the Rust PoC
+caches the decrypted value, and a Motoko port would do the same.
 
 One caveat stands: **queries get 5 billion instructions, not 40**, so decryption
 must happen in an update call — which is what the Rust PoC already does.
@@ -109,9 +111,15 @@ identity, a vetKey, a ciphertext and the plaintext it must yield. The generator
 **decrypts it in Rust before emitting it**, so it cannot send the port chasing a
 phantom.
 
-When this Motoko code turns `vetkey` + `ciphertext` back into `plaintext`, the
-port works. Nothing short of that proves it, and every layer below is scaffolding
-toward it.
+**It does.** `test/Ibe.test.mo` decrypts that ciphertext and recovers the exact
+plaintext. Everything below had to be simultaneously correct for the
+authenticated check at the end of `decrypt` to pass — the field tower, both group
+laws, the Miller loop, the final exponentiation, HKDF, SHAKE256,
+`expand_message_xmd`, and every serialization format.
+
+The suite also checks the failure directions, which matter as much: a tampered
+ciphertext and a wrong vetKey are both **rejected**, not mis-decrypted into
+plausible garbage.
 
 ## Status
 
@@ -124,12 +132,19 @@ toward it.
 | `G1` — curve group over `Fp` | ✅ 9 tests, incl. scalar mult reproducing reference multiples |
 | `G2` — curve group over `Fp2` | ✅ 8 tests, same |
 | Pairing — Miller loop, final exponentiation | ✅ 8 tests, bilinear and non-degenerate |
-| `hash_to_curve` | ⬜ not started — needed only if the canister verifies the vetKey |
-| IBE decryption | ⬜ not started |
+| `Scalar`, `Hash` — group order, HKDF, SHAKE256, `expand_message_xmd` | ✅ 10 tests against Python and reference vectors |
+| **IBE decryption** | ✅ **6 tests — decrypts the reference ciphertext** |
+| `hash_to_curve` | ⬜ not needed for decryption; only for verifying a vetKey is a valid BLS signature |
 
-The reference is ~12,500 lines of implementation. The decrypt path needs most of
-it: everything except `map_g2` and `map_scalar`, so roughly 11,500 lines. Skipping
-`decrypt_and_verify` in favour of the unencrypted-transport-key shortcut would drop
-`hash_to_curve` (~3,200 lines) at the cost of the integrity check — a trade the
-Rust PoC deliberately declines, and one that would make the two implementations
-differ in a security property, which defeats the point of a side-by-side demo.
+### What is left
+
+`hash_to_curve` — about 3,200 of the reference's lines — is the remaining gap. It
+is **not** needed to decrypt: `IbeCiphertext::decrypt` uses a pairing and a `G2`
+scalar multiplication and nothing else. It is needed only for
+`decrypt_and_verify`, which checks that a vetKey returned by the subnet is a
+valid BLS signature before using it.
+
+That check is worth having, and the Rust PoC does it. A Motoko canister without
+it would still decrypt correctly, but would trust the subnet's reply rather than
+verify it — a real difference in a security property, and one to close before
+this is more than a demonstration.

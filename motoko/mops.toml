@@ -8,6 +8,8 @@ license = "Apache-2.0"
 
 [dependencies]
 core = "2.6.1"
+sha3 = "0.1.1"
+sha2 = "0.2.5"
 
 [dev-dependencies]
 test = "2.1.1"
