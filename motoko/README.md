@@ -114,7 +114,8 @@ toward it.
 |---|---|
 | `Fp` — base field | ✅ 11 tests against reference vectors |
 | `Fp2` — quadratic extension | ✅ 11 tests, anchored on the G2 curve equation |
-| `Fp6`, `Fp12` — the rest of the tower | ⬜ not started |
+| `Fp6` — sextic extension | ✅ 9 tests, incl. Frobenius re-derived and checked as `x^p` |
+| `Fp12` — dodecic extension, the pairing target | ✅ 9 tests, incl. conjugation-is-inversion in the cyclotomic subgroup |
 | `G1`, `G2` — curve groups, compression | ⬜ not started |
 | Pairing — Miller loop, final exponentiation | ⬜ not started |
 | `hash_to_curve` | ⬜ not started — needed only if the canister verifies the vetKey |
