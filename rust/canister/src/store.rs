@@ -64,20 +64,43 @@ impl Storable for Config {
     const BOUND: Bound = Bound::Unbounded;
 }
 
-/// One sealed secret at rest.
+/// One secret at rest.
+///
+/// **Holds the plaintext, not the ciphertext.** The secret arrives sealed and is
+/// decrypted once, at `set`, after which the ciphertext is discarded and only
+/// its digest and length are kept.
+///
+/// Sealing protects the secret *in transit* — it never appears in an ingress
+/// message, a Candid argument, shell history or a CI log. It was never what
+/// protects it at rest: the plaintext reaches the heap the moment the canister
+/// uses the secret, and the heap is replicated state, checkpointed to disk on
+/// every node. Storing the ciphertext instead bought a narrow window before
+/// first use, not confidentiality. Only SEV-SNP moves "node operators can read
+/// this" to "cannot".
+///
+/// What storing the plaintext buys, in exchange: the secret survives the subnet
+/// losing its vetKD key or the canister moving to one that never had it, where
+/// a stored ciphertext would be unreadable forever. And it removes the plaintext
+/// cache along with every staleness question that came with it.
 #[derive(CandidType, Deserialize, Debug, Clone)]
 pub struct SealedRecord {
-    /// Epoch the ciphertext was sealed under. Held per record so that bumping
-    /// the epoch does not invalidate existing secrets: the canister simply
-    /// derives one extra vetKey per distinct epoch still in use.
+    /// Epoch the secret was sealed under, recorded for `list`.
     pub epoch: u32,
-    /// Increments on overwrite; part of the plaintext cache key, so a new seal
-    /// invalidates the cached plaintext automatically.
+    /// Increments on overwrite.
     pub revision: u64,
     pub created_at_ns: u64,
     pub updated_at_ns: u64,
+    /// SHA-256 of the ciphertext that was submitted, kept so a client can still
+    /// confirm its upload landed byte for byte.
+    ///
+    /// A digest of a *randomised* ciphertext reveals nothing about the
+    /// plaintext, which is why this stays safe to expose while a digest of the
+    /// plaintext would be an offline guessing oracle for a low-entropy secret.
     pub ciphertext_sha256: Vec<u8>,
-    pub ciphertext: Vec<u8>,
+    /// Length of the submitted ciphertext, for `list`.
+    pub ciphertext_len: u64,
+    /// The decrypted secret.
+    pub plaintext: Vec<u8>,
 }
 
 impl Storable for SealedRecord {

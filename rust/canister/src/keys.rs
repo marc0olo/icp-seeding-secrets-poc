@@ -1,4 +1,10 @@
-//! Key derivation and the in-memory caches.
+//! Key derivation and the vetKey cache.
+//!
+//! There is no plaintext cache. Records hold the decrypted secret (see
+//! `store::SealedRecord`), so reading one is a map lookup and decryption happens
+//! only on the two paths that receive a ciphertext from a caller: `set`, which
+//! trial-decrypts before storing, and `matches`, which decrypts the candidate it
+//! is asked to compare.
 //!
 //! Two rules govern everything here.
 //!
@@ -29,15 +35,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use zeroize::Zeroizing;
 
-use crate::store::{self, SealedRecord};
+use crate::store;
 use crate::types::SealedSecretsError;
-
-/// A decrypted secret, shared by reference so callers do not copy it around.
-pub type Plaintext = Rc<Zeroizing<Vec<u8>>>;
-
-/// Plaintext cache key: the secret's name plus its revision, so an overwrite
-/// invalidates the entry without an explicit purge.
-type PlaintextCacheKey = (String, u64);
 
 thread_local! {
     /// Derived public keys, keyed by context. Each miss costs one
@@ -50,10 +49,6 @@ thread_local! {
     /// same locally and on mainnet. Hence the cache.
     static VETKEY_CACHE: RefCell<HashMap<u32, Rc<VetKey>>> = RefCell::new(HashMap::new());
 
-    /// Decrypted secrets, keyed by (name, revision) so that overwriting a secret
-    /// invalidates its cached plaintext without an explicit purge.
-    static PLAINTEXT_CACHE: RefCell<HashMap<PlaintextCacheKey, Plaintext>> =
-        RefCell::new(HashMap::new());
 }
 
 /// The vetKD context.
@@ -166,20 +161,6 @@ pub async fn vetkey(epoch: u32) -> Result<Rc<VetKey>, SealedSecretsError> {
     Ok(vetkey)
 }
 
-/// Decrypts a stored record, using and populating the plaintext cache.
-pub async fn open(name: &str, record: &SealedRecord) -> Result<Plaintext, SealedSecretsError> {
-    let cache_key = (name.to_string(), record.revision);
-
-    if let Some(cached) = PLAINTEXT_CACHE.with_borrow(|c| c.get(&cache_key).cloned()) {
-        return Ok(cached);
-    }
-
-    let plaintext = decrypt_with_epoch(&record.ciphertext, record.epoch).await?;
-    let plaintext = Rc::new(plaintext);
-    PLAINTEXT_CACHE.with_borrow_mut(|c| c.insert(cache_key, plaintext.clone()));
-    Ok(plaintext)
-}
-
 /// Decrypts a ciphertext under a given epoch's key, without touching any cache.
 ///
 /// This is what `set` uses to trial-decrypt before storing — the check that turns
@@ -202,11 +183,6 @@ pub async fn decrypt_with_epoch(
                 .to_string(),
         )
     })
-}
-
-/// Drops a name's cached plaintext, for every revision.
-pub fn purge_plaintext(name: &str) {
-    PLAINTEXT_CACHE.with_borrow_mut(|c| c.retain(|(n, _), _| n != name));
 }
 
 /// Asks the subnet for this canister's public key.

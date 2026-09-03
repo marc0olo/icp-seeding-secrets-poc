@@ -23,6 +23,7 @@ thing here that talks to a live subnet. Verified end to end on a local network:
 | The unmodified TypeScript seeder seals to it, and it trial-decrypts before storing | ✅ |
 | An authenticated HTTPS outcall returns **200**, and **401** with a wrong credential | ✅ |
 | The secret survives an upgrade with no re-seeding | ✅ |
+| A record-shape change is refused at install rather than breaking later | ✅ |
 
 That last row matters more than it looks: `401` with a wrong credential is what
 shows the *value* of the secret is what authenticated, rather than merely that a
@@ -52,6 +53,29 @@ feature flags — and it turns out not to need any. `icp_sealed_secret_matches`
 answers "is the right value set?" from a build that ships, which is what the Rust
 canister's own documentation recommends over a reveal hook anyway. Step 13 of
 `local-test.sh` verifies the secret without ever asking for it.
+
+**How a schema change fails.** Changing `SealedRecord` — which this repo did,
+moving from stored ciphertext to stored plaintext — is rejected by Motoko at
+*install* time:
+
+```
+RTS error: Memory-incompatible program upgrade
+```
+
+The Rust canister accepts the same change and then **traps on the first read**,
+inside `SealedRecord::from_bytes`, because `ic-stable-structures` decodes lazily
+and Candid matches fields by hash. Motoko's failure is louder and earlier, which
+is the better of the two: an upgrade that cannot work is refused rather than
+installed and left to surface during a production call.
+
+Neither is a bug. It is the cost of having a persisted-state schema, and the fix
+is the same either way — a migration, or a `--mode reinstall` when the data is
+disposable:
+
+```bash
+icp canister install sealed-secrets-motoko -e local --mode reinstall \
+  --args '(record { key_name = "key_1" })' --yes
+```
 
 **No Candid metadata step.** `icp.yaml` re-marks the Rust canister's
 `candid:service` public. Doing the same here breaks the build: `moc` already

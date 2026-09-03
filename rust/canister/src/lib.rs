@@ -162,8 +162,9 @@ async fn icp_sealed_secret_set(
         });
     }
 
-    // Fails here, in front of the deployer, rather than in production.
-    let _plaintext = keys::decrypt_with_epoch(&ciphertext, config.epoch).await?;
+    // Fails here, in front of the deployer, rather than in production — and its
+    // output is what gets stored, so the decryption is not merely a check.
+    let plaintext = keys::decrypt_with_epoch(&ciphertext, config.epoch).await?;
 
     let now = ic_cdk::api::time();
     let revision = existing.as_ref().map(|r| r.revision + 1).unwrap_or(0);
@@ -177,22 +178,24 @@ async fn icp_sealed_secret_set(
             created_at_ns,
             updated_at_ns: now,
             ciphertext_sha256: Sha256::digest(&ciphertext).to_vec(),
-            ciphertext,
+            ciphertext_len: ciphertext.len() as u64,
+            // The trial decryption above produced this. Storing it is what lets
+            // every later read be a map lookup instead of a vetKD round trip.
+            plaintext: plaintext.to_vec(),
         },
     );
 
     Ok(revision)
 }
 
-/// Removes a secret and drops its cached plaintext.
+/// Removes a secret.
 #[update]
 fn icp_sealed_secret_unset(name: String) -> Result<(), SealedSecretsError> {
     require_controller()?;
     match store::remove_record(&name) {
-        Some(_) => {
-            keys::purge_plaintext(&name);
-            Ok(())
-        }
+        // Nothing to purge: the record was the only copy, so removing it is the
+        // whole operation.
+        Some(_) => Ok(()),
         None => Err(SealedSecretsError::NotFound),
     }
 }
@@ -229,13 +232,14 @@ async fn icp_sealed_secret_matches(
     let record = store::get_record(&name).ok_or(SealedSecretsError::NotFound)?;
     let config = store::config();
 
-    // Each side is opened under its own epoch: a client seals against the
-    // current one, while a stored record may predate a rotation.
+    // Only the candidate is sealed; the stored side is already plaintext. The
+    // comparison stays constant-time regardless, because a timing difference
+    // would leak how many leading bytes a guess got right.
     let candidate_plaintext = keys::decrypt_with_epoch(&candidate.into_vec(), config.epoch).await?;
-    let stored_plaintext = keys::open(&name, &record).await?;
 
     Ok(bool::from(
-        stored_plaintext
+        record
+            .plaintext
             .as_slice()
             .ct_eq(candidate_plaintext.as_slice()),
     ))
@@ -260,7 +264,7 @@ fn icp_sealed_secret_list() -> Result<Vec<SealedSecretEntry>, SealedSecretsError
             name,
             epoch: r.epoch,
             revision: r.revision,
-            ciphertext_len: r.ciphertext.len() as u64,
+            ciphertext_len: r.ciphertext_len,
             ciphertext_sha256: ByteBuf::from(r.ciphertext_sha256),
             created_at_ns: r.created_at_ns,
             updated_at_ns: r.updated_at_ns,
@@ -302,12 +306,11 @@ async fn icp_sealed_secret_self_test(
 
     let vetkd_derive_ok = keys::vetkey(config.epoch).await.is_ok();
 
-    let mut undecryptable = Vec::new();
-    for (name, record) in &records {
-        if keys::open(name, record).await.is_err() {
-            undecryptable.push(name.clone());
-        }
-    }
+    // Always empty now that records hold plaintext: there is nothing stored that
+    // could fail to decrypt. Kept in the response so the interface does not
+    // change and so a canister that goes back to storing ciphertext can populate
+    // it again.
+    let undecryptable: Vec<String> = Vec::new();
 
     Ok(SelfTestReport {
         vetkd_public_key_ok: reported.is_some(),
@@ -364,8 +367,7 @@ async fn call_api_with_secret(
     require_controller()?;
 
     let record = store::get_record(&name).ok_or(SealedSecretsError::NotFound)?;
-    let plaintext = keys::open(&name, &record).await?;
-    let token = core::str::from_utf8(plaintext.as_slice())
+    let token = core::str::from_utf8(&record.plaintext)
         .map_err(|_| SealedSecretsError::Internal("secret is not valid UTF-8".to_string()))?;
 
     let request = HttpRequestArgs {
@@ -494,11 +496,10 @@ fn bench_ibe_decrypt(vetkey: ByteBuf, ciphertext: ByteBuf) -> Result<u64, Sealed
 /// bit and is safe to keep in a production build.
 #[cfg(feature = "test-hooks")]
 #[update]
-async fn secret_reveal(name: String) -> Result<String, SealedSecretsError> {
+fn secret_reveal(name: String) -> Result<String, SealedSecretsError> {
     require_controller()?;
     let record = store::get_record(&name).ok_or(SealedSecretsError::NotFound)?;
-    let plaintext = keys::open(&name, &record).await?;
-    String::from_utf8(plaintext.to_vec())
+    String::from_utf8(record.plaintext)
         .map_err(|_| SealedSecretsError::Internal("secret is not valid UTF-8".to_string()))
 }
 

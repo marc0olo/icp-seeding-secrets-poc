@@ -44,14 +44,9 @@ persistent actor class SealedSecrets(initArgs : { key_name : Text }) = self {
   /// reproduce something the runtime was going to keep anyway.
   let caches : Keys.Caches = Keys.emptyCaches();
 
-  /// Decrypted secrets. `transient`, so the ciphertext stays the one durable
-  /// copy. Re-decrypting after an upgrade is pure computation, which is the
-  /// cheap half; see `Keys.mo`.
-  transient let plaintexts : Keys.Plaintexts = Keys.emptyPlaintexts();
-
   /// Behaviour only — methods are not a stable type, so this is rebuilt on every
   /// upgrade and reattached to the state above.
-  transient let keys = Keys.Manager(config.keyName, caches, plaintexts);
+  transient let keys = Keys.Manager(config.keyName, caches);
 
   /// Where `call_api_with_secret` sends its authenticated request.
   ///
@@ -157,9 +152,11 @@ persistent actor class SealedSecrets(initArgs : { key_name : Text }) = self {
       return #Err(#TooMany({ max = config.maxSecrets }));
     };
 
-    switch (await* keys.decryptWithEpoch(ciphertext, config.epoch)) {
+    // Fails here, in front of the deployer, rather than in production — and its
+    // output is what gets stored, so the decryption is not merely a check.
+    let plaintext = switch (await* keys.decryptWithEpoch(ciphertext, config.epoch)) {
+      case (#Ok(p)) p;
       case (#Err(e)) { return #Err(e) };
-      case (#Ok(_)) {};
     };
 
     let ts = now();
@@ -177,7 +174,8 @@ persistent actor class SealedSecrets(initArgs : { key_name : Text }) = self {
         createdAtNs = switch (existing) { case (?r) r.createdAtNs; case null ts };
         updatedAtNs = ts;
         ciphertextSha256 = sha256(ciphertext);
-        ciphertext;
+        ciphertextLen = Nat.toNat64(ciphertext.size());
+        plaintext;
       },
     );
     #Ok(revision);
@@ -204,25 +202,22 @@ persistent actor class SealedSecrets(initArgs : { key_name : Text }) = self {
       case null { return #Err(#NotFound) };
     };
 
-    let mine = switch (await* keys.open(name, record.epoch, record.revision, record.ciphertext)) {
-      case (#Ok(p)) p;
-      case (#Err(e)) { return #Err(e) };
-    };
+    // Only the candidate is sealed; the stored side is already plaintext.
     let theirs = switch (await* keys.decryptWithEpoch(candidate, config.epoch)) {
       case (#Ok(p)) p;
       case (#Err(e)) { return #Err(e) };
     };
-    #Ok(mine == theirs);
+    #Ok(record.plaintext == theirs);
   };
 
-  /// Removes a secret and drops its cached plaintext.
+  /// Removes a secret.
   public shared ({ caller }) func icp_sealed_secret_unset(name : Text) : async Types.Result<()> {
     switch (requireController(caller)) { case (?e) { return #Err(e) }; case null {} };
     switch (Map.get(secrets, Text.compare, name)) {
       case null #Err(#NotFound);
       case (?_) {
+        // Nothing to purge: the record was the only copy.
         Map.remove(secrets, Text.compare, name);
-        keys.forget(name);
         #Ok(());
       };
     };
@@ -249,7 +244,7 @@ persistent actor class SealedSecrets(initArgs : { key_name : Text }) = self {
           name;
           epoch = r.epoch;
           revision = r.revision;
-          ciphertext_len = Nat.toNat64(r.ciphertext.size());
+          ciphertext_len = r.ciphertextLen;
           ciphertext_sha256 = r.ciphertextSha256;
           created_at_ns = r.createdAtNs;
           updated_at_ns = r.updatedAtNs;
@@ -285,23 +280,16 @@ persistent actor class SealedSecrets(initArgs : { key_name : Text }) = self {
       case _ null;
     };
 
-    var deriveOk = false;
-    var undecryptable : [Text] = [];
-    for ((name, r) in Map.entries(secrets)) {
-      switch (await* keys.open(name, r.epoch, r.revision, r.ciphertext)) {
-        case (#Ok(_)) { deriveOk := true };
-        case (#Err(_)) { undecryptable := Array.concat(undecryptable, [name]) };
-      };
+    let deriveOk = switch (await* keys.vetkey(config.epoch)) {
+      case (#Ok(_)) true;
+      case (#Err(_)) false;
     };
-    // With nothing stored there is no ciphertext to open, so derive the key on
-    // its own — otherwise a fresh deployment reports derive_ok = false and looks
-    // broken when it is merely empty.
-    if (Map.size(secrets) == 0) {
-      deriveOk := switch (await* keys.vetkey(config.epoch)) {
-        case (#Ok(_)) true;
-        case (#Err(_)) false;
-      };
-    };
+
+    // Always empty now that records hold plaintext: there is nothing stored that
+    // could fail to decrypt. Kept in the response so the interface does not
+    // change and so a canister that goes back to storing ciphertext can populate
+    // it again.
+    let undecryptable : [Text] = [];
 
     #Ok({
       vetkd_public_key_ok = publicKeyOk;
@@ -346,11 +334,7 @@ persistent actor class SealedSecrets(initArgs : { key_name : Text }) = self {
       case null { return #Err(#NotFound) };
     };
 
-    let plaintext = switch (await* keys.open(name, record.epoch, record.revision, record.ciphertext)) {
-      case (#Ok(p)) p;
-      case (#Err(e)) { return #Err(e) };
-    };
-    let token = switch (Text.decodeUtf8(plaintext)) {
+    let token = switch (Text.decodeUtf8(record.plaintext)) {
       case (?t) t;
       case null { return #Err(#Internal("secret is not valid UTF-8")) };
     };

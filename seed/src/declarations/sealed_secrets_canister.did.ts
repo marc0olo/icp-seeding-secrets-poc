@@ -433,7 +433,7 @@ export interface _SERVICE {
    */
   'icp_sealed_secret_set' : ActorMethod<[string, Uint8Array], Result>,
   /**
-   * Removes a secret and drops its cached plaintext.
+   * Removes a secret.
    */
   'icp_sealed_secret_unset' : ActorMethod<[string], Result_6>,
   /**

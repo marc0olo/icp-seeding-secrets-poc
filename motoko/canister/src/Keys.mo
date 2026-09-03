@@ -1,48 +1,35 @@
 /// vetKD key derivation and the in-memory caches.
 ///
-/// # What is persisted, and why
+/// # What is cached, and why
 ///
-/// The vetKey cache persists across upgrades; the plaintext cache does not. The
-/// reasoning is cost and demonstrability — **not** confidentiality, which is
-/// identical either way and worth stating plainly because it is easy to assume
-/// otherwise.
+/// Only vetKeys. There is no plaintext cache, because records hold the
+/// decrypted secret (see `Store.SealedRecord`) — reading one is a map lookup.
+/// Decryption happens only where a caller hands the canister a ciphertext:
+/// `set`, which trial-decrypts before storing, and `matches`, which decrypts the
+/// candidate it is asked to compare.
 ///
-/// **Confidentiality does not enter into it.** Plaintext in the heap and
-/// plaintext in persisted state have the same exposure on ICP: both are
-/// replicated, checkpointed to disk on every node, shipped in state sync, and
-/// captured by `read_canister_snapshot_data`. `transient` only clears state at
-/// an *upgrade*; between upgrades a transient cache sits in the heap and is
-/// checkpointed like everything else. And a persisted vetKey would be no better
-/// than a persisted plaintext — it is worse, since one vetKey opens every secret
-/// at that epoch. Nothing here keeps a secret off disk. Only SEV-SNP changes who
-/// can read it; see the security model in `../../../README.md`.
+/// **The vetKey cache persists across upgrades, and that is a cost decision, not
+/// a security one.** Worth stating plainly, because it is easy to assume
+/// otherwise: plaintext in the heap and plaintext in persisted state have the
+/// same exposure on ICP. Both are replicated, checkpointed to disk on every
+/// node, shipped in state sync, and captured by `read_canister_snapshot_data`.
+/// `transient` only clears state at an *upgrade*; between upgrades a transient
+/// value sits in the heap and is checkpointed like everything else. Nothing here
+/// keeps a secret off disk — only SEV-SNP changes who can read it. See the
+/// security model in `../../../README.md`.
 ///
-/// **Cost is the reason to persist the vetKey.** A miss costs a
-/// `vetkd_derive_key`: an inter-canister call, a fee (26 billion cycles for
-/// `key_1`), and a round of consensus. In Rust that cost is unavoidable, because
-/// the heap is discarded on upgrade unless serialised, and serialising it into
-/// `ic-stable-structures` would mean paying stable-memory access on every read
-/// thereafter. Motoko has no such split — under enhanced orthogonal persistence
-/// the persisted state *is* the heap, with no serialisation barrier and no
-/// per-read cost — so keeping it is free, and declining it would mean buying
-/// back something the runtime was going to hand over for nothing.
+/// The cost being avoided is real: a cache miss means a `vetkd_derive_key` —
+/// an inter-canister call, a fee of 26 billion cycles for `key_1`, and a round
+/// of consensus. Rust cannot dodge it, because its heap is discarded on upgrade
+/// unless serialised, and serialising into `ic-stable-structures` would mean
+/// paying stable-memory access on every read thereafter. Motoko has no such
+/// split: under enhanced orthogonal persistence the persisted state *is* the
+/// heap, with no serialisation barrier and no per-read cost, so keeping the
+/// cache is free.
 ///
-/// **Demonstrability is the reason not to persist plaintexts.** Re-decrypting
-/// after an upgrade is pure computation: no fee, no inter-canister call, 1.79
-/// billion instructions. Persisting them would save that and, more to the point,
-/// would leave the ciphertext with no role — a canister that stores plaintext
-/// uses vetKD exactly once, at seeding, and never again, which makes the part of
-/// this system worth reviewing invisible. Keeping the ciphertext as the one
-/// durable copy of a secret keeps `matches` and `selfTest` meaningful.
-///
-/// The observable contract is unchanged either way: after an upgrade both
-/// canisters return the same secret with no re-seeding.
-///
-/// Staleness is handled by the cache keys rather than by discarding. Plaintexts
-/// are keyed by `name @ revision`, so re-sealing invalidates them; vetKeys are
-/// keyed by epoch, and the key name cannot change across an upgrade because
-/// `Main` keeps the persisted config rather than the install argument, as the
-/// Rust canister does.
+/// A persisted vetKey cannot go stale. It is keyed by epoch, and the key name
+/// cannot change across an upgrade because `Main` keeps the persisted config
+/// rather than the install argument, as the Rust canister does.
 ///
 /// Mirrors `rust/canister/src/keys.rs`.
 
@@ -58,11 +45,9 @@ import Types "Types";
 
 import Array "mo:core/Array";
 import Blob "mo:core/Blob";
-import Iter "mo:core/Iter";
 import Error "mo:core/Error";
 import Map "mo:core/Map";
 import Nat32 "mo:core/Nat32";
-import Nat64 "mo:core/Nat64";
 import Principal "mo:core/Principal";
 import Text "mo:core/Text";
 
@@ -133,23 +118,13 @@ module {
     vetkeys = Map.empty<Nat32, G1.Affine>();
   };
 
-  /// Decrypted secrets, keyed by `name # "@" # revision` so an overwrite
-  /// invalidates the entry with no explicit purge.
-  ///
-  /// `Main` holds this `transient`. Re-decrypting after an upgrade is pure
-  /// computation — no fee, no inter-canister call — so persisting it would save
-  /// little, and it keeps the ciphertext the one durable copy of a secret.
-  public type Plaintexts = Map.Map<Text, Blob>;
-
-  public func emptyPlaintexts() : Plaintexts = Map.empty<Text, Blob>();
-
   /// Behaviour over the persisted caches.
   ///
   /// The class itself carries no state worth keeping — it has methods, which are
   /// not a stable type — so `Main` holds it `transient` and the `Caches` record
   /// separately. That separation is what lets the data persist while the code
   /// that operates on it is rebuilt on every upgrade.
-  public class Manager(keyName : Text, caches : Caches, plaintexts : Plaintexts) {
+  public class Manager(keyName : Text, caches : Caches) {
     let vetkeys = caches.vetkeys;
 
     public func context() : [Nat8] = switch (Format.context("")) {
@@ -304,26 +279,5 @@ module {
       };
     };
 
-    /// Decrypts a stored record, using and populating the plaintext cache.
-    public func open(name : Text, epoch : Nat32, revision : Nat64, ciphertext : Blob) : async* Types.Result<Blob> {
-      let cacheKey = name # "@" # Nat64.toText(revision);
-      switch (Map.get(plaintexts, Text.compare, cacheKey)) {
-        case (?p) { return #Ok(p) };
-        case null {};
-      };
-      switch (await* decryptWithEpoch(ciphertext, epoch)) {
-        case (#Ok(p)) { Map.add(plaintexts, Text.compare, cacheKey, p); #Ok(p) };
-        case (#Err(e)) #Err(e);
-      };
-    };
-
-    /// Drops a name's cached plaintexts. Called on unset.
-    public func forget(name : Text) {
-      let stale = Array.filter<Text>(
-        Map.keys(plaintexts) |> Iter.toArray<Text>(_),
-        func k = Text.startsWith(k, #text(name # "@")),
-      );
-      for (k in stale.vals()) { Map.remove(plaintexts, Text.compare, k) };
-    };
   };
 }
