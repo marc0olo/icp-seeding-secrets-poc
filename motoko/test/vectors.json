@@ -28,6 +28,21 @@
     { "input": "abc", "dst": "ic-vetkd-bls12-381-ibe-hash-to-mask", "scalar_be": "046bdda073b85f06ca894cee8f21433550b68f61c08d5f34ddefbad67e683b4e" },
     { "input": "a longer input than one hash block, to exercise the expansion loop properly", "dst": "ic-vetkd-bls12-381-ibe-hash-to-mask", "scalar_be": "0b93ac92dfe8e08f456e2adff61d68633f4385d444bbe486f6a5609676612226" }
   ],
+  "hash_to_curve_g1": [
+    { "msg": "", "compressed": "89e1d7cb9e5ec9d8a38a51bc0e32a0b45d182d48127aeec6ea5b430fbddc51808c390c2e923eb7dbfd59c221c8d4f008" },
+    { "msg": "abc", "compressed": "a4b925a7f78b97ad6a8203e9b1e319f0fcde5bea79e58fac5ec79a2867d11bd97ded3fed5e346bc0afd8e23f0069055d" },
+    { "msg": "a message long enough to need more than one expansion block here", "compressed": "931201b0362377713464d3e09493bf488d7f2711399e3a5898ba025d83f7ac6ccdcbc51928eb9e7885639d53325eb57d" }
+  ],
+  "hash_to_curve_g1_dst": "BLS_SIG_BLS12381G1_XMD:SHA-256_SSWU_RO_AUG_",
+  "encrypted_vetkey": {
+    "_comment": "real vetkd_derive_key reply, from ic-vetkeys tests/utils.rs:245",
+    "transport_secret_key_be": "167b736e44a1c134bd46ca834220c75c186768612568ac264a01554c46633e76",
+    "transport_public_key": "911969d56f42875d37a92d7eaa5d43293eff9f9a20ba4c60523e70a695eaeadeb721659b52a49d74e67841ad19033a12",
+    "derived_public_key": "972c4c6cc184b56121a1d27ef1ca3a2334d1a51be93573bd18e168f78f8fe15ce44fb029ffe8e9c3ee6bea2660f4f35e0774a35a80d6236c050fd8f831475b5e145116d3e83d26c533545f64b08464e4bcc755f990a381efa89804212d4eef5f",
+    "encrypted_key": "b1a13757eaae15a3c8884fc1a3453f8a29b88984418e65f1bd21042ce1d6809b2f8a49f7326c1327f2a3921e8ff1d6c3adde2a801f1f88de98ccb40c62e366a279e7aec5875a0ce2f2a9f3e109d9cb193f0197eadb2c5f5568ee4d6a87e115910662e01e604087246be8b081fc6b8a06b4b0100ed1935d8c8d18d9f70d61718c5dba23a641487e72b3b25884eeede8feb3c71599bfbcebe60d29408795c85b4bdf19588c034d898e7fc513be8dbd04cac702a1672f5625f5833d063b05df7503",
+    "identity": "6d657373616765",
+    "vetkey": "987db5406ce297e729c8564a106dc896943b00216a095fe9c5d32a16a330c02eb80e6f468ede83cde5462b5145b58f65"
+  },
   "ibe": {
     "_comment": "decrypting ciphertext with vetkey must yield plaintext",
     "derived_public_key": "966b6cd9f89b6362e2d414d597cf4dd25eac6b58f4d0fb9cf9d580733797b302fafdf575943990fe9faf0b0303cfbaf8128c91eba30804b0d8ec8bd93f3c2e3a0b023c98d4b222d8b54e77cc0096e90ffc1cbeaf2acde393f3adf945292df177",

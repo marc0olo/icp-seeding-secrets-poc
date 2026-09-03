@@ -1,9 +1,10 @@
 # What would make BLS12-381 fast in Motoko
 
 A note for the Motoko team, from porting `ic_bls12_381` to Motoko so that a
-Motoko canister can decrypt a vetKD-sealed secret. The port works — it decrypts a
-ciphertext produced by the Rust reference — at about **10.8× the instruction cost
-of the same operation in Rust**, measured inside a canister on the same vector.
+Motoko canister can decrypt a vetKD-sealed secret. The port works — it verifies a
+real `vetkd_derive_key` reply and decrypts a ciphertext produced by the Rust
+reference — at about **10.8× the instruction cost of the same operation in
+Rust**, measured inside a canister on the same vector.
 
 That ratio is better than we expected. But almost all of it comes from **one
 missing capability**, and the fix appears to be cheap.
