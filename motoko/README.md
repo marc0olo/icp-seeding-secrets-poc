@@ -47,14 +47,19 @@ of `Fp` multiplications, plus a final exponentiation of similar magnitude. So:
 > **~30,000 × 53,500 ≈ 1.6 billion instructions ≈ 4% of the 40 billion available
 > to an update call.**
 
-Even pessimistically — double the operation count, add the `G2` scalar
-multiplications the decrypt path needs — the full path lands in the low single
-digit billions. **It fits, with headroom.**
+**Now measured, and better than the estimate:**
 
-Two caveats worth stating plainly. The 30,000 figure is an estimate from the
-structure of the algorithm, not a measurement; only a finished Miller loop settles
-it. And **queries get 5 billion instructions, not 40** — so decryption must happen
-in an update call, which is what the Rust PoC already does.
+| | Instructions | Share of an update call |
+|---|---:|---:|
+| Miller loop | 487,669,141 | 1.2% |
+| Final exponentiation | 590,961,027 | 1.5% |
+| **Full pairing** | **1,078,628,674** | **2.7%** |
+
+So a decrypt path needing one pairing plus a `G2` scalar multiplication lands
+comfortably inside the budget, with room for several more.
+
+One caveat stands: **queries get 5 billion instructions, not 40**, so decryption
+must happen in an update call — which is what the Rust PoC already does.
 
 ## Why it does not mirror the Rust representation
 
@@ -118,7 +123,7 @@ toward it.
 | `Fp12` — dodecic extension, the pairing target | ✅ 9 tests, incl. conjugation-is-inversion in the cyclotomic subgroup |
 | `G1` — curve group over `Fp` | ✅ 9 tests, incl. scalar mult reproducing reference multiples |
 | `G2` — curve group over `Fp2` | ✅ 8 tests, same |
-| Pairing — Miller loop, final exponentiation | ⬜ not started |
+| Pairing — Miller loop, final exponentiation | ✅ 8 tests, bilinear and non-degenerate |
 | `hash_to_curve` | ⬜ not started — needed only if the canister verifies the vetKey |
 | IBE decryption | ⬜ not started |
 
