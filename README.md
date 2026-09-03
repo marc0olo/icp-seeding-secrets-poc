@@ -242,9 +242,14 @@ gratuitous, and real canisters call a known API.
 `Authorization` header back to the caller, undoing the sealing completely.
 
 **The transform is mandatory.** Every node performs the call independently and consensus
-requires byte-identical responses, so per-node variation (`Date`, request ids, cookies)
-has to be stripped or the call simply fails. Stripping headers also stops a hostile
-endpoint reflecting the secret into replicated state.
+requires byte-identical responses, so per-node variation (`Date`, request ids, cookies) has
+to be stripped or the call simply fails. Stripping headers also stops a hostile endpoint
+reflecting the secret into replicated state.
+
+This one strips headers and passes the **body** through, which is only safe because the
+demo endpoint returns a constant. If yours returns a timestamp or a request id, normalise
+the body too — and note that local testing will not catch the omission, because PocketIC
+issues a single request (see [Local vs mainnet](#local-vs-mainnet--what-a-local-run-does-and-does-not-prove)).
 
 **The idempotency key is mandatory for anything that mutates**, and for a reason specific
 to ICP: that same fan-out means one logical outcall becomes **N real HTTP requests**, one
@@ -764,6 +769,7 @@ subnets (`pocket_ic.rs`: `if subnet_kind == II || Fiduciary` → `key_1`, `test_
 | **Registry reports the subnet's vetKD keys** | ✅ **accurate** — fiduciary shows `key_1`, application shows none | ✅ accurate |
 | **Placement enforced when deriving** | ❌ **not enforced** — a canister on a keyless subnet derives happily | ✅ rejected: `Subnet {id} does not hold NiDkgTranscript for key {key_id}` |
 | **`features.sev_enabled`** | ❌ always `null` — SEV cannot be simulated | ✅ reported |
+| **Outcall fan-out** | ❌ **one** real HTTP request, whatever the registry says | ✅ one per node (13, 34, …) |
 
 Two consequences, and they point in opposite directions.
 
@@ -779,6 +785,23 @@ flag rather than folded into one blanket override.
 PocketIC does check that the key exists *somewhere* in the instance — install with a
 key name no subnet has and `self_test` reports `vetkd_public_key_ok = false` — but that
 is a weaker check than mainnet's.
+
+**Outcalls do not fan out locally, and that hides two classes of bug.** The local registry
+advertises 13 nodes for the application subnet, but PocketIC is a single process with one
+HTTPS-outcalls adapter client per subnet, so it issues exactly **one** real request. Proven
+by pointing the demo at `postman-echo.com/time/now`, whose body changes every second: it
+returned `200`. Thirteen nodes fetching that would have disagreed and consensus would have
+failed.
+
+So both of these pass locally and break on mainnet:
+
+- **A missing idempotency key on a mutating call.** Locally the request happens once. On a
+  34-node subnet it happens 34 times, and without a key the API honours, so does the
+  charge, the email or the row.
+- **A response body that varies per node.** The transform in this PoC strips response
+  *headers*, which is enough for a constant body. If your endpoint returns a timestamp, a
+  request id or anything else that differs between fetches, the transform has to normalise
+  the **body** too, or every call fails on mainnet while passing locally.
 
 **SEV cannot be exercised locally at all.** `sev_enabled` is `null` for every local
 subnet, so `--allow-unverified-sev` is unavoidable locally and says nothing about your

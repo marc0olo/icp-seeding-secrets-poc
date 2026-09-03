@@ -412,6 +412,13 @@ async fn call_api_with_secret(
 /// differ per node, which would break consensus — and, incidentally, stops an
 /// endpoint that echoes our `Authorization` header from smuggling the secret into
 /// replicated state.
+///
+/// **This passes the body through unchanged, which is only safe because the demo
+/// endpoint returns a constant.** If yours returns a timestamp, a request id or
+/// anything else that differs between fetches, normalise it here too — parse out
+/// the fields you need and drop the rest. Local testing will not catch this:
+/// PocketIC issues exactly one request, so a varying body agrees with itself,
+/// while on mainnet every node fetches independently and the call fails.
 #[query]
 fn strip_response(args: TransformArgs) -> HttpRequestResult {
     HttpRequestResult {
