@@ -18,6 +18,9 @@ mod types;
 
 use candid::CandidType;
 use ic_cdk::{init, post_upgrade, query, update};
+use ic_cdk_management_canister::{
+    HttpHeader, HttpMethod, HttpRequestArgs, HttpRequestResult, TransformArgs,
+};
 use sealed_secrets_core::validate_secret_name;
 use serde::Deserialize;
 use serde_bytes::ByteBuf;
@@ -29,6 +32,22 @@ use types::{KeySource, SealedSecretEntry, SealedSecretInfo, SealedSecretsError, 
 
 /// Version of the wire interface this canister speaks.
 const STANDARD_VERSION: u32 = 1;
+
+/// Where `call_api_with_secret` sends its authenticated request.
+///
+/// GitHub's `/user` is chosen because it genuinely **evaluates** the credential:
+/// a wrong value gets `401 Bad credentials`, a real personal access token gets
+/// `200`. An endpoint that ignores `Authorization` — an unauthenticated status
+/// or health route — would return `200` no matter what the canister sent, which
+/// demonstrates the plumbing while proving nothing about the secret.
+///
+/// It also does not echo the credential in its response body, which matters
+/// because that body enters replicated state on every node.
+///
+/// Point this at whatever API you actually hold a key for. There is deliberately
+/// no "public endpoint with a known API key" here, because a published key is not
+/// a secret and testing against one would demonstrate nothing.
+const DEMO_API_ENDPOINT: &str = "https://api.github.com/user";
 
 /// Installation arguments.
 ///
@@ -285,22 +304,92 @@ async fn icp_sealed_secret_self_test(
     })
 }
 
-/// Demonstrates the intended shape of *using* a secret: the plaintext is read
-/// inside the canister and only a derived result leaves it.
+/// The actual use case: authenticate an outbound HTTPS request with a sealed
+/// secret, without the secret ever leaving the canister.
 ///
-/// A real canister would put the value in an outcall header here. Read the
-/// README's HTTPS-outcalls note first — the request context, headers included,
-/// enters replicated state on every node, so that is only safe on a uniformly
-/// SEV-SNP subnet.
+/// This is what the whole exercise is for, so read it as the template.
 ///
-/// The length is not a new disclosure: `list` already reveals it, since IBE
-/// overhead is a fixed 136 bytes.
+/// Seal a real GitHub personal access token and this returns `200`; seal anything
+/// else and it returns `401`. Both outcomes prove the outcall completed and the
+/// credential was evaluated — which is the property an unauthenticated health
+/// endpoint could never demonstrate, since it answers `200` regardless.
+///
+/// **The endpoint is a constant, not a parameter.** A `call_api(url, ...)` taking
+/// the URL from the caller would be an exfiltration primitive: point it at a
+/// server you control and the secret is yours. A controller could achieve that
+/// anyway by installing code, but shipping the capability as an endpoint is
+/// gratuitous, and real canisters call a known API rather than an arbitrary one.
+///
+/// **Only the status code comes back.** Returning the body would be a mistake
+/// waiting to happen: plenty of endpoints echo request headers (`/headers`,
+/// `/anything`, most debug routes), and echoing our own `Authorization` header
+/// back through the reply would undo the sealing entirely.
+///
+/// **The transform is mandatory, not decoration.** Every node performs this call
+/// independently and consensus requires byte-identical responses, so anything
+/// varying per node — `Date`, request ids, cookies — must be stripped or the call
+/// fails.
+///
+/// Note the exposure, which the README covers in full: the request context,
+/// headers included, enters replicated state on **every** node of the subnet
+/// before any of them executes the call. On a SEV-SNP subnet that memory and the
+/// checkpoints behind it are encrypted; on any other subnet the secret is
+/// readable by every node operator the moment this runs.
 #[update]
-async fn secret_len(name: String) -> Result<u64, SealedSecretsError> {
+async fn call_api_with_secret(name: String) -> Result<u16, SealedSecretsError> {
     require_controller()?;
+
     let record = store::get_record(&name).ok_or(SealedSecretsError::NotFound)?;
     let plaintext = keys::open(&name, &record).await?;
-    Ok(plaintext.len() as u64)
+    let token = core::str::from_utf8(plaintext.as_slice())
+        .map_err(|_| SealedSecretsError::Internal("secret is not valid UTF-8".to_string()))?;
+
+    let request = HttpRequestArgs {
+        url: DEMO_API_ENDPOINT.to_string(),
+        method: HttpMethod::GET,
+        headers: vec![
+            HttpHeader {
+                name: "Authorization".to_string(),
+                value: format!("Bearer {token}"),
+            },
+            // GitHub requires a User-Agent and rejects requests without one.
+            HttpHeader {
+                name: "User-Agent".to_string(),
+                value: "icp-sealed-secrets-poc".to_string(),
+            },
+        ],
+        body: None,
+        // Keep this tight: the call is priced on it.
+        max_response_bytes: Some(2_048),
+        transform: Some(ic_cdk_management_canister::transform_context_from_query(
+            "strip_response".to_string(),
+            vec![],
+        )),
+        ..Default::default()
+    };
+
+    let response = ic_cdk_management_canister::http_request(&request)
+        .await
+        .map_err(|e| SealedSecretsError::Internal(format!("http_request failed: {e}")))?;
+
+    // Only the status. See above.
+    u16::try_from(response.status.0)
+        .map_err(|_| SealedSecretsError::Internal("implausible status code".to_string()))
+}
+
+/// Makes an HTTP response deterministic across the nodes that fetched it.
+///
+/// Drops every response header — they carry `Date`, request ids and cookies that
+/// differ per node, which would break consensus — and, incidentally, stops an
+/// endpoint that echoes our `Authorization` header from smuggling the secret into
+/// replicated state.
+#[query]
+fn strip_response(args: TransformArgs) -> HttpRequestResult {
+    HttpRequestResult {
+        status: args.response.status,
+        headers: vec![],
+        body: args.response.body,
+    }
 }
 
 /// Returns a decrypted secret **in the clear**. Requires the `test-hooks` feature.

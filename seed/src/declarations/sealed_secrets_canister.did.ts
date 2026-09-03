@@ -9,6 +9,42 @@ import type { Principal } from '@icp-sdk/core/principal';
 import { IDL } from '@icp-sdk/core/candid';
 
 /**
+ * # HTTP Header.
+ * 
+ * Represents a HTTP header.
+ * 
+ * See [`HttpRequestArgs::headers`] and [`HttpRequestResult::headers`].
+ */
+export interface HttpHeader {
+  /**
+   * Value of the header.
+   */
+  'value' : string,
+  /**
+   * Name of the header.
+   */
+  'name' : string,
+}
+/**
+ * # HTTP Request Result
+ * 
+ * Result type of [`http_request`](https://internetcomputer.org/docs/current/references/ic-interface-spec/#ic-http_request).
+ */
+export interface HttpRequestResult {
+  /**
+   * The response status (e.g. 200, 404).
+   */
+  'status' : bigint,
+  /**
+   * The response’s body.
+   */
+  'body' : Uint8Array,
+  /**
+   * List of HTTP response headers and their corresponding values.
+   */
+  'headers' : Array<HttpHeader>,
+}
+/**
  * Installation arguments.
  * 
  * Just the key name. The canister asks the subnet for its public key rather
@@ -43,19 +79,21 @@ export type KeySource = {
      */
     'PocketIc' : null
   };
-export type Result = { 'Ok' : SealedSecretInfo } |
+export type Result = { 'Ok' : number } |
   { 'Err' : SealedSecretsError };
-export type Result_1 = { 'Ok' : Array<SealedSecretEntry> } |
+export type Result_1 = { 'Ok' : SealedSecretInfo } |
   { 'Err' : SealedSecretsError };
-export type Result_2 = { 'Ok' : boolean } |
+export type Result_2 = { 'Ok' : Array<SealedSecretEntry> } |
   { 'Err' : SealedSecretsError };
-export type Result_3 = { 'Ok' : SelfTestReport } |
+export type Result_3 = { 'Ok' : boolean } |
   { 'Err' : SealedSecretsError };
-export type Result_4 = { 'Ok' : bigint } |
+export type Result_4 = { 'Ok' : SelfTestReport } |
   { 'Err' : SealedSecretsError };
-export type Result_5 = { 'Ok' : null } |
+export type Result_5 = { 'Ok' : bigint } |
   { 'Err' : SealedSecretsError };
-export type Result_6 = { 'Ok' : string } |
+export type Result_6 = { 'Ok' : null } |
+  { 'Err' : SealedSecretsError };
+export type Result_7 = { 'Ok' : string } |
   { 'Err' : SealedSecretsError };
 /**
  * One stored secret, as reported by `list`. Carries nothing derived from the
@@ -236,7 +274,63 @@ export interface SelfTestReport {
    */
   'vetkd_public_key_ok' : boolean,
 }
+/**
+ * # Transform Args.
+ * 
+ * ```text
+ * record {
+ * response : http_response;
+ * context : blob;
+ * }
+ * ```
+ * 
+ * See [`TransformContext`].
+ */
+export interface TransformArgs {
+  /**
+   * Context for response transformation
+   */
+  'context' : Uint8Array,
+  /**
+   * Raw response from remote service, to be transformed
+   */
+  'response' : HttpRequestResult,
+}
 export interface _SERVICE {
+  /**
+   * The actual use case: authenticate an outbound HTTPS request with a sealed
+   * secret, without the secret ever leaving the canister.
+   * 
+   * This is what the whole exercise is for, so read it as the template.
+   * 
+   * Seal a real GitHub personal access token and this returns `200`; seal anything
+   * else and it returns `401`. Both outcomes prove the outcall completed and the
+   * credential was evaluated — which is the property an unauthenticated health
+   * endpoint could never demonstrate, since it answers `200` regardless.
+   * 
+   * **The endpoint is a constant, not a parameter.** A `call_api(url, ...)` taking
+   * the URL from the caller would be an exfiltration primitive: point it at a
+   * server you control and the secret is yours. A controller could achieve that
+   * anyway by installing code, but shipping the capability as an endpoint is
+   * gratuitous, and real canisters call a known API rather than an arbitrary one.
+   * 
+   * **Only the status code comes back.** Returning the body would be a mistake
+   * waiting to happen: plenty of endpoints echo request headers (`/headers`,
+   * `/anything`, most debug routes), and echoing our own `Authorization` header
+   * back through the reply would undo the sealing entirely.
+   * 
+   * **The transform is mandatory, not decoration.** Every node performs this call
+   * independently and consensus requires byte-identical responses, so anything
+   * varying per node — `Date`, request ids, cookies — must be stripped or the call
+   * fails.
+   * 
+   * Note the exposure, which the README covers in full: the request context,
+   * headers included, enters replicated state on **every** node of the subnet
+   * before any of them executes the call. On a SEV-SNP subnet that memory and the
+   * checkpoints behind it are encrypted; on any other subnet the secret is
+   * readable by every node operator the moment this runs.
+   */
+  'call_api_with_secret' : ActorMethod<[string], Result>,
   /**
    * Everything a client needs to seal for this canister.
    * 
@@ -249,7 +343,7 @@ export interface _SERVICE {
    * defence: this response crosses boundary nodes, and a client that trusted it
    * could be handed a key an attacker controls.
    */
-  'icp_sealed_secret_info' : ActorMethod<[], Result>,
+  'icp_sealed_secret_info' : ActorMethod<[], Result_1>,
   /**
    * Lists stored secrets.
    * 
@@ -262,7 +356,7 @@ export interface _SERVICE {
    * ciphertext reveals nothing, while still letting a client confirm its upload
    * landed.
    */
-  'icp_sealed_secret_list' : ActorMethod<[], Result_1>,
+  'icp_sealed_secret_list' : ActorMethod<[], Result_2>,
   /**
    * Answers "is the value I hold the one you have stored?" without either side
    * disclosing it.
@@ -287,7 +381,7 @@ export interface _SERVICE {
    * guesses. For a controller it discloses nothing new — they can already read
    * the secret by installing code that decrypts it.
    */
-  'icp_sealed_secret_matches' : ActorMethod<[string, Uint8Array], Result_2>,
+  'icp_sealed_secret_matches' : ActorMethod<[string, Uint8Array], Result_3>,
   /**
    * Exercises the full decryption path and reports what actually happened.
    * 
@@ -300,7 +394,7 @@ export interface _SERVICE {
    * not the subnet vouching for itself. Do this once per deployment with the
    * network you believe you are on.
    */
-  'icp_sealed_secret_self_test' : ActorMethod<[[] | [KeySource]], Result_3>,
+  'icp_sealed_secret_self_test' : ActorMethod<[[] | [KeySource]], Result_4>,
   /**
    * Stores a sealed secret, after proving it can actually be decrypted.
    * 
@@ -311,24 +405,11 @@ export interface _SERVICE {
    * 
    * Returns the new revision.
    */
-  'icp_sealed_secret_set' : ActorMethod<[string, Uint8Array], Result_4>,
+  'icp_sealed_secret_set' : ActorMethod<[string, Uint8Array], Result_5>,
   /**
    * Removes a secret and drops its cached plaintext.
    */
-  'icp_sealed_secret_unset' : ActorMethod<[string], Result_5>,
-  /**
-   * Demonstrates the intended shape of *using* a secret: the plaintext is read
-   * inside the canister and only a derived result leaves it.
-   * 
-   * A real canister would put the value in an outcall header here. Read the
-   * README's HTTPS-outcalls note first — the request context, headers included,
-   * enters replicated state on every node, so that is only safe on a uniformly
-   * SEV-SNP subnet.
-   * 
-   * The length is not a new disclosure: `list` already reveals it, since IBE
-   * overhead is a fixed 136 bytes.
-   */
-  'secret_len' : ActorMethod<[string], Result_4>,
+  'icp_sealed_secret_unset' : ActorMethod<[string], Result_6>,
   /**
    * Returns a decrypted secret **in the clear**. Requires the `test-hooks` feature.
    * 
@@ -355,20 +436,19 @@ export interface _SERVICE {
    * `icp_sealed_secret_matches` instead — it answers the same question with one
    * bit and is safe to keep in a production build.
    */
-  'secret_reveal' : ActorMethod<[string], Result_6>,
+  'secret_reveal' : ActorMethod<[string], Result_7>,
+  /**
+   * Makes an HTTP response deterministic across the nodes that fetched it.
+   * 
+   * Drops every response header — they carry `Date`, request ids and cookies that
+   * differ per node, which would break consensus — and, incidentally, stops an
+   * endpoint that echoes our `Authorization` header from smuggling the secret into
+   * replicated state.
+   */
+  'strip_response' : ActorMethod<[TransformArgs], HttpRequestResult>,
 }
 export const idlFactory: IDL.InterfaceFactory = ({ IDL }) => {
   const InitArgs = IDL.Record({ 'key_name' : IDL.Text });
-  const SealedSecretInfo = IDL.Record({
-    'context' : IDL.Vec(IDL.Nat8),
-    'max_secrets' : IDL.Nat64,
-    'public_key' : IDL.Vec(IDL.Nat8),
-    'max_ciphertext_len' : IDL.Nat64,
-    'epoch' : IDL.Nat32,
-    'key_name' : IDL.Text,
-    'identity' : IDL.Vec(IDL.Nat8),
-    'standard_version' : IDL.Nat32,
-  });
   const SealedSecretsError = IDL.Variant({
     'Internal' : IDL.Text,
     'TooMany' : IDL.Record({ 'max' : IDL.Nat64 }),
@@ -382,7 +462,18 @@ export const idlFactory: IDL.InterfaceFactory = ({ IDL }) => {
       'key_name' : IDL.Text,
     }),
   });
-  const Result = IDL.Variant({
+  const Result = IDL.Variant({ 'Ok' : IDL.Nat16, 'Err' : SealedSecretsError });
+  const SealedSecretInfo = IDL.Record({
+    'context' : IDL.Vec(IDL.Nat8),
+    'max_secrets' : IDL.Nat64,
+    'public_key' : IDL.Vec(IDL.Nat8),
+    'max_ciphertext_len' : IDL.Nat64,
+    'epoch' : IDL.Nat32,
+    'key_name' : IDL.Text,
+    'identity' : IDL.Vec(IDL.Nat8),
+    'standard_version' : IDL.Nat32,
+  });
+  const Result_1 = IDL.Variant({
     'Ok' : SealedSecretInfo,
     'Err' : SealedSecretsError,
   });
@@ -395,11 +486,11 @@ export const idlFactory: IDL.InterfaceFactory = ({ IDL }) => {
     'created_at_ns' : IDL.Nat64,
     'revision' : IDL.Nat64,
   });
-  const Result_1 = IDL.Variant({
+  const Result_2 = IDL.Variant({
     'Ok' : IDL.Vec(SealedSecretEntry),
     'Err' : SealedSecretsError,
   });
-  const Result_2 = IDL.Variant({ 'Ok' : IDL.Bool, 'Err' : SealedSecretsError });
+  const Result_3 = IDL.Variant({ 'Ok' : IDL.Bool, 'Err' : SealedSecretsError });
   const KeySource = IDL.Variant({
     'Mainnet' : IDL.Null,
     'PocketIc' : IDL.Null,
@@ -414,38 +505,53 @@ export const idlFactory: IDL.InterfaceFactory = ({ IDL }) => {
     'vetkd_derive_ok' : IDL.Bool,
     'vetkd_public_key_ok' : IDL.Bool,
   });
-  const Result_3 = IDL.Variant({
+  const Result_4 = IDL.Variant({
     'Ok' : SelfTestReport,
     'Err' : SealedSecretsError,
   });
-  const Result_4 = IDL.Variant({
+  const Result_5 = IDL.Variant({
     'Ok' : IDL.Nat64,
     'Err' : SealedSecretsError,
   });
-  const Result_5 = IDL.Variant({ 'Ok' : IDL.Null, 'Err' : SealedSecretsError });
-  const Result_6 = IDL.Variant({ 'Ok' : IDL.Text, 'Err' : SealedSecretsError });
+  const Result_6 = IDL.Variant({ 'Ok' : IDL.Null, 'Err' : SealedSecretsError });
+  const Result_7 = IDL.Variant({ 'Ok' : IDL.Text, 'Err' : SealedSecretsError });
+  const HttpHeader = IDL.Record({ 'value' : IDL.Text, 'name' : IDL.Text });
+  const HttpRequestResult = IDL.Record({
+    'status' : IDL.Nat,
+    'body' : IDL.Vec(IDL.Nat8),
+    'headers' : IDL.Vec(HttpHeader),
+  });
+  const TransformArgs = IDL.Record({
+    'context' : IDL.Vec(IDL.Nat8),
+    'response' : HttpRequestResult,
+  });
   
   return IDL.Service({
-    'icp_sealed_secret_info' : IDL.Func([], [Result], []),
-    'icp_sealed_secret_list' : IDL.Func([], [Result_1], ['query']),
+    'call_api_with_secret' : IDL.Func([IDL.Text], [Result], []),
+    'icp_sealed_secret_info' : IDL.Func([], [Result_1], []),
+    'icp_sealed_secret_list' : IDL.Func([], [Result_2], ['query']),
     'icp_sealed_secret_matches' : IDL.Func(
         [IDL.Text, IDL.Vec(IDL.Nat8)],
-        [Result_2],
+        [Result_3],
         [],
       ),
     'icp_sealed_secret_self_test' : IDL.Func(
         [IDL.Opt(KeySource)],
-        [Result_3],
+        [Result_4],
         [],
       ),
     'icp_sealed_secret_set' : IDL.Func(
         [IDL.Text, IDL.Vec(IDL.Nat8)],
-        [Result_4],
+        [Result_5],
         [],
       ),
-    'icp_sealed_secret_unset' : IDL.Func([IDL.Text], [Result_5], []),
-    'secret_len' : IDL.Func([IDL.Text], [Result_4], []),
-    'secret_reveal' : IDL.Func([IDL.Text], [Result_6], []),
+    'icp_sealed_secret_unset' : IDL.Func([IDL.Text], [Result_6], []),
+    'secret_reveal' : IDL.Func([IDL.Text], [Result_7], []),
+    'strip_response' : IDL.Func(
+        [TransformArgs],
+        [HttpRequestResult],
+        ['query'],
+      ),
   });
 };
 

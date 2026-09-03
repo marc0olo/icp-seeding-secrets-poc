@@ -123,14 +123,30 @@ grep -q "InvalidCiphertext" <<<"$SEALED_MATCHES" \
   || fail "matches() did not reject a malformed candidate"
 echo "  ok — matches() validates its input"
 
-say "10. it survives an upgrade with no re-seeding"
+say "10. the actual use case: an authenticated HTTPS outcall"
+# The point of the whole exercise. The canister reads the plaintext, puts it in
+# an Authorization header, calls out, and returns only the status code — never
+# the body, which on an echoing endpoint would hand the header straight back.
+#
+# The target genuinely evaluates the credential, so BOTH outcomes are proof that
+# the call completed and the header was read: 401 for the dummy value this test
+# seals, 200 if you seal a real GitHub token. Only a network failure gives
+# neither, which is what this asserts.
+STATUS=$(icp canister call "$CANISTER" call_api_with_secret "(\"$SECRET_NAME\")" -e "$ENV" 2>&1 | tr -d '\n ')
+case "$STATUS" in
+  *"Ok=401"*) echo "  ok — outcall reached the API, which evaluated and rejected the dummy credential" ;;
+  *"Ok=200"*) echo "  ok — outcall authenticated successfully (a real token is sealed)" ;;
+  *) fail "the authenticated outcall did not complete: $STATUS" ;;
+esac
+
+say "11. it survives an upgrade with no re-seeding"
 icp deploy -e "$ENV" >/dev/null
 AFTER=$(icp canister call "$CANISTER" secret_reveal "(\"$SECRET_NAME\")" -e "$ENV" 2>/dev/null \
   | tr -d '\n' | sed -n 's/.*= "\(.*\)".*/\1/p')
 [ "$AFTER" = "$SECRET_VALUE" ] || fail "the secret did not survive the upgrade"
 echo "  ok — still readable after upgrade, ciphertext lives in stable memory"
 
-say "11. the negative cases"
+say "12. the negative cases"
 npm --prefix seed run --silent e2e -- --canister "$CID" --host "$HOST" --source pocketic --pem "$PEM"
 
 say "done"

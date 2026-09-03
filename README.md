@@ -128,8 +128,9 @@ sequenceDiagram
     participant Stable as Stable memory
     participant Heap as Heap caches
     participant Mgmt as Management canister
+    participant API as the third-party API
 
-    User->>Can: some_endpoint()
+    User->>Can: call_api_with_secret("DUMMY_API_KEY")
     Can->>Heap: plaintext cache (name, revision)?
     alt cache hit — the normal case, free
         Heap-->>Can: Zeroizing<Vec<u8>>
@@ -143,8 +144,14 @@ sequenceDiagram
             Can->>Can: decrypt_and_verify → vk
         end
         Can->>Can: ct.decrypt(vk) → plaintext
+        Can->>Heap: cache plaintext (keyed by revision)
     end
-    Can-->>User: a derived result — never the key
+
+    Can->>API: GET (constant URL), Authorization: Bearer <secret>
+    Note over Can,API: the request context — headers included — enters<br/>replicated state on EVERY node before any of them<br/>executes the call. SEV is what protects it there.
+    API-->>Can: response
+    Can->>Can: transform: strip all response headers
+    Can-->>User: 200 — the status only, never the body
 ```
 
 **Cost.** `VETKD_FEE` is 10B cycles at the 13-node reference subnet, scaled by
@@ -152,6 +159,65 @@ replication factor (`ic/rs/config/src/subnet_config.rs:130`), and the comment th
 10B cycles at **1 SDR cent** — a few US cents on a 34-node subnet. It is paid once per
 canister lifetime plus once after each upgrade, *not* per secret, because one identity
 serves them all. That is why cost is no reason to deviate from IBE.
+
+### Using the secret — the point of all this
+
+Sealing a secret is only useful if the canister can *use* it. The canonical case is an
+authenticated HTTPS outcall, and `call_api_with_secret` in
+[`crates/canister/src/lib.rs`](./crates/canister/src/lib.rs) is a working one, exercised by
+`local-test.sh` step 10.
+
+It calls `https://api.github.com/user`, which **genuinely evaluates the credential**: seal
+a real GitHub personal access token and you get `200`; seal anything else and you get
+`401 Bad credentials`. Both prove the call completed and the header built from the sealed
+secret was read — which an unauthenticated health endpoint could never show, because it
+answers `200` no matter what you send it.
+
+> **Why not a public endpoint with a known API key?** There isn't one, and there can't be:
+> a published key is not a secret, so testing against one would demonstrate nothing. Point
+> the constant at whichever API you actually hold a key for.
+
+```rust
+let plaintext = keys::open(&name, &record).await?;          // decrypt (cached)
+let token = core::str::from_utf8(plaintext.as_slice())?;
+
+let request = HttpRequestArgs {
+    url: DEMO_API_ENDPOINT.to_string(),                     // a CONSTANT — see below
+    method: HttpMethod::GET,
+    headers: vec![HttpHeader {
+        name: "Authorization".to_string(),
+        value: format!("Bearer {token}"),
+    }],
+    max_response_bytes: Some(2_048),
+    transform: Some(transform_context_from_query("strip_response".to_string(), vec![])),
+    ..Default::default()
+};
+
+let response = http_request(&request).await?;
+u16::try_from(response.status.0)                            // ONLY the status
+```
+
+Three things in there are not stylistic:
+
+**The URL is a constant, not a parameter.** `call_api(url, secret_name)` would be an
+exfiltration primitive — point it at a server you control and the secret is yours. A
+controller could do that anyway by installing code, but shipping the capability as an
+endpoint is gratuitous, and real canisters call a known API.
+
+**Only the status code is returned.** Plenty of endpoints echo request headers — `/headers`,
+`/anything`, most debug routes — so returning the body risks handing your own
+`Authorization` header back to the caller, undoing the sealing completely.
+
+**The transform is mandatory.** Every node performs the call independently and consensus
+requires byte-identical responses, so per-node variation (`Date`, request ids, cookies) has
+to be stripped or the call simply fails. Stripping headers also stops a hostile endpoint
+from reflecting the secret into replicated state.
+
+And the exposure this creates, spelled out under
+[HTTPS outcalls](#https-outcalls): the request context, headers included, enters replicated
+state on **every** node before any of them executes the call. On a SEV-SNP subnet that is
+encrypted memory and measurement-keyed disk; on any other subnet the secret is readable by
+every node operator the moment this runs.
 
 ### Three decisions worth understanding
 
@@ -441,6 +507,10 @@ icp_sealed_secret_matches   : (text, blob)     -> (variant { Ok : bool;  Err : S
 icp_sealed_secret_unset     : (text)           -> (variant { Ok; Err : SealedSecretsError });
 icp_sealed_secret_list      : ()               -> (variant { Ok : vec SealedSecretEntry; Err : … }) query;
 icp_sealed_secret_self_test : (opt KeySource)  -> (variant { Ok : SelfTestReport; Err : … });
+
+// not part of the proposed standard — the worked example of USING a secret
+call_api_with_secret        : (text)           -> (variant { Ok : nat16; Err : SealedSecretsError });
+strip_response              : (TransformArgs)  -> (HttpRequestResult) query;
 ```
 
 Install args are just `(record { key_name : text })`.
@@ -471,9 +541,10 @@ treat them as optional — see [FOLLOW-UPS.md](./FOLLOW-UPS.md).
   `test-hooks` feature adds `secret_reveal`, which does — see
   [Seeing the plaintext](#seeing-the-plaintext) and
   [Can I just add a getter?](#can-i-just-add-a-getter).
-- **`secret_len`** is the demo of *using* a secret internally: it reads the plaintext and
-  returns only a derived value. The length is not a new disclosure, since `list` already
-  implies it.
+- **`call_api_with_secret` and `strip_response` are not part of the proposed standard.**
+  They are the worked example of *using* a sealed secret — see
+  [Using the secret](#using-the-secret--the-point-of-all-this). A real canister writes its
+  own equivalent; nothing in the standard prescribes how the secret gets used.
 - **A successful `set` already proves the canister can decrypt**, because it trial-decrypts
   before storing. Tooling therefore never needs a read-back endpoint to confirm a seal
   worked, and `matches` covers "is it still the right value?" — which is the same design
