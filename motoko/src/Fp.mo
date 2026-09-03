@@ -108,7 +108,7 @@ module {
   /// True when the element is lexicographically larger than its negation.
   ///
   /// Point compression stores this bit to pick between the two roots.
-  public func lexicographicallyLargest(a : Fp) : Bool = a > (P - 1) / 2;
+  public func lexicographicallyLargest(a : Fp) : Bool = a > (P - 1 : Nat) / 2;
 
   /// Big-endian, 48 bytes, as in the reference's `to_bytes`.
   public func toBytes(a : Fp) : Blob {

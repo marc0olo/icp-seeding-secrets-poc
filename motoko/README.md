@@ -79,6 +79,10 @@ mops test    # unit tests
 mops bench   # instruction counts
 ```
 
+Pinned to the newest `moc` (1.15.1) rather than the 1.13.0 minimum the vetKeys
+skill names — same numbers on both, but there is no reason to sit on an old
+compiler.
+
 Test vectors are **generated from the Rust reference**, not hand-written:
 
 ```bash
