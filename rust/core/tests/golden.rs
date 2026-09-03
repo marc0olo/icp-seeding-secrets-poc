@@ -128,9 +128,11 @@ fn public_key_derivation_is_deterministic() {
 }
 
 /// The trap this guards against: mainnet and PocketIC both have a key named
-/// `key_1`, backed by *different* master keys. Selecting the table by key name
-/// would silently produce a ciphertext nobody can decrypt. `ic-vetkeys`'
-/// `management_canister::compute_vrf` has exactly this bug today.
+/// `key_1`, backed by *different* master keys — by design, since a local
+/// environment cannot hold mainnet's master secret. The consequence is that a
+/// key name does not identify a key, so selecting the table by name is a guess,
+/// and a wrong guess silently produces a ciphertext nobody can decrypt.
+/// `ic-vetkeys`' `management_canister::compute_vrf` selects by name today.
 #[test]
 fn same_key_name_differs_across_master_key_sources() {
     let ctx = sealed_secrets_context("").unwrap();

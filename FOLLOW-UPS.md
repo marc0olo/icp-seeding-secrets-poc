@@ -186,12 +186,31 @@ painful than carrying four unused bytes.
 
 ### A bug to fix while in there
 
-`management_canister::compute_vrf` derives its public key via
-`MasterPublicKey::for_mainnet_key(&key_id)`. `for_mainnet_key` matches `"test_key_1"`
-and returns `PROD_G2_TEST_KEY_1`, which differs from `POCKETIC_G2_TEST_KEY_1`
-(`utils/mod.rs:411` vs `:422`). Under PocketIC, `compute_vrf` with `test_key_1`
-therefore derives the wrong public key. The PoC's `MasterKeySource` is explicit
-precisely to avoid repeating this; `rust/core/tests/golden.rs` has the regression test.
+To be clear about what is *not* the bug: mainnet and PocketIC having different master
+keys is intentional and necessary. PocketIC is a local test environment with a
+deterministic, published key; if it shared mainnet's, mainnet's master secret would be
+public. Two tables is the correct design.
+
+The bug is that `compute_vrf` picks one of them unconditionally
+(`utils/mod.rs:1580`):
+
+```rust
+let dpk = match MasterPublicKey::for_mainnet_key(&key_id) {
+    Some(mk) => mk.derive_canister_key(...).derive_sub_key(&context),
+    None => { /* fall back to an online vetkd_public_key query */ }
+};
+```
+
+The fallback is right, and would be right everywhere. The fast path is what breaks:
+`for_mainnet_key` matches `"test_key_1"` and returns `PROD_G2_TEST_KEY_1`, so under
+PocketIC the arm is taken and the *mainnet* key is used to derive a public key for a
+vetKey that came from PocketIC's. The two do not correspond, and nothing in the
+signature tells a caller which network it is assuming.
+
+Fixes, in ascending order of API churn: take the source as a parameter, as this PoC's
+`MasterKeySource` does; or drop the fast path and always query, which costs one
+inter-canister call and cannot be wrong. `rust/core/tests/golden.rs` has the regression
+test that the two derivations differ.
 
 Also: `derive_unencrypted_vetkey`'s doc comment claims `Ok(VetKey)` but it returns
 `Result<Vec<u8>, _>`.

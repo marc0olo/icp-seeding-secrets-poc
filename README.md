@@ -407,11 +407,14 @@ The preflight then hard-fails unless the subnet reports `sev_enabled` **and** ho
 the vetKD key. Both are real checks on mainnet; neither can be rehearsed locally.
 
 > `--source` is not inferable from the key name. Mainnet and PocketIC each have a key
-> called `key_1`, backed by **different** master public keys. Choosing wrong yields
-> ciphertext nobody can ever decrypt — which is why the client verifies against the
-> canister before encrypting, and why `rust/core/tests/golden.rs` asserts the two
-> derivations differ. `ic-vetkeys`' own `management_canister::compute_vrf` has exactly
-> this bug today.
+> called `key_1`, backed by **different** master public keys — necessarily so, since a
+> local test environment cannot hold mainnet's master secret. What that means is that
+> the key *name* does not identify a key, so the table has to be chosen explicitly.
+> Choosing wrong yields ciphertext nobody can ever decrypt, which is why the client
+> verifies against the canister before encrypting and why `rust/core/tests/golden.rs`
+> asserts the two derivations differ. `ic-vetkeys`' own
+> `management_canister::compute_vrf` gets this wrong today — see
+> [FOLLOW-UPS.md](./FOLLOW-UPS.md#a-bug-to-fix-while-in-there).
 
 ## Testing locally
 

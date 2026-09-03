@@ -318,10 +318,12 @@ fn emit_encrypted_vetkey_vector() {
 /// also pin the PoC's own context encoding.
 ///
 /// Both master-key tables appear on purpose. `for_mainnet_key("key_1")` and
-/// `for_pocketic_key("key_1")` are different keys, and selecting the table by key
-/// *name* is a live bug in `ic-vetkeys`' own `compute_vrf` (`utils/mod.rs:411`
-/// vs `:422`). A port that conflates them passes every single-network test and
-/// then produces undecryptable ciphertext on the other network.
+/// `for_pocketic_key("key_1")` are different keys — deliberately, since PocketIC
+/// cannot hold mainnet's master secret — so a key *name* does not identify a key
+/// and the table has to be an explicit choice. `ic-vetkeys`' own `compute_vrf`
+/// infers it (`utils/mod.rs:1580`) and is wrong under PocketIC as a result. A
+/// port that conflates the two passes every single-network test and then
+/// produces undecryptable ciphertext on the other network.
 fn emit_derivation_vectors() {
     use sealed_secrets_core::{derive_public_key, key_id, sealed_secrets_context, MasterKeySource};
 

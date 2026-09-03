@@ -100,10 +100,14 @@ impl std::error::Error for FormatError {}
 /// Which table of hardcoded master public keys to derive from.
 ///
 /// This is deliberately explicit rather than inferred from the key *name*.
-/// PocketIC and mainnet both have a key called `key_1`, and their master public
-/// keys are different values — guessing wrong yields a ciphertext that nobody
-/// can ever decrypt, with no error at seal time. `ic-vetkeys`'
-/// `management_canister::compute_vrf` has exactly this bug today.
+///
+/// Mainnet and PocketIC both have a key called `key_1`, backed by different
+/// master keys — necessarily, since a local environment cannot hold mainnet's
+/// master secret. So a key name does not identify a key, and inferring the table
+/// from it is guessing: guess wrong and you get a ciphertext nobody can ever
+/// decrypt, with no error at seal time. `ic-vetkeys`'
+/// `management_canister::compute_vrf` infers it today and is wrong under
+/// PocketIC as a result.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MasterKeySource {
     /// The IC mainnet master keys.
