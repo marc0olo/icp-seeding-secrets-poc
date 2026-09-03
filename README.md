@@ -392,6 +392,10 @@ icp_sealed_secret_self_test : (opt KeySource)  -> (variant { Ok : SelfTestReport
 
 Install args are just `(record { key_name : text })`.
 
+Only the first two are load-bearing for a tool that seals: `info` says what to encrypt to,
+`set` receives it. `list`, `unset` and `self_test` are convenience, and a generalized
+version should treat them as optional — see [FOLLOW-UPS.md](./FOLLOW-UPS.md).
+
 - **`info` is an update**, because `public_key` comes from `vetkd_public_key` —
   authoritative for whichever subnet the canister is actually on. It is cached, so only
   the first call pays. Earlier drafts derived it from a compiled-in master key so `info`
@@ -416,6 +420,10 @@ Install args are just `(record { key_name : text })`.
 - **`secret_len`** is the demo of *using* a secret internally: it reads the plaintext and
   returns only a derived value. The length is not a new disclosure, since `list` already
   implies it.
+- **A successful `set` already proves the canister can decrypt**, because it trial-decrypts
+  before storing. Tooling therefore never needs a read-back endpoint to confirm a seal
+  worked — which is the same design decision as "there is no `get`", seen from the other
+  side.
 
 ## Security model
 

@@ -173,6 +173,51 @@ and skips `decrypt_and_verify` entirely.
 Deferred on purpose: seeding works fine as a client-side script, and the script's
 preflight and derivation logic is exactly what the CLI would absorb.
 
+### What a canister must implement, and how the CLI finds out
+
+Only **two** methods are load-bearing for a tool that seals:
+
+```candid
+icp_sealed_secret_info : () -> (variant { Ok : SealedSecretInfo; Err : … });
+icp_sealed_secret_set  : (text, blob) -> (variant { Ok : nat64; Err : … });
+```
+
+`info` tells the client what to encrypt to and lets it cross-check its own offline
+derivation; `set` receives the ciphertext. Everything else in the PoC is convenience:
+`list` and the future `matches` support idempotent re-seeding, `unset` is housekeeping,
+and `self_test` is a deploy-time health check. A standard that demands two methods is a
+far easier sell than one that demands six, and the CLI should treat the rest as optional
+and degrade rather than refuse.
+
+**Discovery is already solved and needs no new mechanism.** `icp canister metadata
+<canister> candid:service` returns the canister's full interface without a single update
+call, so the CLI can check for the two methods and fail early with a message naming what
+is missing, instead of surfacing a raw `CanisterError` from calling a method that does not
+exist. This works only if the canister embeds `candid:service` in its wasm metadata —
+which the `@dfinity/rust` recipe does by default, and which this PoC's build steps copy
+from it.
+
+**Which canister receives which secret** is answered by the manifest: the `secrets:` block
+sits under the canister that owns them, and icp-cli already resolves canister name →
+canister ID per environment (`ctx.get_canister_id_for_env`). No new plumbing.
+
+### The asymmetry that shapes the UX
+
+`settings.environment_variables` works for *any* canister, because the **replica**
+implements it — the canister just reads what it is given. Sealed secrets cannot work that
+way: the decryption happens in the canister's own code, so it only works for canisters
+that opted in by linking the library.
+
+That has consequences the CLI design must absorb:
+
+- It is **not** a drop-in replacement for plaintext env vars, and should not be presented
+  as one. Some canisters simply cannot accept a sealed secret.
+- `icp deploy` must fail clearly, and early, when a canister declares `secrets:` but does
+  not implement the interface — before building or installing anything.
+- A useful error names the fix: "canister `backend` declares 2 secrets but does not
+  implement `icp_sealed_secret_set`; add `ic-vetkeys`' sealed-secrets macros to it."
+- Documentation has to lead with the adoption cost, not bury it.
+
 ### Command surface
 
 ```
@@ -236,6 +281,12 @@ Not a `SyncStep`: those only run during `icp deploy`, so one could never back
 
 Values should be updatable rather than write-once — seal only what is missing by
 default, `--reseal-secrets` to force, moving to `matches`-based diffing once available.
+
+**The CLI needs no read-back endpoint to know it worked.** `set` trial-decrypts before
+storing, so a successful `set` *is* the proof that the canister can read the secret. That
+is worth stating explicitly, because the obvious alternative — a getter the tool calls to
+confirm — is exactly the endpoint that must not exist (see the README on why). The
+verification and the no-getter rule are the same design decision viewed from two sides.
 
 ### Two mechanical gotchas
 
