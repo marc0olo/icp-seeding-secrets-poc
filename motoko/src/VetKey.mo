@@ -72,9 +72,15 @@ module {
   /// Hashes to `G1` with the signer's public key prefixed to the message
   /// (`utils/mod.rs:1395`).
   ///
-  /// Prefixing is what stops a rogue-key attack: without it an attacker who
-  /// picks their public key after seeing others' can produce a key whose
-  /// signature verifies against a message they never signed.
+  /// Prefixing the public key is what makes this the *augmented* scheme. It
+  /// defends against rogue-key attacks: where signatures are aggregated, an
+  /// attacker free to choose their own public key after seeing a victim's can
+  /// pick one that makes an aggregate verify for a message the victim never
+  /// signed. Binding each signature to the key that produced it removes that
+  /// freedom.
+  ///
+  /// It is not optional here regardless of the threat model — `ic-vetkeys` signs
+  /// this way, so anything else simply fails to verify.
   public func augmentedHashToG1(pk : G2.Affine, data : [Nat8]) : G1.Affine {
     let prefix = Blob.toArray(G2.toCompressed(pk));
     HashToCurve.hashToCurveText(Array.concat<Nat8>(prefix, data), SIGNATURE_DST);
@@ -84,7 +90,9 @@ module {
   ///
   /// Checks `e(sig, g2) == e(H(pk ‖ input), dpk)`, rearranged into
   /// `e(sig, -g2) · e(msg, dpk) == 1` so one final exponentiation covers both
-  /// terms — about a third of the total cost saved.
+  /// terms instead of two. Measured, that is about 27% off the cost of running
+  /// the two pairings separately — the final exponentiation is over half of a
+  /// pairing, and this shares one across both.
   public func verifyBlsSignature(
     dpk : G2.Affine,
     input : [Nat8],

@@ -102,7 +102,10 @@ module {
   public func expandMessageXmd(msg : [Nat8], dst : [Nat8], lenInBytes : Nat) : [Nat8] {
     let bInBytes = 32; // SHA-256 output
     let sInBytes = 64; // SHA-256 block
-    let ell = (lenInBytes + bInBytes - 1) / bInBytes;
+    // Ceiling division. The `: Nat` annotation is the codebase's idiom for a
+    // subtraction that cannot underflow — here because `lenInBytes + 32 >= 1`
+    // always — and it is what stops the compiler warning that it might trap.
+    let ell = (lenInBytes + bInBytes - 1 : Nat) / bInBytes;
     assert ell <= 255;
 
     // DST longer than 255 bytes is hashed down; short ones are used as-is.

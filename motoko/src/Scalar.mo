@@ -7,6 +7,7 @@
 
 import Hash "Hash";
 import Array "mo:core/Array";
+import Nat "mo:core/Nat";
 import Nat8 "mo:core/Nat8";
 import Blob "mo:core/Blob";
 import Text "mo:core/Text";
@@ -29,7 +30,7 @@ module {
       BYTES,
       func i {
         let shift = (BYTES - 1 - i : Nat) * 8;
-        Nat8.fromNat((s / (2 ** shift)) % 256);
+        Nat.toNat8((s / (2 ** shift)) % 256);
       },
     );
   };

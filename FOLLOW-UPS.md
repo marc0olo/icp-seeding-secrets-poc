@@ -363,8 +363,9 @@ verification and the no-getter rule are the same design decision viewed from two
 ## 3. A Motoko library
 
 **Status: there is a working implementation in this repo.** `motoko/` holds an
-experimental, unaudited BLS12-381 port that **decrypts a ciphertext produced by
-the Rust reference** — see [motoko/README.md](./motoko/README.md). 81 tests.
+experimental, unaudited BLS12-381 port that **verifies a real `vetkd_derive_key`
+reply and decrypts a ciphertext produced by the Rust reference** — see
+[motoko/README.md](./motoko/README.md). 95 tests.
 
 That changes what this section is. It was a problem statement and two asks; it is
 now a demonstration that the problem is tractable, plus a much shorter list of
@@ -389,7 +390,7 @@ the reference multiplies. Fixing that, not switching to limb representation, is
 the optimisation if anyone ever needs one.
 
 **What is missing:** nothing functional. The port covers the whole canister-side
-path, verification included. `hash_to_curve` — roughly 3,200 reference lines, and
+path, verification included. `hash_to_curve` — roughly 3,300 reference lines, and
 the largest single piece — was the last gap and is now closed; without it a
 canister could decrypt but had to trust the subnet's reply rather than check it.
 
@@ -416,13 +417,21 @@ The earlier component-model question becomes less urgent. Still worth pursuing,
 since reusing audited Rust beats maintaining a second implementation, but it is no
 longer the only path.
 
-**The gap.** Canister-side IBE decryption needs BLS12-381 **pairings**, plus G1/G2
-decompression and a G2 scalar multiplication. `backend/mo/ic_vetkeys/src/` has only
-`key_manager`, `encrypted_maps`, `ManagementCanister` and `Types` — no IBE, and no mops
-package provides pairing arithmetic. It is a much harder target than the secp256k1 work
-in `motoko-bitcoin`: a pairing is orders of magnitude more expensive than a scalar
-multiplication, so per-message cycle cost needs benchmarking before anyone commits to a
-pure-Motoko implementation.
+### The gap this started from
+
+Kept because it is still the accurate description of the *upstream* situation, and
+because the cost question it raises has now been answered rather than dismissed.
+
+Canister-side IBE decryption needs BLS12-381 **pairings**, plus G1/G2 decompression
+and a G2 scalar multiplication. `backend/mo/ic_vetkeys/src/` still has only
+`key_manager`, `encrypted_maps`, `ManagementCanister` and `Types` — no IBE — and no
+mops package provides pairing arithmetic. It is a much harder target than the
+secp256k1 work in `motoko-bitcoin`: a pairing is orders of magnitude more expensive
+than a scalar multiplication, which is why this section originally said per-message
+cost needed benchmarking before anyone committed to a pure-Motoko implementation.
+
+That benchmark now exists, and the answer is ~13% of an update call, paid once. The
+cost objection is settled; the review burden is not.
 
 There is no pairing-free route to "encrypt to a public key" with IBE.
 
@@ -445,21 +454,25 @@ a WASI adapter, and the IC replica installs **core modules**. Also stale since
 2025-10-23, requires `MOC_UNLOCK_PRIM`, and has no record support yet — irrelevant for
 us, since the API would be Blob-only.
 
-### The two asks
+(The concrete shape to ask the Motoko team for, if a core-module composition path
+lands: a `mo:component/ic-vetkeys-ibe` exposing
+`decryptAndVerify(encryptedVetkey, tsk, dpk, input) -> Blob` and
+`ibeDecrypt(ct, vetkey) -> Blob` — small, purely synchronous, Blob-in/Blob-out, with
+Motoko keeping the async `vetkd_derive_key` call it can already make via
+`ManagementCanister.mo`. That generalises well beyond sealed secrets.)
 
-1. **Motoko team.** What is the current state, and is a **core-module** composition path
-   (e.g. Binaryen `wasm-merge`) on the roadmap? If so, a `mo:component/ic-vetkeys-ibe`
-   exposing `decryptAndVerify(encryptedVetkey, tsk, dpk, input) -> Blob` and
-   `ibeDecrypt(ct, vetkey) -> Blob` is small, purely synchronous and Blob-in/Blob-out.
-   Motoko keeps the async `vetkd_derive_key` call it can already make via
-   `ManagementCanister.mo`. This generalises well beyond sealed secrets.
-2. **vetKeys team.** IBE in the Motoko library, so `mo:ic-vetkeys` reaches parity with
-   the Rust crate.
+### What to do in the meantime
 
-Until one lands, a Motoko canister needing this has two options: put the
-secret-consuming logic in a Rust canister, or have a small Rust canister hold the sealed
-secret and serve it to one authorised Motoko caller on the same subnet — which keeps the
-plaintext inside the same SEV trust domain, but is a real widening worth acknowledging.
+Three options, in descending order of how much review they need:
+
+1. **Put the secret-consuming logic in a Rust canister.** No new code to trust.
+2. **Have a small Rust canister hold the sealed secret** and serve it to one
+   authorised Motoko caller on the same subnet. Keeps the plaintext inside the same
+   SEV trust domain, but is a real widening of it — the secret now crosses a canister
+   boundary and its confidentiality depends on that caller check being right.
+3. **Use the port in `motoko/`.** Functionally complete and tested against the
+   reference, but unaudited. Reasonable for a prototype; not for production before a
+   cryptographer has read it.
 
 ### Why the golden vectors exist
 

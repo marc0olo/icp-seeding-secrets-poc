@@ -148,7 +148,7 @@ cd motoko
 mops bench Why      # the 85% split
 mops bench Shift    # shifts cost as much as reductions
 mops bench Ibe      # end-to-end decryption
-mops test           # 81 tests, incl. decrypting a Rust-generated ciphertext
+mops test           # 95 tests, incl. verifying a real vetKD reply
 ```
 
 The Rust side of the comparison is `bench_ibe_decrypt` in `crates/canister`,

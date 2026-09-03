@@ -17,8 +17,10 @@
 ///      rather than merely on the curve.
 ///
 /// The constants below were converted out of the reference's Montgomery form
-/// rather than transcribed, and the conversion was validated against a value
-/// already known independently (the `G1` generator's x-coordinate).
+/// rather than transcribed. Two independent checks on that conversion: it
+/// reproduces the `G1` generator's x-coordinate, which is known separately, and
+/// `SSWU_A`/`SSWU_B` come out equal to the `E'` coefficients RFC 9380 publishes
+/// for this suite. `SSWU_XI` agreeing with the RFC's `Z = 11` is a third.
 
 import Fp "Fp";
 import G1 "G1";
@@ -208,7 +210,7 @@ module {
       },
     );
 
-    var xNum = hornerEval(ISO11_XNUM, p.x, zp);
+    let xNum = hornerEval(ISO11_XNUM, p.x, zp);
     var xDen = hornerEval(ISO11_XDEN, p.x, zp);
     var yNum = hornerEval(ISO11_YNUM, p.x, zp);
     var yDen = hornerEval(ISO11_YDEN, p.x, zp);
