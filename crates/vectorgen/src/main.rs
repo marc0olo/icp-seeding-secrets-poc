@@ -125,24 +125,37 @@ fn emit_ibe_vector() {
 
     // A fixed seed keeps the ciphertext reproducible run to run.
     let seed = IbeSeed::from_bytes(&[0x42u8; 32]).expect("valid seed");
-    let ciphertext = IbeCiphertext::encrypt(
-        &dpk,
-        &IbeIdentity::from_bytes(identity),
-        plaintext,
-        &seed,
-    );
+    let ciphertext =
+        IbeCiphertext::encrypt(&dpk, &IbeIdentity::from_bytes(identity), plaintext, &seed);
 
     // Prove the triple is self-consistent before emitting it. A vector that does
     // not decrypt in Rust would send the Motoko port chasing a phantom.
-    let recovered = ciphertext.decrypt(&vetkey).expect("the vector must decrypt");
-    assert_eq!(recovered, plaintext, "generated vector is not self-consistent");
+    let recovered = ciphertext
+        .decrypt(&vetkey)
+        .expect("the vector must decrypt");
+    assert_eq!(
+        recovered, plaintext,
+        "generated vector is not self-consistent"
+    );
 
     println!("  \"ibe\": {{");
     println!("    \"_comment\": \"decrypting ciphertext with vetkey must yield plaintext\",");
-    println!("    \"derived_public_key\": \"{}\",", hex::encode(dpk.serialize()));
-    println!("    \"identity_utf8\": \"{}\",", String::from_utf8_lossy(identity));
+    println!(
+        "    \"derived_public_key\": \"{}\",",
+        hex::encode(dpk.serialize())
+    );
+    println!(
+        "    \"identity_utf8\": \"{}\",",
+        String::from_utf8_lossy(identity)
+    );
     println!("    \"vetkey\": \"{}\",", hex::encode(vetkey.serialize()));
-    println!("    \"ciphertext\": \"{}\",", hex::encode(ciphertext.serialize()));
-    println!("    \"plaintext_utf8\": \"{}\"", String::from_utf8_lossy(plaintext));
+    println!(
+        "    \"ciphertext\": \"{}\",",
+        hex::encode(ciphertext.serialize())
+    );
+    println!(
+        "    \"plaintext_utf8\": \"{}\"",
+        String::from_utf8_lossy(plaintext)
+    );
     println!("  }}");
 }
