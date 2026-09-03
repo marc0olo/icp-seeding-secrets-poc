@@ -377,12 +377,31 @@ Two **independent** subnet properties — neither implies the other:
 2. **The subnet's nodes are SEV-SNP.**
 
 The seeding script checks both from a single registry `get_subnet` query and refuses
-to seal unless both hold.
+to seal unless both hold. Requirement 1 is easy to overlook because it does **not**
+reproduce locally — see below.
 
-> On a local network the registry reports neither, so `--allow-unprotected-subnet` is
-> required — yet `key_1` *does* work, because PocketIC serves it regardless of what the
-> subnet record advertises. Do not read local success as evidence that a given mainnet
-> subnet will work.
+### Local networks do not prove mainnet placement
+
+`icp network start` always creates NNS, **fiduciary**, **TestThresholdKeys** and
+application subnets. In PocketIC, vetKD keys are attached only to the **II and
+fiduciary** subnets (`pocket_ic.rs`: `if subnet_kind == II || Fiduciary` → `key_1`,
+`test_key_1`, `dfx_test_key`), which is why `key_1` is available locally at all.
+
+But a canister deployed here lands on the **application** subnet, and
+`vetkd_derive_key` still succeeds. Mainnet is stricter: the replica serves the call
+from the *calling canister's own subnet* and rejects it with
+`Subnet {id} does not hold NiDkgTranscript for key {key_id}` otherwise
+(`ic/rs/execution_environment/src/execution_environment.rs:3851`). PocketIC only
+checks that the key exists somewhere in the instance — install this canister with a
+key name no subnet has and `self_test` reports `vetkd_public_key_ok = false`, but a
+subnet that merely lacks the key locally is not caught.
+
+**So local success is not evidence that a mainnet deployment will work.** On mainnet
+the canister must sit on a subnet that actually holds `key_1` — a fiduciary subnet.
+Verify that before deploying, and run `self_test` immediately after.
+
+The local registry also reports neither `sev_enabled` nor the subnet's chain-key
+config, so `--allow-unprotected-subnet` is required locally.
 
 ## Layout
 
