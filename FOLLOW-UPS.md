@@ -394,11 +394,23 @@ cryptographer has been through it. The value is that the conversation can now be
 about reviewing an implementation rather than speculating about whether one is
 possible.
 
-**The asks, revised.** The vetKeys team question stands: IBE in the Motoko
-library, so `mo:ic-vetkeys` reaches parity. This port is evidence it can be done
-and a starting point for doing it properly. The Motoko-team question about the
-component model becomes less urgent — worth pursuing, since reusing audited Rust
-beats maintaining a second implementation, but no longer the only path.
+**The asks, revised.**
+
+*vetKeys team:* IBE in the Motoko library, so `mo:ic-vetkeys` reaches parity with
+the Rust crate. This port is evidence it can be done, and a starting point for
+doing it properly.
+
+*Motoko team:* [motoko/PROPOSAL.md](./motoko/PROPOSAL.md) — a measured case that
+one missing runtime primitive accounts for most of the 10× gap. Motoko's `Nat` is
+libtommath, which already implements Barrett and Montgomery reduction, modular
+exponentiation and modular inversion; the runtime compiles in an explicit subset
+that excludes all of them. The cheapest ask is bit shifts on `Nat`, because
+`mp_div_2d` and `mp_mul_2d` are *already linked* and just unreachable — and
+exposing them would let libraries fix the rest themselves.
+
+The earlier component-model question becomes less urgent. Still worth pursuing,
+since reusing audited Rust beats maintaining a second implementation, but it is no
+longer the only path.
 
 **The gap.** Canister-side IBE decryption needs BLS12-381 **pairings**, plus G1/G2
 decompression and a G2 scalar multiplication. `backend/mo/ic_vetkeys/src/` has only

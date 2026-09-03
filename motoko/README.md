@@ -118,6 +118,14 @@ So the optimisation path is clear, and it is not "rewrite in limbs":
 Neither is worth doing yet. At 4.5% of an update call there is nothing to buy
 with the savings, and both add code that would need reviewing.
 
+And there is a third option that is not ours to take: **[PROPOSAL.md](./PROPOSAL.md)
+sets out what the Motoko runtime would need to close most of this gap.** The short
+version is that libtommath — which already backs Motoko's `Nat` — implements
+Barrett and Montgomery reduction, modular exponentiation and modular inversion,
+and the runtime simply does not compile them in. A userland fix is blocked because
+`Nat` has no shift operator, and writing one as `x / (2 ** k)` costs nearly as much
+as the division it would replace.
+
 One caveat stands: **queries get 5 billion instructions, not 40**, so decryption
 must happen in an update call — which is what the Rust PoC already does.
 
