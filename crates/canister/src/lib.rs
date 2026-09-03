@@ -23,32 +23,28 @@ use serde::Deserialize;
 use serde_bytes::ByteBuf;
 use sha2::{Digest, Sha256};
 
-use store::{Config, KeySource, SealedRecord};
-use types::{SealedSecretEntry, SealedSecretInfo, SealedSecretsError, SelfTestReport};
+use store::{Config, SealedRecord};
+use types::{KeySource, SealedSecretEntry, SealedSecretInfo, SealedSecretsError, SelfTestReport};
 
 /// Version of the wire interface this canister speaks.
 const STANDARD_VERSION: u32 = 1;
 
 /// Installation arguments.
+///
+/// Just the key name. The canister asks the subnet for its public key rather
+/// than deriving it from a compiled-in constant, so the same build runs against
+/// a local network and mainnet with nothing to configure — and nothing to get
+/// wrong in a way that silently orphans every sealed ciphertext.
 #[derive(CandidType, Deserialize, Debug, Clone)]
 pub struct InitArgs {
-    /// Distinguishes this use of vetKD from any other in the same canister.
-    /// Empty is the normal choice.
-    pub app_separator: Option<String>,
     /// vetKD key name, e.g. `key_1`.
     pub key_name: String,
-    /// Which hardcoded master-key table to derive against. This is *not*
-    /// inferable from `key_name`: mainnet and PocketIC both have a `key_1`, with
-    /// different master keys.
-    pub key_source: KeySource,
 }
 
 #[init]
 fn init(args: InitArgs) {
     store::set_config(Config {
-        app_separator: args.app_separator.unwrap_or_default(),
         key_name: args.key_name,
-        key_source: args.key_source,
         ..Config::default()
     });
 }
@@ -71,16 +67,19 @@ fn require_controller() -> Result<(), SealedSecretsError> {
 
 /// Everything a client needs to seal for this canister.
 ///
-/// This is a query: the public key is derived offline from a constant compiled
-/// into this Wasm, so answering costs no inter-canister call.
+/// An update rather than a query, because `public_key` comes from
+/// `vetkd_public_key` — authoritative for whichever subnet this canister is
+/// actually on. It is cached, so only the first call pays for the round trip.
 ///
-/// A client must treat `public_key` as a cross-check against its own derivation,
-/// never as the key to encrypt to.
-#[query]
-fn icp_sealed_secret_info() -> Result<SealedSecretInfo, SealedSecretsError> {
+/// A client must treat `public_key` as a cross-check against its **own** offline
+/// derivation, never as the key to encrypt to. That comparison is the real
+/// defence: this response crosses boundary nodes, and a client that trusted it
+/// could be handed a key an attacker controls.
+#[update]
+async fn icp_sealed_secret_info() -> Result<SealedSecretInfo, SealedSecretsError> {
     let config = store::config();
     let context = keys::context()?;
-    let public_key = keys::public_key()?;
+    let public_key = keys::public_key().await?;
 
     Ok(SealedSecretInfo {
         standard_version: STANDARD_VERSION,
@@ -194,21 +193,29 @@ fn icp_sealed_secret_list() -> Result<Vec<SealedSecretEntry>, SealedSecretsError
 /// between finding out at deploy time that this subnet does not hold the vetKD
 /// key, and finding out during a customer request.
 ///
-/// It also cross-checks the subnet's `vetkd_public_key` against the master key
-/// compiled into this Wasm — the one check in the whole design that is not the
-/// subnet vouching for itself.
+/// Pass `expected_source` to also audit the subnet's `vetkd_public_key` against a
+/// master key compiled into this Wasm — the one check in the whole design that is
+/// not the subnet vouching for itself. Do this once per deployment with the
+/// network you believe you are on.
 #[update]
-async fn icp_sealed_secret_self_test() -> Result<SelfTestReport, SealedSecretsError> {
+async fn icp_sealed_secret_self_test(
+    expected_source: Option<KeySource>,
+) -> Result<SelfTestReport, SealedSecretsError> {
     require_controller()?;
 
     let config = store::config();
     let context = keys::context()?;
     let records = store::all_records();
 
-    let local_public_key = keys::public_key().ok().map(|k| k.serialize());
     let reported = keys::reported_public_key().await.ok();
-    let public_key_matches_master = match (&local_public_key, &reported) {
-        (Some(local), Some(remote)) => Some(local == remote),
+
+    // The audit: does the subnet's own answer match a master key compiled into
+    // this Wasm, for the network the caller believes they are on? `None` means
+    // the caller did not ask, or we hold no master key for this name.
+    let public_key_matches_master = match (expected_source, &reported) {
+        (Some(source), Some(remote)) => {
+            keys::expected_public_key(source.into()).map(|expected| &expected == remote)
+        }
         _ => None,
     };
 

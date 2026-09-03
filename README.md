@@ -149,13 +149,17 @@ sequenceDiagram
 
 ### Three decisions worth understanding
 
-**The public key is computed, not fetched.** If a client asked the canister for its
-public key and trusted the answer, anyone able to tamper with that response could
-substitute a key they control and harvest the secret. The client derives the key
-itself and uses `icp_sealed_secret_info` only as a cross-check, aborting on mismatch.
-The canister does the same internally: it verifies the subnet's derived key against
-the master key **compiled into its own Wasm**, not against `vetkd_public_key` — which
-would be the subnet vouching for itself.
+**The client computes the public key; it does not trust the one it is told.** If a
+client asked the canister and believed the answer, anyone able to tamper with that
+response could substitute a key they control and harvest the secret — and unlike the
+canister's inter-canister calls, this response really does cross boundary nodes. So the
+client derives the key from a master-key constant it ships with, uses
+`icp_sealed_secret_info` purely as a cross-check, and aborts on mismatch.
+
+The canister takes its own key from `vetkd_public_key`, which is authoritative for the
+subnet it is on. Verifying against that is circular, but cheaply so: a subnet that would
+lie about its public key already holds the master key and could decrypt everything
+anyway. The non-circular audit lives in `self_test`, on demand.
 
 **`set` is async and trial-decrypts before storing.** A wrong context, epoch or key
 name otherwise produces a perfectly-accepted ciphertext that nobody discovers is
@@ -192,7 +196,7 @@ npm run seal -- \
   --name OPENAI_API_KEY \
   --host http://127.0.0.1:8010 \
   --source pocketic \
-  --allow-unprotected-subnet     # local subnets are not SEV-SNP
+  --local          # see "Local vs mainnet" below for what this waives
 ```
 
 ```
@@ -218,16 +222,18 @@ derivation path is healthy:
 
 ```bash
 icp canister call sealed-secrets secret_sha256 '("OPENAI_API_KEY")' -e local
-icp canister call sealed-secrets icp_sealed_secret_self_test '()' -e local
+icp canister call sealed-secrets icp_sealed_secret_self_test '(opt variant { PocketIc })' -e local
 ```
 
-`self_test` reports `public_key_matches_master = opt true` when the subnet's own
-`vetkd_public_key` agrees with the master key compiled into the Wasm. That is the one
-check in the design that is not the subnet vouching for itself.
+`self_test` takes the network you *believe* you are on and reports
+`public_key_matches_master = opt true` when the subnet's own `vetkd_public_key` agrees
+with the master key compiled into the Wasm. That is the one check in the design that is
+not the subnet vouching for itself — pass `variant { Mainnet }` there and it correctly
+returns `opt false`. Pass `null` to skip the audit.
 
 ### On mainnet
 
-Drop `--allow-unprotected-subnet` and switch the master-key table:
+Drop `--local` and switch the master-key table:
 
 ```bash
 npm run seal -- --canister <id> --name OPENAI_API_KEY \
@@ -235,7 +241,7 @@ npm run seal -- --canister <id> --name OPENAI_API_KEY \
 ```
 
 The preflight then hard-fails unless the subnet reports `sev_enabled` **and** holds
-the vetKD key.
+the vetKD key. Both are real checks on mainnet; neither can be rehearsed locally.
 
 > `--source` is not inferable from the key name. Mainnet and PocketIC each have a key
 > called `key_1`, backed by **different** master public keys. Choosing wrong yields
@@ -282,7 +288,9 @@ SUITE     = "icp-sealed-secrets-v1"
 ```
 
 Both variable-length fields are length-prefixed so no two distinct inputs can encode
-identically. Golden values:
+identically. The application domain separator is **always empty** in this PoC — it
+exists so a canister that later needs vetKD for several purposes can adopt one without
+a format break, and is not exposed as configuration. Golden values:
 
 | Value | Bytes |
 |---|---|
@@ -296,15 +304,23 @@ and sidestepping the Unicode confusables an arbitrary Candid `text` would admit.
 ## Interface
 
 ```candid
-icp_sealed_secret_info      : ()           -> (variant { Ok : SealedSecretInfo; Err : SealedSecretsError }) query;
-icp_sealed_secret_set       : (text, blob) -> (variant { Ok : nat64; Err : SealedSecretsError });
-icp_sealed_secret_unset     : (text)       -> (variant { Ok; Err : SealedSecretsError });
-icp_sealed_secret_list      : ()           -> (variant { Ok : vec SealedSecretEntry; Err : … }) query;
-icp_sealed_secret_self_test : ()           -> (variant { Ok : SelfTestReport; Err : … });
+icp_sealed_secret_info      : ()               -> (variant { Ok : SealedSecretInfo; Err : SealedSecretsError });
+icp_sealed_secret_set       : (text, blob)     -> (variant { Ok : nat64; Err : SealedSecretsError });
+icp_sealed_secret_unset     : (text)           -> (variant { Ok; Err : SealedSecretsError });
+icp_sealed_secret_list      : ()               -> (variant { Ok : vec SealedSecretEntry; Err : … }) query;
+icp_sealed_secret_self_test : (opt KeySource)  -> (variant { Ok : SelfTestReport; Err : … });
 ```
 
-- **`info` is a query** because the public key is derived offline from a compiled-in
-  constant — no inter-canister call is needed to answer it.
+Install args are just `(record { key_name : text })`.
+
+- **`info` is an update**, because `public_key` comes from `vetkd_public_key` —
+  authoritative for whichever subnet the canister is actually on. It is cached, so only
+  the first call pays. Earlier drafts derived it from a compiled-in master key so `info`
+  could be a query, but that meant an install-time `key_source` argument that silently
+  orphaned every ciphertext if set wrong. Asking the subnet means one build runs
+  anywhere with nothing to configure, and it makes the client's comparison *stronger*:
+  the canister now reports what the subnet says, and the client checks it against an
+  independent constant, rather than the two agreeing because they share a constant.
 - **Errors are a typed variant**, so tooling can branch on `VetKdUnavailable` versus
   `InvalidCiphertext` rather than parsing prose.
 - **`list` is controller-gated.** It looks harmless but is not: IBE overhead is a fixed
@@ -376,32 +392,52 @@ Two **independent** subnet properties — neither implies the other:
    the key every `vetkd_derive_key` is rejected.
 2. **The subnet's nodes are SEV-SNP.**
 
-The seeding script checks both from a single registry `get_subnet` query and refuses
-to seal unless both hold. Requirement 1 is easy to overlook because it does **not**
-reproduce locally — see below.
+The seeding script checks both from a single registry `get_subnet` query and refuses to
+seal unless both hold, with a separate override per check because they fail for very
+different reasons — see below.
 
-### Local networks do not prove mainnet placement
+### Local vs mainnet — what a local run does and does not prove
 
 `icp network start` always creates NNS, **fiduciary**, **TestThresholdKeys** and
-application subnets. In PocketIC, vetKD keys are attached only to the **II and
-fiduciary** subnets (`pocket_ic.rs`: `if subnet_kind == II || Fiduciary` → `key_1`,
-`test_key_1`, `dfx_test_key`), which is why `key_1` is available locally at all.
+application subnets. PocketIC attaches vetKD keys only to the **II and fiduciary**
+subnets (`pocket_ic.rs`: `if subnet_kind == II || Fiduciary` → `key_1`, `test_key_1`,
+`dfx_test_key`), which is where local `key_1` comes from.
 
-But a canister deployed here lands on the **application** subnet, and
-`vetkd_derive_key` still succeeds. Mainnet is stricter: the replica serves the call
-from the *calling canister's own subnet* and rejects it with
-`Subnet {id} does not hold NiDkgTranscript for key {key_id}` otherwise
-(`ic/rs/execution_environment/src/execution_environment.rs:3851`). PocketIC only
-checks that the key exists somewhere in the instance — install this canister with a
-key name no subnet has and `self_test` reports `vetkd_public_key_ok = false`, but a
-subnet that merely lacks the key locally is not caught.
+| | Local / PocketIC | Mainnet |
+|---|---|---|
+| **Registry reports the subnet's vetKD keys** | ✅ **accurate** — fiduciary shows `key_1`, application shows none | ✅ accurate |
+| **Placement enforced when deriving** | ❌ **not enforced** — a canister on a keyless subnet derives happily | ✅ rejected: `Subnet {id} does not hold NiDkgTranscript for key {key_id}` |
+| **`features.sev_enabled`** | ❌ always `null` — SEV cannot be simulated | ✅ reported |
 
-**So local success is not evidence that a mainnet deployment will work.** On mainnet
-the canister must sit on a subnet that actually holds `key_1` — a fiduciary subnet.
-Verify that before deploying, and run `self_test` immediately after.
+Two consequences, and they point in opposite directions.
 
-The local registry also reports neither `sev_enabled` nor the subnet's chain-key
-config, so `--allow-unprotected-subnet` is required locally.
+**The vetKD check works locally, and you should not skip it.** The registry tells the
+truth: deploy this PoC and it lands on the *application* subnet, and the preflight
+correctly reports `"key_1" NOT on this subnet`. It is right — and mainnet would reject
+every derive. But PocketIC does not enforce placement (verified: our canister id
+`7fffffffffa00002…` falls in the application range, and derivation succeeded anyway),
+so **the local runtime hides the very mistake the preflight caught**. That is why
+`--allow-missing-vetkd-key` is a sharper knife than it looks, and why it is a separate
+flag rather than folded into one blanket override.
+
+PocketIC does check that the key exists *somewhere* in the instance — install with a
+key name no subnet has and `self_test` reports `vetkd_public_key_ok = false` — but that
+is a weaker check than mainnet's.
+
+**SEV cannot be exercised locally at all.** `sev_enabled` is `null` for every local
+subnet, so `--allow-unverified-sev` is unavoidable locally and says nothing about your
+deployment. On mainnet it is the check that carries the entire security argument: without
+a SEV-SNP subnet, node operators can read the plaintext out of a checkpoint the moment
+the canister decrypts it, and this scheme protects the secret only in transit and in the
+ingress history.
+
+**So the mainnet checklist is not optional and cannot be rehearsed locally:**
+
+1. Place the canister on a subnet that actually holds `key_1` — on mainnet, a fiduciary
+   subnet. Confirm from the registry *before* deploying.
+2. Confirm that subnet reports `sev_enabled = true`.
+3. Run `icp_sealed_secret_self_test(opt variant { Mainnet })` immediately after install
+   and check `public_key_matches_master = opt true`.
 
 ## Layout
 

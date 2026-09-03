@@ -6,6 +6,30 @@ use candid::CandidType;
 use serde::Deserialize;
 use serde_bytes::ByteBuf;
 
+/// Which table of hardcoded master public keys to check the subnet's answer
+/// against.
+///
+/// This is a `self_test` *argument*, not configuration. The canister obtains its
+/// public key from `vetkd_public_key`, which is authoritative; comparing that
+/// against a constant compiled into this Wasm is an on-demand audit, and the
+/// caller is the one who knows which network they believe they are on.
+#[derive(CandidType, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeySource {
+    /// IC mainnet master keys.
+    Mainnet,
+    /// PocketIC master keys, which local `icp network` also uses.
+    PocketIc,
+}
+
+impl From<KeySource> for sealed_secrets_core::MasterKeySource {
+    fn from(value: KeySource) -> Self {
+        match value {
+            KeySource::Mainnet => Self::Mainnet,
+            KeySource::PocketIc => Self::PocketIc,
+        }
+    }
+}
+
 /// Everything a client needs in order to seal a secret for this canister, and
 /// to check that it is sealing to the right key.
 #[derive(CandidType, Deserialize, Debug, Clone)]
@@ -63,9 +87,18 @@ pub struct SelfTestReport {
     /// Whether `vetkd_derive_key` answered and verified.
     pub vetkd_derive_ok: bool,
     /// Whether the subnet's public key matched the master key compiled into this
-    /// Wasm. `None` when no master key is compiled in for this key id.
+    /// Wasm, for the `expected_source` the caller supplied. `None` when the
+    /// caller supplied none, or when no master key is compiled in for this key
+    /// name under that source.
+    ///
+    /// This is the one check in the design that is not the subnet vouching for
+    /// itself, so a deployment should run it once with the source it expects.
     pub public_key_matches_master: Option<bool>,
     /// The key name actually in use, read from stable state rather than source.
+    ///
+    /// `StableCell::init` keeps an existing value, so editing a constant and
+    /// upgrading is a silent no-op. Reporting the effective value is what makes
+    /// that visible.
     pub effective_key_name: String,
     /// The context actually in use.
     pub effective_context: ByteBuf,

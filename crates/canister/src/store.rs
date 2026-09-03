@@ -9,7 +9,6 @@ use ic_stable_structures::memory_manager::{MemoryId, MemoryManager, VirtualMemor
 use ic_stable_structures::{
     storable::Bound, DefaultMemoryImpl, StableBTreeMap, StableCell, Storable,
 };
-use sealed_secrets_core::MasterKeySource;
 use serde::Deserialize;
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -27,27 +26,6 @@ pub const DEFAULT_MAX_CIPHERTEXT_LEN: u64 = 4096;
 /// a `list` response.
 pub const DEFAULT_MAX_SECRETS: u64 = 256;
 
-/// Which hardcoded master-key table this canister derives against.
-///
-/// Stored rather than compiled in, because a canister built once must be able to
-/// run against both a local network and mainnet.
-#[derive(CandidType, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
-pub enum KeySource {
-    /// IC mainnet master keys.
-    Mainnet,
-    /// PocketIC master keys, which local `icp network` also uses.
-    PocketIc,
-}
-
-impl From<KeySource> for MasterKeySource {
-    fn from(value: KeySource) -> Self {
-        match value {
-            KeySource::Mainnet => MasterKeySource::Mainnet,
-            KeySource::PocketIc => MasterKeySource::PocketIc,
-        }
-    }
-}
-
 /// Configuration pinned at first init.
 ///
 /// Note this is written through `StableCell::init`, which *keeps* an existing
@@ -56,9 +34,7 @@ impl From<KeySource> for MasterKeySource {
 /// back from here rather than the compiled-in one.
 #[derive(CandidType, Deserialize, Debug, Clone)]
 pub struct Config {
-    pub app_separator: String,
     pub key_name: String,
-    pub key_source: KeySource,
     pub epoch: u32,
     pub max_ciphertext_len: u64,
     pub max_secrets: u64,
@@ -67,9 +43,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            app_separator: String::new(),
             key_name: "key_1".to_string(),
-            key_source: KeySource::Mainnet,
             epoch: 0,
             max_ciphertext_len: DEFAULT_MAX_CIPHERTEXT_LEN,
             max_secrets: DEFAULT_MAX_SECRETS,

@@ -6,16 +6,23 @@
 //! call re-enters the canister, and a second borrow panics. So every cache access
 //! is read-then-drop or compute-then-insert, never wrapped around the await.
 //!
-//! Second, the derived public key is computed *offline* from the master key
-//! compiled into this Wasm, never taken from `vetkd_public_key`. Verifying the
-//! subnet's derived key against a public key the same subnet just handed us
-//! would be circular; verifying it against a constant covered by the module hash
-//! is not.
+//! Second, the canister's public key comes from `vetkd_public_key`, which is
+//! authoritative for the subnet it is actually running on. Verifying the derived
+//! key against it is admittedly circular — a subnet that would lie about its
+//! public key already holds the master key and could decrypt everything anyway,
+//! so the circularity costs little. The non-circular check lives in `self_test`,
+//! which compares the subnet's answer against a master key compiled into this
+//! Wasm for a source the *caller* nominates.
+//!
+//! The check that actually matters is on the client, which derives the key
+//! offline and refuses to encrypt if the canister disagrees — because that
+//! response travels over HTTP through boundary nodes, where the canister's
+//! inter-canister call does not.
 
 use ic_cdk_management_canister::{VetKDDeriveKeyArgs, VetKDPublicKeyArgs};
 use ic_vetkeys::{DerivedPublicKey, EncryptedVetKey, TransportSecretKey, VetKey};
 use sealed_secrets_core::{
-    derive_public_key, key_id, sealed_secrets_context, sealed_secrets_identity,
+    derive_public_key, key_id, sealed_secrets_context, sealed_secrets_identity, MasterKeySource,
 };
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -47,11 +54,14 @@ thread_local! {
         RefCell::new(HashMap::new());
 }
 
-/// The vetKD context for the effective configuration.
+/// The vetKD context.
+///
+/// The application domain separator is always empty here. It stays in the wire
+/// format (as a length-prefixed field) so a canister that later needs to use
+/// vetKD for several purposes can adopt one without a format break, but this PoC
+/// has no use for it and does not expose it as configuration.
 pub fn context() -> Result<Vec<u8>, SealedSecretsError> {
-    let config = store::config();
-    sealed_secrets_context(&config.app_separator)
-        .map_err(|e| SealedSecretsError::Internal(e.to_string()))
+    sealed_secrets_context("").map_err(|e| SealedSecretsError::Internal(e.to_string()))
 }
 
 /// The IBE identity for a given epoch.
@@ -59,25 +69,44 @@ pub fn identity(epoch: u32) -> Vec<u8> {
     sealed_secrets_identity(epoch)
 }
 
-/// Derives this canister's public key offline. No network call.
-pub fn public_key() -> Result<DerivedPublicKey, SealedSecretsError> {
+/// This canister's public key, as reported by the subnet, cached after the first
+/// call.
+///
+/// Asking the subnet rather than deriving from a compiled-in constant is what
+/// lets one build run against both a local network and mainnet with no
+/// configuration saying which. The trade is that answering costs an
+/// inter-canister call, so `info` is an update rather than a query.
+pub async fn public_key() -> Result<DerivedPublicKey, SealedSecretsError> {
     let context = context()?;
 
     if let Some(cached) = DPK_CACHE.with_borrow(|c| c.get(&context).cloned()) {
         return Ok(cached);
     }
 
+    let bytes = reported_public_key().await?;
+    let dpk = DerivedPublicKey::deserialize(&bytes)
+        .map_err(|e| SealedSecretsError::Internal(format!("malformed public key: {e:?}")))?;
+
+    DPK_CACHE.with_borrow_mut(|c| c.insert(context, dpk.clone()));
+    Ok(dpk)
+}
+
+/// Derives the public key offline from a master key compiled into this Wasm.
+///
+/// Only `self_test` uses this, to audit the subnet's answer against an
+/// expectation the caller supplies. Returns `None` when no master key is
+/// compiled in for this key name under that source.
+pub fn expected_public_key(source: MasterKeySource) -> Option<Vec<u8>> {
+    let context = context().ok()?;
     let config = store::config();
-    let dpk = derive_public_key(
-        config.key_source.into(),
+    derive_public_key(
+        source,
         &key_id(&config.key_name),
         &ic_cdk::api::canister_self(),
         &context,
     )
-    .map_err(|e| SealedSecretsError::Internal(e.to_string()))?;
-
-    DPK_CACHE.with_borrow_mut(|c| c.insert(context, dpk.clone()));
-    Ok(dpk)
+    .ok()
+    .map(|k| k.serialize())
 }
 
 /// Obtains the vetKey for `epoch`, deriving it if it is not cached.
@@ -99,7 +128,7 @@ pub async fn vetkey(epoch: u32) -> Result<Rc<VetKey>, SealedSecretsError> {
     let config = store::config();
     let context = context()?;
     let identity = identity(epoch);
-    let dpk = public_key()?;
+    let dpk = public_key().await?;
 
     let seed = ic_cdk_management_canister::raw_rand()
         .await

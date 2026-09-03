@@ -46,10 +46,12 @@ export const SealedSecretEntry = IDL.Record({
 
 export const canisterIdl = () =>
   IDL.Service({
+    // An update, not a query: the canister asks the subnet for its public key
+    // (authoritative for whichever subnet it is on) and caches the answer.
     icp_sealed_secret_info: IDL.Func(
       [],
       [IDL.Variant({ Ok: SealedSecretInfo, Err: SealedSecretsError })],
-      ["query"],
+      [],
     ),
     icp_sealed_secret_set: IDL.Func(
       [IDL.Text, IDL.Vec(IDL.Nat8)],

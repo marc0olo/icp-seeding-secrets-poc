@@ -15,6 +15,20 @@ Target: a `sealed_secrets` module in
 `backend/rs/ic_vetkeys/src/`, with the PoC canister becoming the reference
 implementation. `crates/core` here is already shaped to be that module's format layer.
 
+### Revisit `info` as a query
+
+The PoC makes `icp_sealed_secret_info` an update, because the canister asks
+`vetkd_public_key` for its own key rather than deriving it from a compiled-in constant.
+That was a deliberate trade: an install-time `key_source` argument would let `info` be a
+query, but getting it wrong silently orphans every sealed ciphertext, and it forces a
+per-network build configuration for no security gain (the client-side comparison is
+where the value is).
+
+A library could have both: derive offline *when* a master key is compiled in for the
+configured name, fall back to `vetkd_public_key` otherwise, and expose whichever it used
+in `info` so a client knows what it is comparing against. Worth doing only if a query
+turns out to matter to somebody — for a seeding flow, one update call is free.
+
 ### Macros, so adoption is three lines
 
 `export_encrypted_maps_canister!` assumes the canister *is* the library. Sealed secrets

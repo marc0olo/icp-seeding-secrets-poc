@@ -84,22 +84,32 @@ export interface PreflightOutcome {
 /**
  * Turns a subnet inspection into a pass/fail plus human-readable findings.
  *
- * `allowUnprotected` exists for local development, where no subnet is SEV-SNP.
- * It must never be the default: silently sealing to a subnet whose operators can
- * read the plaintext is exactly the failure this tool exists to prevent.
+ * The two checks fail for different reasons and must not be conflated:
+ *
+ * - **SEV-SNP cannot be verified on a local network at all.** PocketIC reports
+ *   `sev_enabled = null` for every subnet, so locally this is a known blind spot
+ *   rather than a finding. `allowUnverifiedSev` acknowledges that.
+ *
+ * - **The vetKD check *is* accurate locally.** The registry reports chain keys
+ *   correctly — the fiduciary subnet shows `key_1`, the application subnet shows
+ *   none. And a missing key here predicts a hard mainnet failure, because mainnet
+ *   serves `vetkd_derive_key` from the calling canister's own subnet and rejects
+ *   otherwise, while PocketIC does not enforce that. So locally this warning is
+ *   the *only* signal that placement is wrong: the runtime will happily let you
+ *   proceed. `allowMissingVetkdKey` is therefore a much sharper knife than it looks.
  */
 export function evaluatePreflight(
   check: SubnetCheck | null,
   keyName: string,
-  allowUnprotected: boolean,
+  opts: { allowUnverifiedSev: boolean; allowMissingVetkdKey: boolean },
 ): PreflightOutcome {
   const lines: string[] = [];
 
   if (check === null) {
-    lines.push("subnet:   unknown (no NNS registry reachable — expected on a local network)");
+    lines.push("subnet:   unknown (registry unreachable)");
     lines.push("sev-snp:  UNVERIFIED");
     lines.push(`vetkd:    UNVERIFIED (assuming "${keyName}" is present)`);
-    return { ok: allowUnprotected, lines };
+    return { ok: opts.allowUnverifiedSev && opts.allowMissingVetkdKey, lines };
   }
 
   lines.push(`subnet:   ${check.subnetId.toText()}`);
@@ -110,23 +120,33 @@ export function evaluatePreflight(
     lines.push("sev-snp:  enabled");
   } else if (check.sevEnabled === false) {
     lines.push("sev-snp:  DISABLED — node operators can read the plaintext from a checkpoint");
-    ok = false;
+    if (!opts.allowUnverifiedSev) ok = false;
   } else {
-    lines.push("sev-snp:  UNVERIFIED — the registry did not report the feature flag");
-    ok = false;
+    lines.push(
+      "sev-snp:  NOT REPORTED — expected on a local network, where SEV cannot be simulated",
+    );
+    if (!opts.allowUnverifiedSev) ok = false;
   }
 
   if (check.vetKdKeys.includes(keyName)) {
-    lines.push(`vetkd:    "${keyName}" present`);
-  } else if (check.vetKdKeys.length > 0) {
-    lines.push(
-      `vetkd:    "${keyName}" NOT present — subnet holds [${check.vetKdKeys.join(", ")}]`,
-    );
-    ok = false;
+    lines.push(`vetkd:    "${keyName}" present on this subnet`);
   } else {
-    lines.push(`vetkd:    "${keyName}" NOT present — subnet holds no vetKD keys at all`);
-    ok = false;
+    const held =
+      check.vetKdKeys.length > 0
+        ? `subnet holds [${check.vetKdKeys.join(", ")}]`
+        : "subnet holds no vetKD keys";
+    lines.push(`vetkd:    "${keyName}" NOT on this subnet — ${held}`);
+    lines.push(
+      "          On mainnet this is fatal: vetkd_derive_key is served by the",
+    );
+    lines.push(
+      "          calling canister's own subnet. PocketIC does not enforce that,",
+    );
+    lines.push(
+      "          so a local run will succeed anyway and hide the problem.",
+    );
+    if (!opts.allowMissingVetkdKey) ok = false;
   }
 
-  return { ok: ok || allowUnprotected, lines };
+  return { ok, lines };
 }

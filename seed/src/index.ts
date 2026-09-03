@@ -63,8 +63,8 @@ interface Options {
   host: string;
   pem: string;
   source: MasterKeySource;
-  appSeparator: string;
-  allowUnprotectedSubnet: boolean;
+  allowUnverifiedSev: boolean;
+  allowMissingVetkdKey: boolean;
   list: boolean;
 }
 
@@ -94,14 +94,19 @@ Derivation
   --source <which>       mainnet | pocketic. Default pocketic.
                          NOT inferable from the key name: mainnet and PocketIC
                          each have a key_1 with a different master key.
-  --app-separator <s>    Must match the canister's. Default empty.
 
 Escape hatches
-  --allow-unprotected-subnet
-                         Proceed even though the subnet is not confirmed
-                         SEV-SNP. For local development only: on such a subnet
-                         node operators can read the plaintext once the canister
-                         decrypts it.
+  --allow-unverified-sev Proceed although the subnet is not confirmed SEV-SNP.
+                         Required locally, where PocketIC reports sev_enabled
+                         for no subnet. On mainnet this means node operators can
+                         read the plaintext once the canister decrypts it.
+  --allow-missing-vetkd-key
+                         Proceed although this subnet does not hold the vetKD
+                         key. Sharper than it looks: on mainnet the derive is
+                         served by the canister's OWN subnet and will be
+                         rejected, whereas PocketIC does not enforce that, so a
+                         local run succeeds and hides the problem.
+  --local                Shorthand for both of the above.
   --list                 List the secrets the canister already holds.
 `.trim();
 
@@ -136,8 +141,8 @@ function parseArgs(argv: string[]): Options {
     host: get("--host") ?? "http://127.0.0.1:8000",
     pem: get("--pem") ?? process.env.SEAL_IDENTITY_PEM ?? "",
     source,
-    appSeparator: get("--app-separator") ?? "",
-    allowUnprotectedSubnet: has("--allow-unprotected-subnet"),
+    allowUnverifiedSev: has("--allow-unverified-sev") || has("--local"),
+    allowMissingVetkdKey: has("--allow-missing-vetkd-key") || has("--local"),
     list,
   };
 }
@@ -202,27 +207,29 @@ async function main() {
     );
   }
 
-  // ------------------------------------------------------------- 1. preflight
-  const check = await inspectSubnet(agent, canisterId);
-  const preflight = evaluatePreflight(check, "", opts.allowUnprotectedSubnet);
-  // The key name is only known after we read info, so re-evaluate below; this
-  // first pass is just to surface the subnet id early.
-
-  // ------------------------------------------------------------------ 2. info
+  // ---------------------------------------------- 1. what does the canister use?
+  //     Read first, so the preflight can check the key name the canister will
+  //     actually ask for rather than one we assumed.
   const info = unwrap<Info>(await actor.icp_sealed_secret_info(), "icp_sealed_secret_info");
-  const context = sealedSecretsContext(opts.appSeparator);
+  // The application domain separator is always empty in this PoC; it stays in
+  // the wire format only so it can be adopted later without a format break.
+  const context = sealedSecretsContext("");
   const epoch = Number(info.epoch);
 
-  const finalPreflight = evaluatePreflight(check, info.key_name, opts.allowUnprotectedSubnet);
+  // ------------------------------------------------------------- 2. preflight
+  const check = await inspectSubnet(agent, canisterId);
+  const preflight = evaluatePreflight(check, info.key_name, {
+    allowUnverifiedSev: opts.allowUnverifiedSev,
+    allowMissingVetkdKey: opts.allowMissingVetkdKey,
+  });
   console.log("preflight");
-  for (const line of finalPreflight.lines) console.log(`  ${line}`);
-  if (!finalPreflight.ok) {
+  for (const line of preflight.lines) console.log(`  ${line}`);
+  if (!preflight.ok) {
     fail(
       "subnet preflight failed; refusing to seal.\n" +
-        "       Pass --allow-unprotected-subnet to override (local development only).",
+        "       For a local network, pass --local (or the two --allow-* flags).",
     );
   }
-  void preflight;
 
   // --------------------------------------------- 3. derive offline, then check
   const derived = derivePublicKey(opts.source, info.key_name, canisterId, context);
@@ -240,7 +247,7 @@ async function main() {
       "the canister derives under a different context than we computed.\n" +
         `       ours:    ${toHex(context)}\n` +
         `       theirs:  ${toHex(Uint8Array.from(info.context))}\n` +
-        "       Check --app-separator.",
+        "       The canister and this client disagree on the wire format.",
     );
   }
 
