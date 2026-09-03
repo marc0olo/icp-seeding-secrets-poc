@@ -8,7 +8,7 @@
 //! so the vectors are generated from real curve points, through the same
 //! serialization the protocol uses.
 //!
-//!     cargo run -p vectorgen > motoko/bls12-381/test/vectors.json
+//!     cargo run -p vectorgen > motoko/vectors.json
 //!
 //! Regenerate whenever `ic_bls12_381` is upgraded; a diff in the output is a
 //! signal worth reading, not noise to commit past.

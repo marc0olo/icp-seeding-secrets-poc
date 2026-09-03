@@ -1,0 +1,19 @@
+[package]
+name = "sealed-secrets-vetkeys"
+version = "0.0.1"
+description = "EXPERIMENTAL, UNAUDITED vetKD layer for Motoko — IBE decryption, vetKey verification, offline key derivation"
+repository = "https://github.com/marc0olo/icp-seeding-secrets-poc"
+keywords = [ "vetkeys", "ibe", "experimental" ]
+license = "Apache-2.0"
+
+[dependencies]
+core = "2.6.1"
+sealed-secrets-bls = "../bls12-381"
+
+[dev-dependencies]
+test = "2.1.1"
+bench = "2.0.1"
+
+[toolchain]
+moc = "1.15.1"
+pocket-ic = "15.0.0"

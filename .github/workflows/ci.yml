@@ -121,7 +121,7 @@ jobs:
   # Rust reference, so this job also proves the generator still runs and that the
   # committed vectors still match what the reference produces.
   motoko:
-    name: Motoko BLS12-381 (experimental)
+    name: Motoko (experimental)
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/dfinity/icp-dev-env-all:v2.0.0
@@ -146,15 +146,23 @@ jobs:
       - name: Vectors still match the reference
         run: |
           cargo run -q -p vectorgen > /tmp/vectors.json
-          if ! diff -q /tmp/vectors.json motoko/bls12-381/test/vectors.json >/dev/null; then
-            echo "::error::motoko/bls12-381/test/vectors.json is stale — run 'cargo run -p vectorgen > motoko/bls12-381/test/vectors.json' and commit"
-            diff /tmp/vectors.json motoko/bls12-381/test/vectors.json | head -20
+          if ! diff -q /tmp/vectors.json motoko/vectors.json >/dev/null; then
+            echo "::error::motoko/vectors.json is stale — run 'cargo run -p vectorgen > motoko/vectors.json' and commit"
+            diff /tmp/vectors.json motoko/vectors.json | head -20
             exit 1
           fi
           echo "ok — committed vectors match the reference"
 
-      - name: Motoko tests
-        working-directory: motoko
+      - name: BLS12-381 tests
+        working-directory: motoko/bls12-381
+        run: mops test
+
+      - name: vetKeys tests
+        working-directory: motoko/vetkeys
+        run: mops test
+
+      - name: Canister tests
+        working-directory: motoko/canister
         run: mops test
 
   # The real thing: deploy to a local replica, seal a secret, decrypt it.

@@ -362,15 +362,21 @@ verification and the no-getter rule are the same design decision viewed from two
 
 ## 3. A Motoko library
 
-`motoko/` holds an **experimental, unaudited** BLS12-381 implementation for
-Motoko: the whole field tower (`Fp`, `Fp2`, `Fp6`, `Fp12`), both curve groups
+`motoko/` holds an **experimental, unaudited** implementation, split into two
+packages along the boundary that matters here — [`bls12-381/`](./motoko/bls12-381)
+for the curve and [`vetkeys/`](./motoko/vetkeys) for the vetKD layer built on it,
+mirroring how Rust splits `ic_bls12_381` from `ic-vetkeys`. Between them: the whole field tower (`Fp`, `Fp2`, `Fp6`, `Fp12`), both curve groups
 with compression, the optimal ate pairing, HKDF-SHA256, SHAKE256,
 `expand_message_xmd`, `hash_to_scalar`, RFC 9380 `hash_to_curve`, IBE decryption,
-`decrypt_and_verify`, and offline derived-public-key computation. 102 tests — see [motoko/bls12-381/README.md](./motoko/bls12-381/README.md).
+`decrypt_and_verify`, and offline derived-public-key computation. 102 tests — see
+[motoko/README.md](./motoko/README.md).
 
 Upstream has none of this. `backend/mo/ic_vetkeys/src/` has `key_manager`,
 `encrypted_maps`, `ManagementCanister` and `Types`, and no mops package provides
-pairing arithmetic.
+pairing arithmetic. **`motoko/vetkeys/` is precisely the gap** — three modules,
+380 lines — and `motoko/bls12-381/` is what would have to exist and be audited
+underneath it first. The split is deliberate, so the upstreaming scope is a
+directory rather than a description.
 
 **How it is tested.** Every layer against vectors generated from `ic_bls12_381`
 itself; the hash layer additionally against Python's `hashlib`, a third
@@ -400,8 +406,9 @@ possible.
 **The asks.**
 
 *vetKeys team:* IBE in the Motoko library, so `mo:ic-vetkeys` reaches parity with
-the Rust crate. This port is evidence it can be done, and a starting point for
-doing it properly.
+the Rust crate. [`motoko/vetkeys/`](./motoko/vetkeys) is the shape of that
+addition and a starting point for doing it properly; it needs an audited
+BLS12-381 underneath, which is the harder half.
 
 *Motoko team:* [motoko/bls12-381/PROPOSAL.md](./motoko/bls12-381/PROPOSAL.md) — a measured case that
 one missing runtime primitive accounts for most of the 10× gap. Motoko's `Nat` is

@@ -50,11 +50,13 @@ rm -rf "$before"
 
 step "vectors match the reference"
 cargo run -q -p vectorgen > /tmp/vectors-check.json
-diff -q /tmp/vectors-check.json motoko/bls12-381/test/vectors.json \
-  || { echo "motoko/bls12-381/test/vectors.json is stale"; exit 1; }
+diff -q /tmp/vectors-check.json motoko/vectors.json \
+  || { echo "motoko/vectors.json is stale"; exit 1; }
 
 step "motoko: check and test"
-( cd motoko/bls12-381 && mops check src/*.mo >/dev/null && mops test )
+for pkg in bls12-381 vetkeys canister; do
+  ( cd "motoko/$pkg" && mops check src/*.mo >/dev/null && mops test )
+done
 
 step "typescript: typecheck, tests, diagrams"
 ( cd seed && npm run --silent typecheck && npm test && npm run --silent check:diagrams )

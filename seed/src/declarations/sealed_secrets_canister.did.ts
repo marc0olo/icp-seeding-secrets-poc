@@ -309,7 +309,7 @@ export interface _SERVICE {
    * instruction count the replica charges, and that is wasm-specific.
    * 
    * Takes the vetKey and ciphertext as arguments so both implementations can be
-   * pointed at the identical vector from `motoko/bls12-381/test/vectors.json`.
+   * pointed at the identical vector from `motoko/vectors.json`.
    * 
    * **The first call costs about three times the rest.** `ic-vetkeys` holds a
    * `lazy_static` precomputed multiplication table for the `G2` generator
