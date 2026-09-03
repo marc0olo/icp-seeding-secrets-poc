@@ -366,7 +366,7 @@ verification and the no-getter rule are the same design decision viewed from two
 Motoko: the whole field tower (`Fp`, `Fp2`, `Fp6`, `Fp12`), both curve groups
 with compression, the optimal ate pairing, HKDF-SHA256, SHAKE256,
 `expand_message_xmd`, `hash_to_scalar`, RFC 9380 `hash_to_curve`, IBE decryption,
-`decrypt_and_verify`, and offline derived-public-key computation. 102 tests — see [motoko/vetkeys/README.md](./motoko/vetkeys/README.md).
+`decrypt_and_verify`, and offline derived-public-key computation. 102 tests — see [motoko/bls12-381/README.md](./motoko/bls12-381/README.md).
 
 Upstream has none of this. `backend/mo/ic_vetkeys/src/` has `key_manager`,
 `encrypted_maps`, `ManagementCanister` and `Types`, and no mops package provides
@@ -403,7 +403,7 @@ possible.
 the Rust crate. This port is evidence it can be done, and a starting point for
 doing it properly.
 
-*Motoko team:* [motoko/vetkeys/PROPOSAL.md](./motoko/vetkeys/PROPOSAL.md) — a measured case that
+*Motoko team:* [motoko/bls12-381/PROPOSAL.md](./motoko/bls12-381/PROPOSAL.md) — a measured case that
 one missing runtime primitive accounts for most of the 10× gap. Motoko's `Nat` is
 libtommath, which already implements Barrett and Montgomery reduction, modular
 exponentiation and modular inversion; the runtime compiles in an explicit subset

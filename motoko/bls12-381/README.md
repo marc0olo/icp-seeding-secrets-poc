@@ -172,7 +172,7 @@ compiler.
 Test vectors are **generated from the Rust reference**, not hand-written:
 
 ```bash
-cargo run -p vectorgen > motoko/vetkeys/test/vectors.json
+cargo run -p vectorgen > motoko/bls12-381/test/vectors.json
 ```
 
 This matters. The reference's own `fp` unit tests are written against its internal
@@ -243,6 +243,12 @@ skips verification and returns whatever it unwrapped.
 | `MasterPublicKey` / `derive_canister_key` / `derive_sub_key` | ✅ 7 tests, derivation matching the Rust reference byte for byte |
 
 ### Coverage
+
+This package holds what Rust splits into `ic_bls12_381` (the curve, ~1,900 lines
+here) and `ic_vetkeys` (`Ibe`, `VetKey`, `PublicKey` — the vetKD layer, ~380
+lines). One package rather than two because splitting an unaudited proof of
+concept into two mops packages would be ceremony; the seam is where upstreaming
+would cut, and [`../README.md`](../README.md) has the module-by-module mapping.
 
 This is a library, not a canister. It covers what happens to a `vetkd_derive_key`
 reply once a canister has it: unwrap it, **verify** it, decrypt the sealed

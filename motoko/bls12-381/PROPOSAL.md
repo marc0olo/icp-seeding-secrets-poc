@@ -144,7 +144,7 @@ dependency already implements.
 ## Reproducing
 
 ```bash
-cd motoko/vetkeys
+cd motoko/bls12-381
 mops bench Why      # the 85% split
 mops bench Shift    # shifts cost as much as reductions
 mops bench Ibe      # end-to-end decryption
@@ -160,4 +160,4 @@ the replica charges.
 
 *From [icp-seeding-secrets-poc](https://github.com/marc0olo/icp-seeding-secrets-poc).
 The Motoko implementation is experimental and unaudited; see
-[motoko/vetkeys/README.md](./README.md).*
+[motoko/bls12-381/README.md](./README.md).*

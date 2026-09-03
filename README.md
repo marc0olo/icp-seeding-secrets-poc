@@ -847,7 +847,7 @@ reference, it verifies a real `vetkd_derive_key` reply taken from `ic-vetkeys`'
 own test suite, and it derives the same public keys `rust/core` does.
 
 It is a demonstration, not a recommendation — read
-[motoko/vetkeys/README.md](./motoko/vetkeys/README.md) before considering it for anything. It is
+[motoko/bls12-381/README.md](./motoko/bls12-381/README.md) before considering it for anything. It is
 unaudited.
 
 ## Layout
@@ -856,7 +856,7 @@ unaudited.
 rust/core/           wire format + offline key derivation. No canister APIs; host-testable.
 rust/core/tests/     golden vectors — the contract other implementations must meet.
 rust/canister/       the canister: endpoints, stable store, key derivation and caches.
-rust/vectorgen/      emits motoko/vetkeys/test/vectors.json from the Rust reference.
+rust/vectorgen/      emits motoko/bls12-381/test/vectors.json from the Rust reference.
 seed/src/              the host-side seeding script and the e2e suite.
 seed/src/declarations/ GENERATED from the .did — do not edit; `npm run bindings`.
 scripts/local-test.sh  the whole round trip, one command.
