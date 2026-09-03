@@ -8,12 +8,15 @@ rust-version.workspace = true
 repository.workspace = true
 
 [features]
-# Adds endpoints that observe a decrypted secret: `secret_sha256` (a digest, for
-# automated verification) and `secret_reveal` (the plaintext itself, so a human
-# can see the round trip worked).
+# Adds `secret_reveal`, which returns a decrypted secret in the clear so a human
+# can see the round trip worked. That is its only purpose.
 #
 # OFF by default, so a plain `cargo build` produces a canister with no way to
-# observe a secret at all — that property is checked by `scripts/local-test.sh`.
+# disclose a secret at all — asserted against the wasm bytes by
+# `scripts/local-test.sh` and CI. Nothing automated needs it: a successful `set`
+# already proves the canister can decrypt, and `icp_sealed_secret_matches`
+# answers "is the right value set?" without disclosing anything.
+#
 # Never enable this for a real deployment; see README "Can I just add a getter?".
 test-hooks = []
 

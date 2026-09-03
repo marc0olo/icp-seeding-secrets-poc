@@ -188,15 +188,19 @@ icp_sealed_secret_set  : (text, blob) -> (variant { Ok : nat64; Err : … });
 ```
 
 `info` tells the client what to encrypt to and lets it cross-check its own offline
-derivation; `set` receives the ciphertext. Everything else in the PoC is convenience:
-`list` and the future `matches` support idempotent re-seeding, `unset` is housekeeping,
-and `self_test` is a deploy-time health check. A standard that demands two methods is a
-far easier sell than one that demands six, and the CLI should treat the rest as optional
-and degrade rather than refuse.
+derivation; `set` receives the ciphertext. With those two a tool can seal.
+
+The rest is graded rather than required. `matches` is the one worth pressing for — it is
+what lets an operator confirm the right value is deployed, and what would let `icp deploy`
+re-seal only what changed; a canister without it forces the CLI to re-seal blindly.
+`unset` is housekeeping, `list` helps diffing, and `self_test` is a deploy-time health
+check. A standard that demands two methods and recommends a third is a far easier sell
+than one that demands six, and the CLI should degrade rather than refuse when the
+optional ones are absent.
 
 **Discovery is already solved and needs no new mechanism.** `icp canister metadata
 <canister> candid:service` returns the canister's full interface without a single update
-call, so the CLI can check for the two methods and fail early with a message naming what
+call, so the CLI can check which of these the canister has and fail early naming what
 is missing, instead of surfacing a raw `CanisterError` from calling a method that does not
 exist. This works only if the canister embeds `candid:service` in its wasm metadata —
 which the `@dfinity/rust` recipe does by default, and which this PoC's build steps copy

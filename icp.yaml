@@ -15,9 +15,12 @@ canisters:
             - command -v candid-extractor >/dev/null 2>&1 || { echo >&2 "candid-extractor not found. Run 'cargo install candid-extractor'."; exit 1; }
             - command -v ic-wasm >/dev/null 2>&1 || { echo >&2 "ic-wasm not found; it ships with icp-cli."; exit 1; }
 
-        # --features test-hooks adds secret_sha256 and secret_reveal so you can
-        # verify decryption locally. A real deployment builds WITHOUT it: the
-        # default build has no endpoint that observes a secret at all.
+        # --features test-hooks adds secret_reveal, so a human can look at a
+        # decrypted secret and believe the round trip worked. A real deployment
+        # builds WITHOUT it: the default build has no endpoint that discloses a
+        # secret at all. Automated verification does not need it —
+        # icp_sealed_secret_matches answers "is the right value set?" and is in
+        # every build.
         - type: script
           commands:
             - cargo build --package sealed-secrets-canister --target wasm32-unknown-unknown --release --locked --features test-hooks

@@ -12,9 +12,9 @@ data disk then protect the decrypted value from node operators.
 This exists to be argued with. The interface is a starting proposal, not a standard.
 For what productizing it would look like, see **[FOLLOW-UPS.md](./FOLLOW-UPS.md)**.
 
-> **Do not deploy this as-is.** It ships a `secret_sha256` test hook, and the whole
-> guarantee is void unless the canister is blackholed or governed — see
-> [Security model](#security-model).
+> **Do not deploy this as-is.** It ships a `secret_reveal` test hook (absent from a
+> default build, but enabled by this repo's `icp.yaml`), and the whole guarantee is void
+> unless the canister is blackholed or governed — see [Security model](#security-model).
 
 ---
 
@@ -235,7 +235,7 @@ Then confirm the canister really recovered the plaintext, and that the whole
 derivation path is healthy:
 
 ```bash
-icp canister call sealed-secrets secret_sha256 '("DUMMY_API_KEY")' -e local
+icp canister call sealed-secrets secret_reveal '("DUMMY_API_KEY")' -e local
 icp canister call sealed-secrets icp_sealed_secret_self_test '(opt variant { PocketIc })' -e local
 ```
 
@@ -357,6 +357,42 @@ method is a wasm export, so this is checkable four ways, and all four agree:
 `local-test.sh` and CI assert the byte scan on every run, with a control (that
 `icp_sealed_secret_set` *is* present) so the check cannot pass by reading the wrong file.
 
+### Can I just add a getter?
+
+Not in production — but the reason is more interesting than "it would leak the key",
+because **a controller can obtain the secret anyway**. Two routes, no endpoint required:
+
+1. **Install code that decrypts.** vetKD binds the key to the **canister ID**, not to the
+   module hash — `vetkd_public_key` takes `{ canister_id, context, key_id }` and nothing
+   about the code. The ciphertext sits in stable memory and survives an upgrade, so any
+   module a controller installs on that canister can derive the same key. There is no way
+   to pin a sealed secret to a particular code version.
+2. **Read the heap out of a snapshot.** `take_canister_snapshot`, then
+   `read_canister_snapshot_data` with `kind = variant { wasm_memory : record { offset; size } }`.
+   The decrypted plaintext cache is right there.
+
+So what does a getter actually cost you?
+
+- **It ships the plaintext to a boundary node.** Replies are not encrypted end-to-end; the
+  boundary node terminates TLS and sits *outside* the subnet's SEV-SNP trust boundary. That
+  undoes in the outbound direction exactly what sealing achieved on the way in. (Note a
+  `query` is the *less* bad choice here — an `update` reply is written into replicated state
+  on every node, whereas a query reply is ephemeral.)
+- **It destroys the property that makes the code auditable.** "The published code never
+  returns the plaintext" is something a reader can verify by reading it. Replace it with
+  "…unless the caller is a controller" and the guarantee now rests on the controller set
+  being, and remaining, exactly what you believe.
+- **It leaves no trace.** Installing leaky code changes the module hash, which is visible
+  in the state tree. A call to a getter leaves nothing behind.
+
+The corollary is the one that matters for deployment: **since a controller can always get
+the secret, the canister must be blackholed or SNS/NNS-governed for any of this to mean
+anything.** On a blackholed canister a controller-gated getter is inert — nobody is a
+controller — but by then you have no way to observe the secret anyway, which is the point.
+
+None of this argues against `icp_sealed_secret_matches`: it returns one bit about a value
+the caller already holds, not the value itself, so it survives every objection above.
+
 ## Client bindings
 
 `seed/src/declarations/` is **generated** from `crates/canister/sealed_secrets_canister.did`
@@ -433,7 +469,7 @@ treat them as optional — see [FOLLOW-UPS.md](./FOLLOW-UPS.md).
   client confirm its upload landed.
 - **There is no `get` in a default build.** No endpoint returns a plaintext. The
   `test-hooks` feature adds `secret_reveal`, which does — see
-  [Seeing the decrypted secret](#seeing-the-decrypted-secret) and
+  [Seeing the plaintext](#seeing-the-plaintext) and
   [Can I just add a getter?](#can-i-just-add-a-getter).
 - **`secret_len`** is the demo of *using* a secret internally: it reads the plaintext and
   returns only a derived value. The length is not a new disclosure, since `list` already
@@ -578,7 +614,7 @@ scripts/local-test.sh  the whole round trip, one command.
 icp.yaml               local (port 8010) and ic environments.
 .github/workflows/     CI on ghcr.io/dfinity/icp-dev-env-all.
 .icp/cache/            gitignored — recreatable.
-.icp/data/             NOT gitignored — mainnet canister IDs; see above.
+.icp/data/             appears after a mainnet deploy. NOT gitignored — commit it.
 ```
 
 The core/canister split is deliberate. It keeps the format layer free of `ic-cdk` and
@@ -587,10 +623,11 @@ The core/canister split is deliberate. It keeps the format layer free of `ic-cdk
 
 ## Deliberately out of scope
 
-Rotation, the macros that would make this three lines in someone else's canister,
-splitting `ic-vetkeys` itself along a Cargo feature, and any icp-cli integration. All of it is discussed in
-**[FOLLOW-UPS.md](./FOLLOW-UPS.md)**; none of it belongs in something whose job is to
-start a design conversation.
+Rotation, using `matches` to make `icp deploy` idempotent, the macros that would make this
+three lines in someone else's canister, splitting `ic-vetkeys` itself along a Cargo
+feature, and any icp-cli integration. All of it is discussed in
+**[FOLLOW-UPS.md](./FOLLOW-UPS.md)**; none of it belongs in something whose job is to start
+a design conversation.
 
 ## Licence
 
