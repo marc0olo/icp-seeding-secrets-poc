@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=https://github.com/dfinity/icp-cli/raw/refs/heads/main/docs/schemas/icp-yaml-schema.json
+
+canisters:
+  - name: sealed-secrets
+    build:
+      steps:
+        - type: script
+          commands:
+            - cargo build -p sealed-secrets-canister --target wasm32-unknown-unknown --release --locked
+            - cp target/wasm32-unknown-unknown/release/sealed_secrets_canister.wasm "$ICP_WASM_OUTPUT_PATH"
+
+    # key_source is NOT inferable from key_name: mainnet and PocketIC each have a
+    # key called `key_1`, backed by different master public keys. Picking the wrong
+    # one yields ciphertext nobody can ever decrypt, with no error at seal time.
+    # The default here is the local one; the `ic` environment overrides it below.
+    init_args: '(record { app_separator = null; key_name = "key_1"; key_source = variant { PocketIc } })'
+
+networks:
+  # Port 8000 is icp-cli's default; this project uses 8010 so it can run
+  # alongside another project's local network.
+  - name: local
+    mode: managed
+    gateway:
+      bind: 127.0.0.1
+      port: 8010
+
+environments:
+  - name: local
+    network: local
+
+  - name: ic
+    network: ic
+    init_args:
+      sealed-secrets: '(record { app_separator = null; key_name = "key_1"; key_source = variant { Mainnet } })'

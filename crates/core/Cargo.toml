@@ -1,0 +1,18 @@
+[package]
+name = "sealed-secrets-core"
+description = "Wire format and offline key derivation for the vetKeys sealed-secrets PoC"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+candid = { workspace = true }
+ic-cdk-management-canister = { workspace = true }
+ic-vetkeys = { workspace = true }
+
+[dev-dependencies]
+hex = "0.4.3"
+rand = "0.8.6"
+rand_chacha = "0.3.1"

@@ -1,0 +1,26 @@
+[workspace]
+members = ["crates/core", "crates/canister"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+rust-version = "1.85.0"
+repository = "https://github.com/marc0olo/icp-seeding-secrets-poc"
+
+[workspace.dependencies]
+candid = "0.10.16"
+ic-cdk = "0.20.1"
+ic-cdk-management-canister = "0.1.1"
+ic-stable-structures = "0.7.0"
+ic-vetkeys = "0.9.0"
+serde = { version = "1.0.217", features = ["derive"] }
+serde_bytes = "0.11.15"
+sha2 = "0.10.9"
+zeroize = { version = "1.8.1", features = ["zeroize_derive"] }
+
+[profile.release]
+lto = true
+opt-level = 'z'
+panic = 'abort'

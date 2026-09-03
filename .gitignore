@@ -1,0 +1,8 @@
+/target
+**/node_modules
+seed/dist
+.icp/
+*.wasm
+!seed/**/*.wasm
+.env
+.env.*
