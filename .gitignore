@@ -1,8 +1,20 @@
 /target
 **/node_modules
 seed/dist
-.icp/
-*.wasm
-!seed/**/*.wasm
+
+# icp-cli splits this directory in two, and only half is disposable:
+#
+#   .icp/cache/  built wasms, local network state, local canister IDs — all
+#                recreatable on the next deploy.
+#   .icp/data/   canister ID mappings for CONNECTED networks, i.e. mainnet.
+#                MUST be committed. Losing it is not merely inconvenient here:
+#                vetKD derives the decryption key from the canister ID, so a
+#                lost mapping that leads to deploying a replacement canister
+#                makes every sealed secret permanently unreadable.
+/.icp/cache/
+
+# Never commit a key or a secret. `icp identity export` writes a PEM to stdout,
+# and it is easy to redirect that into the repo by accident.
+*.pem
 .env
 .env.*

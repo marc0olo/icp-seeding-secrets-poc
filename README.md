@@ -468,6 +468,22 @@ executes it. It is an egress knob, not a confidentiality control.
 Still leaked even on SEV, because it is outside the encrypted payload: the destination
 host (TLS SNI, DNS), timing, and request/response sizes. The key itself is not.
 
+## Do not lose the canister ID
+
+vetKD derives the key from the **canister ID**. That is what makes a ciphertext decryptable
+by exactly one canister — and it is also a durability requirement most projects do not have.
+
+icp-cli records mainnet canister IDs in `.icp/data/mappings/<environment>.ids.json`, and
+that directory is **deliberately not gitignored** here. Losing it is not the usual
+inconvenience of having to look an ID up on the dashboard: if it leads to deploying a
+*replacement* canister, every secret ever sealed to the old one becomes permanently
+unreadable, because the key derived from the old ID cannot be derived by the new canister.
+
+Commit `.icp/data/`. Only `.icp/cache/` is disposable.
+
+The same reasoning applies to canister migration: moving a canister to another subnet
+changes nothing (the ID travels with it), but re-creating one does.
+
 ## Prerequisites for a real deployment
 
 Two **independent** subnet properties — neither implies the other:
@@ -534,6 +550,9 @@ seed/src/              the host-side seeding script and the e2e suite.
 seed/src/declarations/ GENERATED from the .did — do not edit; `npm run bindings`.
 scripts/local-test.sh  the whole round trip, one command.
 icp.yaml               local (port 8010) and ic environments.
+.github/workflows/     CI on ghcr.io/dfinity/icp-dev-env-all.
+.icp/cache/            gitignored — recreatable.
+.icp/data/             NOT gitignored — mainnet canister IDs; see above.
 ```
 
 The core/canister split is deliberate. It keeps the format layer free of `ic-cdk` and
