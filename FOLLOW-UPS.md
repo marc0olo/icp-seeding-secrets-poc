@@ -198,9 +198,15 @@ Also: `derive_unencrypted_vetkey`'s doc comment claims `Ok(VetKey)` but it retur
 
 ### Example and docs
 
-A `dfinity/examples` entry, plus a **`VERIFYING.md`** covering module-hash verification
-against a reproducible build, controller-set verification, and the subnet chain-key and
-SEV checks. Without that last file the example teaches a false sense of security.
+A `dfinity/examples` entry, plus a **`VERIFYING.md`** covering the subnet's chain-key and
+SEV status, module-hash verification against a reproducible build, and — most importantly
+— **verifying the controller set**, since that is the access-control boundary. It should
+be explicit that the goal is a controller set that is small, known and not shared, *not*
+an empty one: `set` is controller-gated, so a blackholed canister can neither be seeded
+nor rotated.
+
+Without that file the example teaches a false sense of security, and gets the emphasis
+wrong in a way that costs adopters rotation.
 
 The README should also say plainly that `basic_timelock_ibe`'s all-zero transport seed
 is correct *there* — the key is meant to become public — and wrong for confidential

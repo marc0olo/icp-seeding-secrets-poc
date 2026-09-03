@@ -20,9 +20,12 @@
 //!   `--features test-hooks`, so a human can watch the round trip work.
 //!
 //! Read `README.md` before deploying this anywhere real. In particular: a
-//! controller can read the plaintext out of a snapshot without upgrading the
-//! canister, so the guarantee only means something for a blackholed or governed
-//! one.
+//! controller can read the plaintext — by installing code that decrypts, or by
+//! snapshotting the heap — because vetKD binds the key to the canister ID rather
+//! than the module hash. For the case this is built for that is not a defect: the
+//! controller is whoever seeded the secret. It matters only if your threat model
+//! puts the controller in scope, and the answer there is governance, not
+//! blackholing, which would leave a canister that can never be seeded or rotated.
 
 mod keys;
 mod store;

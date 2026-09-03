@@ -12,9 +12,9 @@ data disk then protect the decrypted value from node operators.
 This exists to be argued with. The interface is a starting proposal, not a standard.
 For what productizing it would look like, see **[FOLLOW-UPS.md](./FOLLOW-UPS.md)**.
 
-> **Do not deploy this as-is.** It ships a `secret_reveal` test hook (absent from a
-> default build, but enabled by this repo's `icp.yaml`), and the whole guarantee is void
-> unless the canister is blackholed or governed — see [Security model](#security-model).
+> **Do not deploy this as-is.** It ships a `secret_reveal` test hook — absent from a
+> default build, but enabled by this repo's `icp.yaml`. Read
+> [Security model](#security-model) for what this does and does not protect against.
 
 ---
 
@@ -487,10 +487,11 @@ So what does a getter actually cost you?
 - **It leaves no trace.** Installing leaky code changes the module hash, which is visible
   in the state tree. A call to a getter leaves nothing behind.
 
-The corollary is the one that matters for deployment: **since a controller can always get
-the secret, the canister must be blackholed or SNS/NNS-governed for any of this to mean
-anything.** On a blackholed canister a controller-gated getter is inert — nobody is a
-controller — but by then you have no way to observe the secret anyway, which is the point.
+The corollary is narrower than it first looks. A controller can always get the secret, so
+a getter does not hand *them* anything new — what it does is move the secret onto the
+network and into an audit story that now depends on the controller set rather than on the
+code. Keep it out, and the controller set stays the whole boundary. See
+[Who it does not protect against](#who-it-does-not-protect-against-by-design).
 
 None of this argues against `icp_sealed_secret_matches`: it returns one bit about a value
 the caller already holds, not the value itself, so it survives every objection above.
@@ -604,18 +605,67 @@ measurement. This is the *only* thing that moves "node operators can read the
 plaintext" to "cannot". **Without a SEV-SNP subnet this scheme protects the secret in
 transit and at rest in the ingress history, and nothing more.**
 
-### What is still exposed
+### Who this protects against
 
-- **Controllers.** A controller can `install_code` with code that returns the
-  plaintext, *or* take a snapshot and `read_canister_snapshot_data` the Wasm memory
-  directly — no upgrade required. **Public source is necessary and nowhere near
-  sufficient.** The canister must be blackholed or SNS/NNS-governed, with a
-  reproducible build, a verified module hash, and a verified controller set.
-- **The canister's own code.** vetKD hands it the key on demand. The guarantee is
-  exactly "the published, verified code does not expose the plaintext".
-- **Any non-SEV node in the subnet.** Replicated state is on all of them, so the
-  protection is only as strong as the weakest node.
-- **Attestation.** Nothing here proves the subnet is SEV-SNP. Verify out of band.
+- **Anyone on the network path.** Boundary nodes, and anyone reading ingress messages or
+  blocks, see IBE ciphertext. The plaintext never crosses in the clear.
+- **Node operators**, via SEV-SNP — and only via SEV-SNP. On any other subnet they can read
+  the plaintext out of a checkpoint the moment the canister decrypts.
+- **Every other principal**, via controller-gating on every endpoint that touches a secret.
+- **Your repo, your CI logs, your shell history**, because the value is read from the
+  environment and never from argv or a committed file.
+
+### Who it does not protect against, by design
+
+**The controller can read the secret.** They can install code that decrypts it — vetKD
+binds the key to the *canister ID*, not the module hash, so any module they install can
+derive the same key — or take a snapshot and read the plaintext cache out of the Wasm
+memory. There is no way to pin a sealed secret to a particular code version.
+
+For the case this PoC is built for, that is not a defect. **The controller is whoever
+seeded the secret; they already know it.** The controller set is the access-control
+boundary, and what matters is that it is small, known, and not shared — not that it is
+empty.
+
+Also not protected: **metadata**. The destination host of an outcall (TLS SNI, DNS),
+timing, and request and response sizes are outside the encrypted payload. The credential
+is not.
+
+And nothing here proves the subnet is SEV-SNP. Verify that out of band.
+
+### When the controller *is* in your threat model
+
+A different shape of application — one holding *other people's* secrets, where users need
+protection from whoever operates the canister — does put the controller in scope. Then a
+single controller key is not enough, and the answer is **SNS or NNS governance**, so that
+installing new code requires a public proposal and a vote rather than one private key.
+That does not make extraction impossible; it makes it public.
+
+**Blackholing is not the answer, and cannot be here.** `icp_sealed_secret_set` is
+controller-gated, so a canister with no controllers can never be seeded and can never be
+rotated. You would be choosing a canister whose API key can never be changed — and API
+keys expire, leak, and get revoked. That is a worse failure than the one it avoids.
+
+An earlier draft of this README recommended blackholing. That was wrong on both counts:
+it imported a threat model from a different problem, and it contradicted this design.
+
+### Rotating a secret
+
+Seal it again. `set` overwrites, bumps the revision, and the plaintext cache is keyed by
+revision — so the next use picks up the new value with no upgrade, no re-derivation and no
+downtime.
+
+```bash
+DUMMY_API_KEY='the-new-key' npm run seal -- --canister <id> --name DUMMY_API_KEY --source mainnet
+DUMMY_API_KEY='the-new-key' npm run seal -- --canister <id> --name DUMMY_API_KEY --source mainnet --verify
+```
+
+The e2e suite covers this: *overwriting bumps the revision* and *the cache did not serve
+the stale value after overwrite*.
+
+Rotating the *vetKD key* — the epoch in the identity — is a separate thing, and is
+deferred; see [FOLLOW-UPS.md](./FOLLOW-UPS.md). It is almost never what you want. If a
+secret leaks you rotate the secret, which is the paragraph above.
 
 ### HTTPS outcalls
 
