@@ -74,17 +74,25 @@ AFTER=$(git diff -- $GEN_PATHS; git status --porcelain -- $GEN_PATHS)
   || fail "seed/src/declarations was stale — regenerating changed it. Review and commit."
 echo "  ok — declarations are up to date with the .did"
 
-say "3. make sure an identity exists"
-# A fresh container (CI) has none, and the network seeds cycles to the default
-# identity at start-up — so this has to happen BEFORE the network comes up.
-# `plaintext` storage because a container has no keyring and no TTY to answer a
-# password prompt.
-if ! icp identity default >/dev/null 2>&1; then
-  icp identity new "$TEST_IDENTITY" --storage plaintext --quiet >/dev/null
+say "3. make sure there is an identity we can export"
+# The network seeds cycles to the default identity at start-up, so this has to
+# happen BEFORE the network comes up.
+#
+# "a default exists" is not the test: a fresh container defaults to the ANONYMOUS
+# identity, which exists, has no key, and cannot be exported — `icp identity
+# export` fails with "cannot export the anonymous identity". So check for a
+# usable one, and only then create ours. That keeps a developer's own default
+# untouched locally while still working in CI, where `plaintext` storage is
+# required because a container has no keyring and no TTY for a password prompt.
+IDENTITY=$(icp identity default 2>/dev/null || true)
+if [ -z "$IDENTITY" ] || [ "$IDENTITY" = "anonymous" ]; then
+  if ! icp identity list 2>/dev/null | awk '{print $1}' | grep -qx "$TEST_IDENTITY"; then
+    icp identity new "$TEST_IDENTITY" --storage plaintext --quiet >/dev/null
+    echo "  created '$TEST_IDENTITY' (default was ${IDENTITY:-unset})"
+  fi
   icp identity default "$TEST_IDENTITY" >/dev/null
-  echo "  created '$TEST_IDENTITY'"
+  IDENTITY="$TEST_IDENTITY"
 fi
-IDENTITY=$(icp identity default)
 echo "  using '$IDENTITY' ($(icp identity principal))"
 
 say "4. start the local network"
