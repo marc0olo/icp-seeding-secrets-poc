@@ -362,6 +362,17 @@ verification and the no-getter rule are the same design decision viewed from two
 
 ## 3. A Motoko library
 
+**Status: started.** `motoko/` now holds an experimental, unaudited port —
+`Fp` implemented and tested against vectors generated from the Rust reference,
+with the feasibility question answered by measurement rather than argument. See
+[motoko/README.md](./motoko/README.md).
+
+**The measured answer to "is it fast enough": yes, with headroom.** A field
+multiplication costs ~53,500 instructions, so a pairing at roughly 30,000
+multiplications lands near 1.6 billion — about 4% of the 40 billion an update
+call gets. Note queries get only 5 billion, so decryption must be an update,
+which it already is.
+
 **The gap.** Canister-side IBE decryption needs BLS12-381 **pairings**, plus G1/G2
 decompression and a G2 scalar multiplication. `backend/mo/ic_vetkeys/src/` has only
 `key_manager`, `encrypted_maps`, `ManagementCanister` and `Types` — no IBE, and no mops

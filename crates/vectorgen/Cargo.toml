@@ -1,0 +1,13 @@
+[package]
+name = "vectorgen"
+description = "Emits BLS12-381 test vectors from the Rust reference, for the Motoko port to assert against"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+ic_bls12_381 = { version = "0.10.1", default-features = false, features = ["groups", "pairings", "alloc", "experimental"] }
+hex = "0.4.3"

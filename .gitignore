@@ -18,3 +18,7 @@ seed/dist
 *.pem
 .env
 .env.*
+
+# mops
+motoko/.mops/
+motoko/.bench/
