@@ -240,13 +240,30 @@ async fn icp_sealed_secret_self_test(
     })
 }
 
-/// Test hook: SHA-256 of a decrypted secret.
+/// Demonstrates the intended shape of *using* a secret: the plaintext is read
+/// inside the canister and only a derived result leaves it.
 ///
-/// This exists so an end-to-end test can prove the canister recovered the exact
-/// plaintext, without any endpoint ever returning a plaintext. Note it is still
-/// an oracle for a guessed value, so it is controller-gated and has no business
-/// being in a production build — it is the one thing to delete when adapting this
-/// PoC. The naming is deliberate: `secret_sha256` should look conspicuous.
+/// A real canister would put the value in an outcall header here. Read the
+/// README's HTTPS-outcalls note first — the request context, headers included,
+/// enters replicated state on every node, so that is only safe on a uniformly
+/// SEV-SNP subnet.
+///
+/// The length is not a new disclosure: `list` already reveals it, since IBE
+/// overhead is a fixed 136 bytes.
+#[update]
+async fn secret_len(name: String) -> Result<u64, SealedSecretsError> {
+    require_controller()?;
+    let record = store::get_record(&name).ok_or(SealedSecretsError::NotFound)?;
+    let plaintext = keys::open(&name, &record).await?;
+    Ok(plaintext.len() as u64)
+}
+
+/// SHA-256 of a decrypted secret. **Requires the `test-hooks` feature.**
+///
+/// Lets a test prove the canister recovered the exact plaintext without any
+/// endpoint returning one. Still an oracle for a guessed value, hence
+/// controller-gated and feature-gated.
+#[cfg(feature = "test-hooks")]
 #[update]
 async fn secret_sha256(name: String) -> Result<ByteBuf, SealedSecretsError> {
     require_controller()?;
@@ -255,18 +272,37 @@ async fn secret_sha256(name: String) -> Result<ByteBuf, SealedSecretsError> {
     Ok(ByteBuf::from(Sha256::digest(plaintext.as_slice()).to_vec()))
 }
 
-/// Demonstrates the intended shape of *using* a secret: the plaintext is read
-/// inside the canister and only a derived result leaves it.
+/// Returns a decrypted secret **in the clear**. Requires the `test-hooks` feature.
 ///
-/// A real canister would put the value in an outcall header here. Read §4.1 of
-/// the README first — the request context, headers included, enters replicated
-/// state on every node, so this is only safe on a uniformly SEV-SNP subnet.
+/// It exists so you can see with your own eyes that decryption worked. It must
+/// never be in a real deployment, and the reason is not that a controller could
+/// not obtain the secret anyway — they can, by installing code that decrypts, or
+/// by reading the heap out of a snapshot.
+///
+/// The reason is that this endpoint:
+///
+/// 1. **sends the plaintext to a boundary node.** The reply is not encrypted
+///    end-to-end; the boundary node terminates TLS and is outside the subnet's
+///    SEV-SNP trust boundary entirely. That undoes, in the outbound direction,
+///    exactly what sealing achieved on the way in.
+/// 2. **destroys the property that makes the code auditable.** "The published
+///    code never returns the plaintext" is a claim a reader can verify by
+///    reading it. Replace it with "…unless the caller is a controller" and the
+///    guarantee now rests on the controller set being, and remaining, what you
+///    think it is.
+/// 3. **leaves no trace.** Installing code that leaks changes the module hash,
+///    which is visible in the state tree. A call to this leaves nothing behind.
+///
+/// If you must observe a secret in production, don't: use `secret_sha256` under
+/// the same feature and compare against a value you already hold.
+#[cfg(feature = "test-hooks")]
 #[update]
-async fn secret_len(name: String) -> Result<u64, SealedSecretsError> {
+async fn secret_reveal(name: String) -> Result<String, SealedSecretsError> {
     require_controller()?;
     let record = store::get_record(&name).ok_or(SealedSecretsError::NotFound)?;
     let plaintext = keys::open(&name, &record).await?;
-    Ok(plaintext.len() as u64)
+    String::from_utf8(plaintext.to_vec())
+        .map_err(|_| SealedSecretsError::Internal("secret is not valid UTF-8".to_string()))
 }
 
 ic_cdk::export_candid!();

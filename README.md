@@ -173,8 +173,13 @@ identity whenever it likes.
 
 ## Quick start
 
-Requires Rust with the `wasm32-unknown-unknown` target, Node 22+, and
-[icp-cli](https://github.com/dfinity/icp-cli).
+Requires Rust with the `wasm32-unknown-unknown` target, Node 22+,
+[icp-cli](https://github.com/dfinity/icp-cli), and `candid-extractor`
+(`cargo install candid-extractor`).
+
+**In one command:** `./scripts/local-test.sh` — see [Testing locally](#testing-locally).
+
+Step by step:
 
 ```bash
 # 1. local network (this project uses port 8010 to avoid clashing with others)
@@ -250,34 +255,95 @@ the vetKD key. Both are real checks on mainnet; neither can be rehearsed locally
 > derivations differ. `ic-vetkeys`' own `management_canister::compute_vrf` has exactly
 > this bug today.
 
-## Tests
+## Testing locally
+
+One command does the whole round trip:
 
 ```bash
-cargo test                                   # golden vectors, name validation, key derivation
+./scripts/local-test.sh
+```
+
+It starts a local network, deploys, seals a secret, **reads it back in the clear**, and
+checks it survives an upgrade — then runs the negative cases. It also asserts two things
+that are easy to let rot: that a build *without* `--features test-hooks` exposes no
+endpoint that can observe a secret, and that the generated TypeScript bindings still
+match the canister's `.did`.
+
+Individually:
+
+```bash
+cargo test                                   # golden vectors, name validation, derivation
 cd seed && npm test                          # the SAME golden vectors, in TypeScript
 cd seed && npm run e2e -- --canister <id>    # against a running canister
 ```
 
-The Rust and TypeScript golden vectors are byte-for-byte identical on purpose: the
-two implementations cannot drift without one suite failing. Any future Motoko port
-should assert the same values.
+The Rust and TypeScript golden vectors are byte-for-byte identical on purpose: the two
+implementations cannot drift without one suite failing. A future Motoko port should
+assert the same values.
 
-The e2e suite covers the negative cases that matter — ciphertext sealed to the wrong
-epoch, malformed blobs, oversized input, invalid names, anonymous callers, that
-rejected writes leave no trace, and that overwriting does not serve a stale cached
-plaintext.
+The e2e suite covers the cases that matter — ciphertext sealed to the wrong epoch,
+malformed blobs, oversized input, invalid names, anonymous callers, that rejected writes
+leave no trace, and that overwriting does not serve a stale cached plaintext.
 
-<details>
-<summary>Verified on a local network</summary>
+### Seeing the decrypted secret
 
+Verifying that decryption *worked* does not require handing out the plaintext:
+`secret_sha256` returns a digest, and the e2e suite compares it against a locally
+computed one. That is the check to rely on.
+
+But if you want to see it with your own eyes, build with `--features test-hooks` (which
+`icp.yaml` already does) and call `secret_reveal`. `local-test.sh` step 7 does exactly
+this and prints both values.
+
+### Can I just add a getter?
+
+Not in production — but the reason is more interesting than "it would leak the key",
+because **a controller can obtain the secret anyway**. Two routes, no endpoint required:
+
+1. **Install code that decrypts.** vetKD binds the key to the **canister ID**, not to the
+   module hash — `vetkd_public_key` takes `{ canister_id, context, key_id }` and nothing
+   about the code. The ciphertext sits in stable memory and survives an upgrade, so any
+   module a controller installs on that canister can derive the same key. There is no way
+   to pin a sealed secret to a particular code version.
+2. **Read the heap out of a snapshot.** `take_canister_snapshot`, then
+   `read_canister_snapshot_data` with `kind = variant { wasm_memory : record { offset; size } }`.
+   The decrypted plaintext cache is right there.
+
+So what does a getter actually cost you?
+
+- **It ships the plaintext to a boundary node.** Replies are not encrypted end-to-end; the
+  boundary node terminates TLS and sits *outside* the subnet's SEV-SNP trust boundary. That
+  undoes in the outbound direction exactly what sealing achieved on the way in. (Note a
+  `query` is the *less* bad choice here — an `update` reply is written into replicated state
+  on every node, whereas a query reply is ephemeral.)
+- **It destroys the property that makes the code auditable.** "The published code never
+  returns the plaintext" is something a reader can verify by reading it. Replace it with
+  "…unless the caller is a controller" and the guarantee now rests on the controller set
+  being, and remaining, exactly what you believe.
+- **It leaves no trace.** Installing leaky code changes the module hash, which is visible
+  in the state tree. A call to a getter leaves nothing behind.
+
+The corollary is the one that matters for deployment: **since a controller can always get
+the secret, the canister must be blackholed or SNS/NNS-governed for any of this to mean
+anything.** On a blackholed canister a controller-gated getter is inert — nobody is a
+controller — but by then you have no way to observe the secret anyway, which is the point.
+
+## Client bindings
+
+`seed/src/declarations/` is **generated** from `crates/canister/sealed_secrets_canister.did`
+by [`@icp-sdk/bindgen`](https://www.npmjs.com/package/@icp-sdk/bindgen):
+
+```bash
+cd seed && npm run bindings
 ```
-16 passed, 0 failed
-```
 
-Also confirmed by hand: the secret survives `icp deploy` re-installs (an upgrade)
-with no re-seeding, because the ciphertext lives in stable memory.
+Regenerate whenever the canister interface changes; `local-test.sh` fails if you forget.
 
-</details>
+Only the NNS registry interface in `seed/src/idl.ts` is hand-written, because there is no
+`.did` for it here and we need two of its ~20 methods. An earlier revision hand-wrote the
+canister interface too, and it silently drifted twice. Generating it also turned two
+latent bugs in the e2e suite into compile errors, because the generated result types are
+proper discriminated unions rather than `any`.
 
 ## Wire format
 
@@ -442,11 +508,13 @@ ingress history.
 ## Layout
 
 ```
-crates/core/        wire format + offline key derivation. No canister APIs; host-testable.
-crates/core/tests/  golden vectors — the contract other implementations must meet.
-crates/canister/    the canister: endpoints, stable store, key derivation and caches.
-seed/               the host-side seeding script and the e2e suite.
-icp.yaml            local (port 8010) and ic environments.
+crates/core/           wire format + offline key derivation. No canister APIs; host-testable.
+crates/core/tests/     golden vectors — the contract other implementations must meet.
+crates/canister/       the canister: endpoints, stable store, key derivation and caches.
+seed/src/              the host-side seeding script and the e2e suite.
+seed/src/declarations/ GENERATED from the .did — do not edit; `npm run bindings`.
+scripts/local-test.sh  the whole round trip, one command.
+icp.yaml               local (port 8010) and ic environments.
 ```
 
 The core/canister split is deliberate. It keeps the format layer free of `ic-cdk` and
@@ -456,8 +524,8 @@ The core/canister split is deliberate. It keeps the format layer free of `ic-cdk
 ## Deliberately out of scope
 
 Rotation, `icp_sealed_secret_matches` for idempotent re-seeding, the macros that would
-make this three lines in someone else's canister, the Cargo feature split, and any
-icp-cli integration. All of it is discussed in
+make this three lines in someone else's canister, splitting `ic-vetkeys` itself along a
+Cargo feature, and any icp-cli integration. All of it is discussed in
 **[FOLLOW-UPS.md](./FOLLOW-UPS.md)**; none of it belongs in something whose job is to
 start a design conversation.
 

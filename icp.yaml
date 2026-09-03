@@ -6,7 +6,10 @@ canisters:
       steps:
         - type: script
           commands:
-            - cargo build -p sealed-secrets-canister --target wasm32-unknown-unknown --release --locked
+            # --features test-hooks adds secret_sha256 and secret_reveal so you
+            # can verify decryption locally. A real deployment builds WITHOUT it:
+            # the default build has no endpoint that observes a secret at all.
+            - cargo build -p sealed-secrets-canister --target wasm32-unknown-unknown --release --locked --features test-hooks
             - cp target/wasm32-unknown-unknown/release/sealed_secrets_canister.wasm "$ICP_WASM_OUTPUT_PATH"
 
     # Just the key name. The canister asks the subnet for its public key rather

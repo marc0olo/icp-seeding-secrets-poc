@@ -20,7 +20,7 @@ import { HttpAgent, Actor } from "@icp-sdk/core/agent";
 import { Principal } from "@icp-sdk/core/principal";
 import { IbeCiphertext, IbeIdentity, IbeSeed, DerivedPublicKey } from "@icp-sdk/vetkeys";
 
-import { canisterIdl } from "./idl.js";
+import { idlFactory, type _SERVICE } from "./declarations/sealed_secrets_canister.did.js";
 import { identityFromPemFile } from "./identity.js";
 import { evaluatePreflight, inspectSubnet } from "./preflight.js";
 import {
@@ -32,29 +32,6 @@ import {
   validateSecretName,
   type MasterKeySource,
 } from "./format.js";
-
-/** Decoded shape of `icp_sealed_secret_info`. */
-interface Info {
-  standard_version: number;
-  context: number[];
-  identity: number[];
-  epoch: number;
-  key_name: string;
-  public_key: number[];
-  max_ciphertext_len: bigint;
-  max_secrets: bigint;
-}
-
-/** Decoded shape of one `icp_sealed_secret_list` entry. */
-interface Entry {
-  name: string;
-  epoch: number;
-  revision: bigint;
-  ciphertext_len: bigint;
-  ciphertext_sha256: number[];
-  created_at_ns: bigint;
-  updated_at_ns: bigint;
-}
 
 interface Options {
   canisterId: string;
@@ -152,6 +129,7 @@ function fail(message: string): never {
   process.exit(1);
 }
 
+/** Candid `variant { Ok; Err }` decodes to `{ Ok: T } | { Err: E }`. */
 function unwrap<T>(result: { Ok: T } | { Err: unknown }, what: string): T {
   if ("Ok" in result) return result.Ok;
   fail(`${what} failed: ${JSON.stringify(result.Err, bigintReplacer)}`);
@@ -177,11 +155,11 @@ async function main() {
     await agent.fetchRootKey();
   }
 
-  const actor: any = Actor.createActor(canisterIdl, { agent, canisterId });
+  const actor = Actor.createActor<_SERVICE>(idlFactory, { agent, canisterId });
 
   // ---------------------------------------------------------------- list mode
   if (opts.list) {
-    const entries = unwrap<Entry[]>(await actor.icp_sealed_secret_list(), "list");
+    const entries = unwrap(await actor.icp_sealed_secret_list(), "list");
     if (entries.length === 0) {
       console.log("no secrets stored");
       return;
@@ -210,7 +188,7 @@ async function main() {
   // ---------------------------------------------- 1. what does the canister use?
   //     Read first, so the preflight can check the key name the canister will
   //     actually ask for rather than one we assumed.
-  const info = unwrap<Info>(await actor.icp_sealed_secret_info(), "icp_sealed_secret_info");
+  const info = unwrap(await actor.icp_sealed_secret_info(), "icp_sealed_secret_info");
   // The application domain separator is always empty in this PoC; it stays in
   // the wire format only so it can be adopted later without a format break.
   const context = sealedSecretsContext("");
@@ -278,7 +256,7 @@ async function main() {
   }
 
   console.log(`\nsealing "${opts.name}" (${plaintext.length} bytes → ${ciphertext.length} bytes)`);
-  const revision = unwrap<bigint>(
+  const revision = unwrap(
     await actor.icp_sealed_secret_set(opts.name, ciphertext),
     "icp_sealed_secret_set",
   );

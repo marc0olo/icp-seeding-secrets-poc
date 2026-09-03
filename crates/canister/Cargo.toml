@@ -7,6 +7,16 @@ license.workspace = true
 rust-version.workspace = true
 repository.workspace = true
 
+[features]
+# Adds endpoints that observe a decrypted secret: `secret_sha256` (a digest, for
+# automated verification) and `secret_reveal` (the plaintext itself, so a human
+# can see the round trip worked).
+#
+# OFF by default, so a plain `cargo build` produces a canister with no way to
+# observe a secret at all — that property is checked by `scripts/local-test.sh`.
+# Never enable this for a real deployment; see README "Can I just add a getter?".
+test-hooks = []
+
 [lib]
 path = "src/lib.rs"
 crate-type = ["cdylib"]
