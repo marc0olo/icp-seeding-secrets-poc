@@ -15,6 +15,7 @@ import Types "Types";
 
 import Array "mo:core/Array";
 import Blob "mo:core/Blob";
+import Error "mo:core/Error";
 import Map "mo:core/Map";
 import Int "mo:core/Int";
 import Iter "mo:core/Iter";
@@ -51,6 +52,40 @@ persistent actor class SealedSecrets(initArgs : { key_name : Text }) = self {
   /// Behaviour only — methods are not a stable type, so this is rebuilt on every
   /// upgrade and reattached to the state above.
   transient let keys = Keys.Manager(config.keyName, caches, plaintexts);
+
+  /// Where `call_api_with_secret` sends its authenticated request.
+  ///
+  /// postman-echo's `/basic-auth` genuinely **evaluates** the credential — the
+  /// documented `postman:password` gets `200 {"authenticated":true}`, anything
+  /// else gets `401` — and it does not echo the credential back, which matters
+  /// because the response body enters replicated state.
+  transient let DEMO_API_ENDPOINT = "https://postman-echo.com/basic-auth";
+
+  transient let IC : actor {
+    http_request : shared HttpRequestArgs -> async HttpRequestResult;
+  } = actor ("aaaaa-aa");
+
+  public type HttpHeader = { name : Text; value : Text };
+
+  public type HttpRequestResult = {
+    status : Nat;
+    headers : [HttpHeader];
+    body : Blob;
+  };
+
+  public type TransformArgs = { response : HttpRequestResult; context : Blob };
+
+  type HttpRequestArgs = {
+    url : Text;
+    max_response_bytes : ?Nat64;
+    headers : [HttpHeader];
+    body : ?Blob;
+    method : { #get; #post; #head };
+    transform : ?{
+      function : shared query TransformArgs -> async HttpRequestResult;
+      context : Blob;
+    };
+  };
 
   // ---------------------------------------------------------------- helpers
 
@@ -278,5 +313,91 @@ persistent actor class SealedSecrets(initArgs : { key_name : Text }) = self {
       num_secrets = Nat.toNat64(Map.size(secrets));
       undecryptable;
     });
+  };
+
+  // ------------------------------------------------------- using the secret
+
+  /// The actual use case: authenticate an outbound HTTPS request with a sealed
+  /// secret, without the secret ever leaving the canister.
+  ///
+  /// Returns only the HTTP status. Returning the body would let a hostile
+  /// endpoint echo the `Authorization` header straight back out through this
+  /// canister's public interface.
+  ///
+  /// `idempotencyKey` is **not optional in practice.** An HTTPS outcall fans out
+  /// to every node in the subnet, each of which issues its own request; without
+  /// a key, an endpoint that mutates state sees N charges, N sends, N writes.
+  /// This demo endpoint is a read, so nothing here would break without it —
+  /// which is exactly why it is present anyway, as the thing to copy.
+  ///
+  /// Note where the plaintext goes. The request — url, headers and body — enters
+  /// **replicated state on every node** before any of them executes the call. On
+  /// a SEV-SNP subnet that memory and the checkpoints behind it are encrypted;
+  /// on any other subnet the secret is readable by every node operator the
+  /// moment this runs.
+  public shared ({ caller }) func call_api_with_secret(
+    name : Text,
+    idempotencyKey : Text,
+  ) : async Types.Result<Nat16> {
+    switch (requireController(caller)) { case (?e) { return #Err(e) }; case null {} };
+
+    let record = switch (Map.get(secrets, Text.compare, name)) {
+      case (?r) r;
+      case null { return #Err(#NotFound) };
+    };
+
+    let plaintext = switch (await* keys.open(name, record.epoch, record.revision, record.ciphertext)) {
+      case (#Ok(p)) p;
+      case (#Err(e)) { return #Err(e) };
+    };
+    let token = switch (Text.decodeUtf8(plaintext)) {
+      case (?t) t;
+      case null { return #Err(#Internal("secret is not valid UTF-8")) };
+    };
+
+    let response = try {
+      await (with cycles = 50_000_000_000) IC.http_request({
+        url = DEMO_API_ENDPOINT;
+        // Keep this tight: the call is priced on it.
+        max_response_bytes = ?(2_048 : Nat64);
+        headers = [
+          // The secret is the whole header value.
+          { name = "Authorization"; value = token },
+          { name = "Idempotency-Key"; value = idempotencyKey },
+          { name = "User-Agent"; value = "icp-sealed-secrets-poc" },
+        ];
+        body = null;
+        method = #get;
+        transform = ?{ function = strip_response; context = "" : Blob };
+      });
+    } catch (e) {
+      return #Err(#Internal("http_request failed: " # Error.message(e)));
+    };
+
+    if (response.status > 65535) {
+      return #Err(#Internal("implausible status code"));
+    };
+    #Ok(Nat.toNat16(response.status));
+  };
+
+  /// Makes an HTTP response deterministic across the nodes that fetched it.
+  ///
+  /// Drops every response header — they carry `Date`, request ids and cookies
+  /// that differ per node, which would break consensus — and, incidentally,
+  /// stops an endpoint that echoes our `Authorization` header from smuggling the
+  /// secret into replicated state.
+  ///
+  /// **This passes the body through unchanged, which is only safe because the
+  /// demo endpoint returns a constant.** If yours returns a timestamp, a request
+  /// id or anything else that differs between fetches, normalise it here too.
+  /// Local testing will not catch this: a local replica issues exactly one
+  /// request, so a varying body agrees with itself, while on mainnet every node
+  /// fetches independently and the call fails.
+  public shared query func strip_response(args : TransformArgs) : async HttpRequestResult {
+    {
+      status = args.response.status;
+      headers = [] : [HttpHeader];
+      body = args.response.body;
+    };
   };
 };

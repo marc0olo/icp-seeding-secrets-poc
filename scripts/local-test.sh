@@ -186,5 +186,69 @@ echo "  ok — still readable after upgrade, ciphertext lives in stable memory"
 say "12. the negative cases"
 npm --prefix seed run --silent e2e -- --canister "$CID" --host "$HOST" --source pocketic --pem "$PEM"
 
+say "13. the same round trip against the Motoko canister"
+# The point of this step is that nothing below is Motoko-specific except the
+# canister name. The same seeding script, the same wire format, the same
+# interface — driven against a canister whose decryption runs on this repo's
+# experimental pure-Motoko BLS12-381 rather than on ic-vetkeys.
+MO_CANISTER=sealed-secrets-motoko
+MO_CID=$(icp canister status "$MO_CANISTER" -e "$ENV" --json | jq -r .id)
+echo "  canister: $MO_CID"
+
+# Same non-circular check as step 6: the subnet's public key against the master
+# key compiled into the Wasm, derived here by PublicKey.mo rather than by Rust.
+icp canister call "$MO_CANISTER" icp_sealed_secret_self_test '(opt variant { PocketIc })' -e "$ENV" 2>/dev/null \
+  | grep -qE "public_key_matches_master = opt true" \
+  || fail "the Motoko canister could not confirm the subnet's key against its compiled-in master key"
+echo "  ok — vetkd_derive_ok, and its own offline derivation agrees"
+
+mo_seal() {
+  SEAL_IDENTITY_PEM="$PEM" env "$OUTCALL_SECRET_NAME=$1" \
+    npm --prefix seed run --silent seal -- \
+      --canister "$MO_CID" --name "$OUTCALL_SECRET_NAME" --host "$HOST" \
+      --source pocketic --local >/dev/null
+}
+mo_seal "$OUTCALL_GOOD"
+echo "  ok — the unmodified seeder sealed to it, and it trial-decrypted before storing"
+
+# No secret_reveal here. Motoko has no feature flags, and it turns out not to
+# need any: matches() answers "is the right value set?" from a build that ships,
+# which is what the Rust canister's own documentation recommends over a reveal
+# hook anyway.
+SEAL_IDENTITY_PEM="$PEM" env "$OUTCALL_SECRET_NAME=$OUTCALL_GOOD" \
+  npm --prefix seed run --silent seal -- \
+    --canister "$MO_CID" --name "$OUTCALL_SECRET_NAME" --host "$HOST" \
+    --source pocketic --local --verify >/dev/null \
+  || fail "the Motoko canister does not hold the value we sealed"
+echo "  ok — matches() confirms the value without either side disclosing it"
+
+mo_status() {
+  icp canister call "$MO_CANISTER" call_api_with_secret \
+    "(\"$OUTCALL_SECRET_NAME\", \"$1\")" -e "$ENV" 2>&1 | tr -d '\n '
+}
+MO_GOOD=$(mo_status "motoko-op-0001")
+case "$MO_GOOD" in
+  *"Ok=200"*) echo "  ok — authenticated HTTPS outcall SUCCEEDS (200)" ;;
+  *Ok=*)      fail "expected 200 from the Motoko canister, got: $MO_GOOD" ;;
+  *)          echo "  WARN could not reach the API; skipping (external dependency): $MO_GOOD" ;;
+esac
+
+if [[ "$MO_GOOD" == *"Ok=200"* ]]; then
+  mo_seal "$OUTCALL_BAD"
+  MO_BAD=$(mo_status "motoko-op-0002")
+  case "$MO_BAD" in
+    *"Ok=401"*) echo "  ok — and FAILS with a wrong one (401)" ;;
+    *)          fail "expected 401 from the Motoko canister, got: $MO_BAD" ;;
+  esac
+  mo_seal "$OUTCALL_GOOD"
+fi
+
+icp deploy -e "$ENV" --yes >/dev/null
+MO_AFTER=$(mo_status "motoko-after-upgrade")
+case "$MO_AFTER" in
+  *"Ok=200"*) echo "  ok — survives an upgrade with no re-seeding" ;;
+  *)          fail "the Motoko canister lost its secret across an upgrade: $MO_AFTER" ;;
+esac
+
 say "done"
 echo "Stop the network with: icp network stop"

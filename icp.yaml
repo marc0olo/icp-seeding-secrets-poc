@@ -37,6 +37,42 @@ canisters:
     # a local network and mainnet with nothing else to configure.
     init_args: '(record { key_name = "key_1" })'
 
+  # The same design in Motoko, on this repo's experimental BLS12-381 port.
+  #
+  # It speaks the identical interface, so `seed/` drives it with no changes —
+  # which is the point of having it here rather than in a repo of its own.
+  #
+  # No test-hooks equivalent. Motoko has no feature flags, and it turns out not
+  # to need any: `icp_sealed_secret_matches` answers "is the right value set?"
+  # from a build that ships, which is what the Rust canister's own docs
+  # recommend over `secret_reveal` anyway.
+  - name: sealed-secrets-motoko
+    build:
+      steps:
+        - type: script
+          commands:
+            - command -v mops >/dev/null 2>&1 || { echo >&2 "mops not found. See https://mops.one"; exit 1; }
+            - command -v ic-wasm >/dev/null 2>&1 || { echo >&2 "ic-wasm not found; it ships with icp-cli."; exit 1; }
+
+        # Script steps run from the project root, so the cd is explicit.
+        # $ICP_WASM_OUTPUT_PATH is absolute, so it survives it.
+        - type: script
+          commands:
+            - cd motoko/canister && mops install
+            # --enhanced-orthogonal-persistence is not optional here: Keys.mo
+            # relies on the persisted vetKey cache surviving upgrades.
+            - cd motoko/canister && "$(mops toolchain bin moc)" $(mops sources) --enhanced-orthogonal-persistence --idl -o "$ICP_WASM_OUTPUT_PATH" src/Main.mo
+
+        # No metadata step, unlike the Rust canister. moc already embeds
+        # candid:service, and `ic-wasm metadata` *appends* rather than replaces
+        # — a second section makes the replica reject the module outright with
+        # "name candid:service already exists".
+        - type: script
+          commands:
+            - ic-wasm "$ICP_WASM_OUTPUT_PATH" -o "$ICP_WASM_OUTPUT_PATH" shrink --keep-name-section
+
+    init_args: '(record { key_name = "key_1" })'
+
 networks:
   # Port 8000 is icp-cli's default; this project uses 8010 so it can run
   # alongside another project's local network.

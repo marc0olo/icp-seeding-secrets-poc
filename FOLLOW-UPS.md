@@ -393,10 +393,12 @@ reduces with `%` where the reference uses Montgomery form, so it divides where
 the reference multiplies. Fixing that, not switching to a limb representation, is
 the optimisation if anyone ever needs one.
 
-**What is missing.** A canister that actually runs it. Everything is exercised by
-`mops test` and `mops bench`, which do run in a replica, but always against fixed
-vectors. No Motoko canister has yet called `vetkd_derive_key` and verified what
-came back.
+**What is missing.** An audit. Nothing functional: `motoko/canister/` calls
+`vetkd_derive_key` against a live subnet, verifies the reply against a master key
+compiled into its own Wasm, decrypts, and authenticates an HTTPS outcall with the
+result — the full round trip, on the identical Candid interface, driven by the
+same seeding script as the Rust canister and checked by `local-test.sh` on every
+CI build.
 
 **And it is unaudited.** Nothing here should reach production before a
 cryptographer has been through it. The value is that the conversation can be

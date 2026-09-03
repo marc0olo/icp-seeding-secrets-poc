@@ -6,7 +6,7 @@ Three packages, split along the boundary that matters for upstreaming.
 |---|---|
 | [`bls12-381/`](./bls12-381) | **EXPERIMENTAL, UNAUDITED.** The curve: field tower, both groups, the optimal ate pairing, RFC 9380 hash-to-curve. Nothing IC-specific — useful for anything needing pairings. |
 | [`vetkeys/`](./vetkeys) | **EXPERIMENTAL, UNAUDITED.** The vetKD layer on top of it: IBE decryption, vetKey verification, offline derived-public-key computation. |
-| `canister/` | A canister using them, mirroring the Rust one in [`../rust/canister`](../rust/canister). |
+| [`canister/`](./canister) | A canister using them, mirroring the Rust one in [`../rust/canister`](../rust/canister). Verified end to end against a live subnet. |
 
 The split mirrors Rust, where `ic_bls12_381` is the curve crate and `ic-vetkeys`
 is a separate one layered on it — and it makes the upstreaming scope a directory
