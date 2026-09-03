@@ -127,7 +127,7 @@ export interface SealedSecretEntry {
    */
   'created_at_ns' : bigint,
   /**
-   * Increments on every overwrite. Also invalidates the plaintext cache.
+   * Increments on every overwrite.
    */
   'revision' : bigint,
 }

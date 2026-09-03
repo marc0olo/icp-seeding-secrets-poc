@@ -68,7 +68,7 @@ pub struct SealedSecretEntry {
     pub name: String,
     /// The epoch its ciphertext was sealed under.
     pub epoch: u32,
-    /// Increments on every overwrite. Also invalidates the plaintext cache.
+    /// Increments on every overwrite.
     pub revision: u64,
     /// Ciphertext length in bytes.
     pub ciphertext_len: u64,

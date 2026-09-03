@@ -49,7 +49,7 @@ module {
     name : Text;
     /// The epoch its ciphertext was sealed under.
     epoch : Nat32;
-    /// Increments on every overwrite. Also invalidates the plaintext cache.
+    /// Increments on every overwrite.
     revision : Nat64;
     ciphertext_len : Nat64;
     /// SHA-256 of the ciphertext, so a client can confirm its upload landed.

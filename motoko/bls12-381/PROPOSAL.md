@@ -147,8 +147,12 @@ dependency already implements.
 cd motoko/bls12-381
 mops bench Why      # the 85% split
 mops bench Shift    # shifts cost as much as reductions
+mops test           # 79 tests, the curve layer
+
+cd ../vetkeys
 mops bench Ibe      # end-to-end decryption
-mops test           # 102 tests, incl. verifying a real vetKD reply
+mops bench VetKey   # unwrapping and verifying a real vetKD reply
+mops test           # 23 tests
 ```
 
 The Rust side of the comparison is `bench_ibe_decrypt` in `rust/canister`,

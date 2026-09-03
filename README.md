@@ -84,18 +84,26 @@ keypair is *implied* by those two values.
 5. **Send the ciphertext** in an ordinary update call. That message is visible to boundary
    nodes and recorded like any other, and it is opaque. It is also bound to *this* canister
    id, so replaying it elsewhere is useless.
-6. **The canister asks the subnet for its private key**, decrypts your ciphertext to prove
-   it can, and stores the *ciphertext* — not the plaintext.
+6. **The canister asks the subnet for its private key** and decrypts your ciphertext. It
+   stores what came out and discards the ciphertext, keeping only its digest and length so
+   you can still confirm your upload landed.
 
-**Later, whenever the secret is used:** the canister decrypts from the stored ciphertext
-and caches the plaintext in memory. After an upgrade it repeats step 6 once and carries on.
-**You never re-seed.**
+**Later, whenever the secret is used:** the canister reads it straight out of stable
+memory. No vetKey, no decryption — those happened once, at step 6. **You never re-seed**,
+and an upgrade changes nothing on this path.
 
 Two things there are easy to skim past and matter a great deal. The public key in step 3 is
 *computed*, not *fetched* — if you asked the canister and believed the answer, anyone able
 to tamper with that reply could hand you a key they control. And step 6 decrypts *before*
 storing, which turns "wrong context, wrong key, wrong subnet" into an error in front of the
-operator instead of a ciphertext nobody discovers is unreadable until months later.
+operator instead of a value nobody discovers is unreadable until months later.
+
+**Why not keep the ciphertext at rest?** Because it would not protect anything. The
+plaintext reaches the heap the moment the canister uses the secret, and the heap is
+replicated state, checkpointed to disk on every node — so sealing is what protects the
+secret *in transit*, and SEV-SNP is what protects it at rest. Storing the ciphertext as
+well would only mean the secret is lost forever if the subnet ever stops holding the vetKD
+key. See [the security model](#security-model).
 
 ```mermaid
 sequenceDiagram
@@ -152,9 +160,8 @@ sequenceDiagram
     Script-->>Dev: ✓ Sealed DUMMY_API_KEY
 ```
 
-Later, whenever the secret is used, the canister decrypts from the stored ciphertext
-and caches the plaintext in the heap. After an upgrade it repeats one
-`vetkd_derive_key` and carries on — **you never re-seed**.
+Using the secret afterwards is deliberately dull — which is the point of doing the work
+at seal time:
 
 ```mermaid
 sequenceDiagram
@@ -162,26 +169,12 @@ sequenceDiagram
     actor User
     participant Can as Canister
     participant Stable as Stable memory
-    participant Heap as Heap caches
-    participant Mgmt as Management canister
     participant API as the third-party API
 
     User->>Can: call_api_with_secret("DUMMY_API_KEY", "op-0001")
-    Can->>Heap: plaintext cache, keyed by name and revision
-    alt cache hit — the normal case, free
-        Heap-->>Can: the plaintext
-    else cache miss — first use, or after an upgrade
-        Can->>Stable: read ciphertext
-        Can->>Heap: vetKey cache, keyed by epoch
-        alt vetKey miss — once per epoch per canister lifetime
-            Can->>Mgmt: raw_rand() then vetkd_derive_key
-            Note over Can,Mgmt: key_1 costs 26_153_846_153 cycles<br/>(test_key_1: 10_000_000_000), the same locally<br/>and on mainnet. One identity serves ALL<br/>secrets, so this happens once per epoch.
-            Mgmt-->>Can: EncryptedVetKey
-            Can->>Can: decrypt_and_verify gives vk
-        end
-        Can->>Can: ct.decrypt(vk) gives the plaintext
-        Can->>Heap: cache it, keyed by revision
-    end
+    Can->>Stable: read the record
+    Stable-->>Can: the plaintext
+    Note over Can,Stable: no vetKey, no decryption, no management-canister<br/>call. Those happened once, when the secret was<br/>sealed. An upgrade does not change this path.
 
     Can->>API: GET (constant URL)<br/>Authorization = the sealed secret, verbatim<br/>Idempotency-Key = "op-0001"
     Note over Can,API: the request context — headers included — enters<br/>replicated state on EVERY node before any of them<br/>executes the call. SEV is what protects it there.<br/>The fan-out is also why a mutating call needs<br/>that idempotency key.
@@ -189,6 +182,12 @@ sequenceDiagram
     Can->>Can: transform strips every response header
     Can-->>User: 200 — the status only, never the body
 ```
+
+**vetKD is still used, on two paths, and both are administrative:** `set` trial-decrypts
+before storing, and `matches` decrypts the sealed candidate it is asked to compare. Each
+needs the vetKey, which is cached — in the Rust canister on the heap, so the first such
+call after an upgrade re-derives it; in the Motoko canister in persisted state, so it does
+not. Neither pays anything on the path above.
 
 **Cost.** A `vetkd_derive_key` with `key_1` costs **26_153_846_153 cycles**
 (`test_key_1`: 10_000_000_000), the same locally and on mainnet. `vetkd_public_key` is
@@ -442,7 +441,7 @@ assert the same values.
 
 The e2e suite covers the cases that matter — ciphertext sealed to the wrong epoch,
 malformed blobs, oversized input, invalid names, anonymous callers, that rejected writes
-leave no trace, and that overwriting does not serve a stale cached plaintext.
+leave no trace, and that an overwrite replaces the stored value rather than shadowing it.
 
 ### Confirming the right secret is deployed
 
@@ -604,14 +603,18 @@ treat them as optional — see [FOLLOW-UPS.md](./FOLLOW-UPS.md).
 
 - **`info` is an update**, because `public_key` comes from `vetkd_public_key` —
   authoritative for whichever subnet the canister is actually on. It is cached, so only
-  the first call pays. Earlier drafts derived it from a compiled-in master key so `info`
-  could be a query, but that meant an install-time `key_source` argument that silently
-  orphaned every ciphertext if set wrong. Asking the subnet means one build runs
-  anywhere with nothing to configure, and it makes the client's comparison *stronger*:
-  the canister now reports what the subnet says, and the client checks it against an
-  independent constant, rather than the two agreeing because they share a constant.
+  the first call pays. Deriving it from a compiled-in master key instead would let `info`
+  be a query, at the price of an install-time `key_source` argument that silently orphans
+  every ciphertext if set wrong. Asking the subnet means one build runs anywhere with
+  nothing to configure, and it makes the client's comparison *stronger*: the canister
+  reports what the subnet says and the client checks it against an independent constant,
+  rather than the two agreeing because they share one.
 - **Errors are a typed variant**, so tooling can branch on `VetKdUnavailable` versus
   `InvalidCiphertext` rather than parsing prose.
+- **`self_test`'s `undecryptable` list is always empty** in these implementations, because
+  a record holds the decrypted secret and there is nothing stored that could fail to
+  decrypt. The field stays in the response so the interface does not depend on that
+  choice: an implementation that keeps ciphertext at rest populates it.
 - **`list` is controller-gated.** It looks harmless but is not: IBE overhead is a fixed
   136 bytes, so `ciphertext_len` reveals the exact plaintext length, and names alone
   are useful reconnaissance.
@@ -664,7 +667,7 @@ transit and at rest in the ingress history, and nothing more.**
 
 **The controller can read the secret.** They can install code that decrypts it — vetKD
 binds the key to the *canister ID*, not the module hash, so any module they install can
-derive the same key — or take a snapshot and read the plaintext cache out of the Wasm
+derive the same key — or take a snapshot and read the secret straight out of the canister's
 memory. There is no way to pin a sealed secret to a particular code version.
 
 For the case this PoC is built for, that is not a defect. **The controller is whoever
@@ -691,14 +694,14 @@ controller-gated, so a canister with no controllers can never be seeded and can 
 rotated. You would be choosing a canister whose API key can never be changed — and API
 keys expire, leak, and get revoked. That is a worse failure than the one it avoids.
 
-An earlier draft of this README recommended blackholing. That was wrong on both counts:
-it imported a threat model from a different problem, and it contradicted this design.
+Blackholing is the wrong instinct here on both counts: it imports a threat model from a
+different problem, and it contradicts this design — a blackholed canister can never be
+seeded or rotated, because `set` is controller-gated.
 
 ### Rotating a secret
 
-Seal it again. `set` overwrites, bumps the revision, and the plaintext cache is keyed by
-revision — so the next use picks up the new value with no upgrade, no re-derivation and no
-downtime.
+Seal it again. `set` decrypts the new ciphertext, replaces the stored value and bumps the
+revision — so the next use picks up the new value with no upgrade and no downtime.
 
 ```bash
 DUMMY_API_KEY='the-new-key' npm run seal -- --canister <id> --name DUMMY_API_KEY --source mainnet
@@ -870,18 +873,20 @@ implementation to review".
 ## Layout
 
 ```
-rust/core/           wire format + offline key derivation. No canister APIs; host-testable.
-rust/core/tests/     golden vectors — the contract other implementations must meet.
-rust/canister/       the canister: endpoints, stable store, key derivation and caches.
-rust/vectorgen/      emits motoko/vectors.json from the Rust reference.
+rust/core/             wire format + offline key derivation. No canister APIs; host-testable.
+rust/core/tests/       golden vectors — the contract other implementations must meet.
+rust/canister/         the Rust canister: endpoints, stable store, key derivation, vetKey cache.
+rust/vectorgen/        emits motoko/vectors.json from the Rust reference.
 seed/src/              the host-side seeding script and the e2e suite.
 seed/src/declarations/ GENERATED from the .did — do not edit; `npm run bindings`.
-scripts/local-test.sh  the whole round trip, one command.
 motoko/bls12-381/      EXPERIMENTAL, UNAUDITED BLS12-381 for Motoko.
 motoko/vetkeys/        EXPERIMENTAL, UNAUDITED vetKD layer on it — what mo:ic-vetkeys lacks.
-motoko/canister/       a Motoko canister using them, mirroring rust/canister. Works end to end.
+motoko/canister/       the Motoko canister, mirroring rust/canister. Works end to end.
 motoko/vectors.json    generated by rust/vectorgen; both Motoko packages assert it.
-icp.yaml               local (port 8010) and ic environments.
+scripts/local-test.sh  the whole round trip, both canisters, one command.
+scripts/check-all.sh   everything CI runs except the replica. Run before pushing.
+scripts/check-diagrams.mjs  parses the mermaid blocks in this file so they cannot rot.
+icp.yaml               both canisters; local (port 8010) and ic environments.
 .github/workflows/     CI on ghcr.io/dfinity/icp-dev-env-all.
 .icp/cache/            gitignored — recreatable.
 .icp/data/             appears after a mainnet deploy. NOT gitignored — commit it.

@@ -153,6 +153,22 @@ jobs:
           fi
           echo "ok — committed vectors match the reference"
 
+      # mops check exits 0 on warnings, so the lints enabled in each mops.toml
+      # need an explicit gate or a regression lands silently.
+      - name: No moc warnings
+        run: |
+          for pkg in bls12-381 vetkeys canister; do
+            cd "motoko/$pkg"
+            out=$(mops check src/*.mo 2>&1) || { echo "$out"; exit 1; }
+            if echo "$out" | grep -q warning; then
+              echo "$out" | grep warning
+              echo "::error::moc warnings in motoko/$pkg — run 'mops check --fix'"
+              exit 1
+            fi
+            cd - >/dev/null
+          done
+          echo "ok — no moc warnings"
+
       - name: BLS12-381 tests
         working-directory: motoko/bls12-381
         run: mops test

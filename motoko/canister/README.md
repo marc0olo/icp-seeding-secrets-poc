@@ -31,21 +31,30 @@ request went out.
 
 ## Layout
 
+Laid out per the `reviewing-motoko` skill: types at the bottom, `lib/` for logic
+with state passed in, `mixins/` for endpoints, and a `main.mo` that holds only
+state and composition.
+
 | | |
 |---|---|
-| `Format.mo` | The wire format — the `rust/core` equivalent. Deliberately here rather than in a library: it is specific to this application, not to vetKD. Its golden vectors are the same bytes `rust/core/tests/golden.rs` and `seed/src/format.test.ts` assert. |
 | `Types.mo` | Candid types, mirroring `rust/canister/src/types.rs`. |
-| `Store.mo` | Config and the sealed ciphertexts. |
-| `Keys.mo` | vetKD calls, verification, and the caches. Read the header comment — it is where the two canisters deliberately diverge. |
-| `Main.mo` | The actor. |
+| `Store.mo` | Config and the stored secrets. `SealedRecord` holds the plaintext — the header comment says why. |
+| `lib/Format.mo` | The wire format — the `rust/core` equivalent. Deliberately not in either library: it is specific to this application, not to vetKD. Its golden vectors are the same bytes `rust/core/tests/golden.rs` and `seed/src/format.test.ts` assert. |
+| `lib/Keys.mo` | vetKD calls, verification, and the vetKey cache. Read the header comment — it is where the two canisters deliberately diverge. |
+| `lib/Guard.mo` | Endpoint guards. In a module rather than at mixin top level, because a bare `func` there is implicitly stable and traps at runtime. |
+| `lib/Http.mo` | The outcall surface, for the same reason. |
+| `mixins/Secrets.mo` | The six endpoints meant to be a standard. |
+| `mixins/Demo.mo` | `call_api_with_secret` and its transform — one application's answer to "now what", which a real canister replaces. |
+| `Main.mo` | The composition root: state declarations and two `include`s, nothing else. |
 
 ## Where it differs from the Rust canister
 
 **What persists.** The vetKey cache survives upgrades here and does not there.
 Under orthogonal persistence that is free, whereas Rust would have to serialise
 it into `ic-stable-structures` and then pay stable-memory access on every read.
-The plaintext cache stays `transient` in both. `Keys.mo` has the full reasoning,
-including why none of this is a confidentiality argument.
+Neither canister has a plaintext cache any more — the record holds the secret.
+`lib/Keys.mo` has the full reasoning, including why none of this is a
+confidentiality argument.
 
 **No test hooks.** The Rust canister has `secret_reveal` behind
 `--features test-hooks` so a human can watch the round trip work. Motoko has no

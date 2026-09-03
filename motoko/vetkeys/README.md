@@ -35,7 +35,7 @@ boundary.
 
 Fetching the reply. `vetkd_derive_key` is an ordinary management-canister call
 that Motoko has always been able to make; it was never the obstacle. See
-[`../canister/src/Keys.mo`](../canister/src/Keys.mo) for a worked example,
+[`../canister/src/lib/Keys.mo`](../canister/src/lib/Keys.mo) for a worked example,
 including the per-key-name cycle fee and the caching that keeps the cost to once
 per canister lifetime.
 

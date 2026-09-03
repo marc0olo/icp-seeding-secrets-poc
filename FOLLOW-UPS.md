@@ -133,8 +133,8 @@ the right value is deployed. What is *not* implemented is using it to make `icp 
 idempotent.
 
 IBE is randomised, so a client can never compare its ciphertext to the stored one, and
-re-sealing on every deploy is not free: replacing a ciphertext invalidates the
-canister's plaintext cache and forces another `vetkd_derive_key`.
+re-sealing on every deploy is not free: every `set` trial-decrypts, which needs the vetKey
+and so a `vetkd_derive_key` whenever the cache is cold.
 
 ```candid
 icp_sealed_secret_matches : (text, blob) -> (variant { Ok : bool; Err : … });
@@ -365,10 +365,17 @@ verification and the no-getter rule are the same design decision viewed from two
 `motoko/` holds an **experimental, unaudited** implementation, split into two
 packages along the boundary that matters here — [`bls12-381/`](./motoko/bls12-381)
 for the curve and [`vetkeys/`](./motoko/vetkeys) for the vetKD layer built on it,
-mirroring how Rust splits `ic_bls12_381` from `ic-vetkeys`. Between them: the whole field tower (`Fp`, `Fp2`, `Fp6`, `Fp12`), both curve groups
-with compression, the optimal ate pairing, HKDF-SHA256, SHAKE256,
+mirroring how Rust splits `ic_bls12_381` from `ic-vetkeys`.
+
+Between them: the whole field tower (`Fp`, `Fp2`, `Fp6`, `Fp12`), both curve
+groups with compression, the optimal ate pairing, HKDF-SHA256, SHAKE256,
 `expand_message_xmd`, `hash_to_scalar`, RFC 9380 `hash_to_curve`, IBE decryption,
-`decrypt_and_verify`, and offline derived-public-key computation. 102 tests — see
+`decrypt_and_verify`, and offline derived-public-key computation — 102 tests, 79
+for the curve and 23 for the vetKD layer.
+
+[`motoko/canister/`](./motoko/canister) uses them, and is the thing that proves
+the libraries work: it calls `vetkd_derive_key` against a live subnet, verifies
+the reply, decrypts, and authenticates an HTTPS outcall with the result. See
 [motoko/README.md](./motoko/README.md).
 
 Upstream has none of this. `backend/mo/ic_vetkeys/src/` has `key_manager`,
@@ -410,7 +417,9 @@ possible.
 *vetKeys team:* IBE in the Motoko library, so `mo:ic-vetkeys` reaches parity with
 the Rust crate. [`motoko/vetkeys/`](./motoko/vetkeys) is the shape of that
 addition and a starting point for doing it properly; it needs an audited
-BLS12-381 underneath, which is the harder half.
+BLS12-381 underneath, which is the harder half. See
+[What `mo:ic-vetkeys` should actually gain](#what-moic-vetkeys-should-actually-gain)
+for the three pieces and why the third is cheaper in Motoko than in Rust.
 
 *Motoko team:* [motoko/bls12-381/PROPOSAL.md](./motoko/bls12-381/PROPOSAL.md) — a measured case that
 one missing runtime primitive accounts for most of the 10× gap. Motoko's `Nat` is
@@ -419,6 +428,50 @@ exponentiation and modular inversion; the runtime compiles in an explicit subset
 that excludes all of them. The cheapest ask is bit shifts on `Nat`, because
 `mp_div_2d` and `mp_mul_2d` are *already linked* and just unreachable — exposing
 them would let libraries fix the rest themselves.
+
+### What `mo:ic-vetkeys` should actually gain
+
+Three things, in dependency order. Only the first is hard.
+
+**1. BLS12-381.** [`motoko/bls12-381`](./motoko/bls12-381) is a candidate, and it is the
+piece that needs an audit. Everything else is small by comparison.
+
+**2. The vetKD layer.** [`motoko/vetkeys`](./motoko/vetkeys) — `Ibe`, `VetKey`,
+`PublicKey`, 380 lines. This is what `mo:ic-vetkeys` is missing today, and why a Motoko
+canister currently cannot decrypt anything.
+
+**3. A `mixin`, which is where Motoko has it easier than Rust.**
+
+Section 1 proposes Rust macros (`export_sealed_secrets_endpoints!` and friends) for one
+reason: Rust has no way to contribute endpoints to a canister someone else wrote, so a
+macro has to generate them. Motoko has a language feature for exactly this, and
+`mixins/Secrets.mo` in this repo is already the shape:
+
+```motoko
+// in mo:ic-vetkeys
+mixin (config : SealedSecrets.Config, secrets : SealedSecrets.Store, keyCtx : Keys.Context) {
+  public shared ({ caller }) func icp_sealed_secret_set(name : Text, ct : Blob) : async ... { ... };
+  // ... the other five
+};
+```
+
+```motoko
+// in an adopting canister — this is the whole integration
+include SealedSecretsApi(config, secrets, keyCtx);
+```
+
+That is one line against Rust's three macros, and it needs no macro machinery at all.
+Three consequences worth planning for:
+
+- **State stays the adopter's.** A mixin cannot declare stable state — every bare
+  `let`/`var` in a `mixin` block is implicitly stable and traps at runtime with `IC0503`.
+  So the library ships the *types* and the adopter declares the fields, which is the right
+  split anyway: their migration chain, their state.
+- **Access control is a parameter, not a trait.** Rust's version needs a
+  `manage_guard = my_sns_guard` macro argument; the Motoko one takes a function
+  `(Principal) -> ?Error` as a mixin parameter. Same idea, no macro.
+- **The demo does not belong in it.** This repo splits `mixins/Secrets.mo` from
+  `mixins/Demo.mo` precisely so the second is replaceable. A library ships the first only.
 
 ### Reusing the Rust implementation instead
 
@@ -482,8 +535,20 @@ by passing the G1 identity element as the transport key — the reply's `c3` fie
 and let clients do standard ECIES. Motoko would then need one scalar multiplication
 (`motoko-bitcoin` already has secp256k1), and no pairings.
 
-Rejected on two grounds. It is a construction we would be inventing, and the cost
-argument that motivated it does not hold: one `vetkd_derive_key` with `key_1` costs
-26_153_846_153 cycles (`test_key_1`: 10_000_000_000), paid once per canister lifetime plus
-once per upgrade, because one identity serves every secret. Recorded here so the decision
-is not relitigated.
+Rejected on three grounds, and the case has got stronger since.
+
+**It is cryptography we would be inventing.** IBE as shipped in `ic-vetkeys` is reviewed
+on both sides and implemented in Rust and TypeScript already.
+
+**The cost argument that motivated it does not hold.** One `vetkd_derive_key` with `key_1`
+costs 26_153_846_153 cycles (`test_key_1`: 10_000_000_000), and both canisters here pay it
+only on `set` and `matches` — never on the path that spends the secret, because the
+decrypted value is what is stored. One identity serves every secret, so it does not scale
+with how many you hold.
+
+**The reason it was tempting is gone.** The pull was that Motoko had no pairings. It does
+now: [`motoko/bls12-381`](./motoko/bls12-381) implements them, and the full cold path —
+verify a vetKD reply, then decrypt — measures about 13% of a single update call, paid once.
+Avoiding pairings no longer buys anything a Motoko canister needs.
+
+Recorded here so the decision is not relitigated.

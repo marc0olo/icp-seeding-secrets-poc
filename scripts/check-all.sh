@@ -54,8 +54,21 @@ diff -q /tmp/vectors-check.json motoko/vectors.json \
   || { echo "motoko/vectors.json is stale"; exit 1; }
 
 step "motoko: check and test"
+# Warnings fail here on purpose. The M0236/M0237/M0223 lints are enabled in each
+# package's mops.toml and `mops check --fix` applies them, so a warning means
+# someone skipped the auto-fix — and `mops check` itself exits 0 on warnings, so
+# nothing else would catch it.
 for pkg in bls12-381 vetkeys canister; do
-  ( cd "motoko/$pkg" && mops check src/*.mo >/dev/null && mops test )
+  (
+    cd "motoko/$pkg"
+    out=$(mops check src/*.mo 2>&1) || { echo "$out"; exit 1; }
+    if echo "$out" | grep -q "warning"; then
+      echo "$out" | grep "warning"
+      echo "moc warnings in motoko/$pkg — run 'mops check --fix' there"
+      exit 1
+    fi
+    mops test
+  )
 done
 
 step "typescript: typecheck, tests, diagrams"
