@@ -183,28 +183,33 @@ through the same encoding the protocol uses, and the strongest check asserts tha
 every one of them satisfies `y² = x³ + 4` — exercising the modulus, `add`, `mul`
 and `square` together against data this code had no hand in producing.
 
-## The finish line
+## The two vectors that decide it
+
+Most of the suite checks one layer at a time. Two vectors check the whole thing,
+and they are the ones to look at first.
+
+### Decrypting a reference ciphertext
 
 `test/vectors.json` carries a complete IBE triple — a derived public key, an
 identity, a vetKey, a ciphertext and the plaintext it must yield. The generator
 **decrypts it in Rust before emitting it**, so it cannot send the port chasing a
 phantom.
 
-**It does.** `test/Ibe.test.mo` decrypts that ciphertext and recovers the exact
-plaintext. Everything below had to be simultaneously correct for the
-authenticated check at the end of `decrypt` to pass — the field tower, both group
-laws, the Miller loop, the final exponentiation, HKDF, SHAKE256,
-`expand_message_xmd`, and every serialization format.
+`test/Ibe.test.mo` decrypts that ciphertext and recovers the exact plaintext.
+Every layer has to be simultaneously correct for the authenticated check at the
+end of `decrypt` to pass — the field tower, both group laws, the Miller loop, the
+final exponentiation, HKDF, SHAKE256, `expand_message_xmd`, and every
+serialization format.
 
 The suite also checks the failure directions, which matter as much: a tampered
 ciphertext and a wrong vetKey are both **rejected**, not mis-decrypted into
 plausible garbage.
 
-### The second finish line
+### Verifying a real subnet reply
 
-Decrypting proves the port computes the same things the reference does. It does
+Decryption alone proves the port computes what the reference computes. It does
 not prove the port can be *trusted with* a subnet's reply, because a canister
-does not receive a vetKey — it receives an `EncryptedVetKey` and has to unwrap
+never receives a bare vetKey — it receives an `EncryptedVetKey` and has to unwrap
 and verify one.
 
 So `test/vectors.json` also carries an `encrypted_vetkey` block: a transport
@@ -235,34 +240,43 @@ skips verification and returns whatever it unwrapped.
 | **IBE decryption** | ✅ **6 tests — decrypts the reference ciphertext** |
 | `hash_to_curve` — RFC 9380, simplified SWU + 11-isogeny | ✅ 4 tests against reference vectors |
 | **`decryptAndVerify`** | ✅ **10 tests against a real `vetkd_derive_key` reply** |
+| `derive_canister_key` / `derive_sub_key` | ⬜ not implemented — see [Coverage](#coverage) |
 
-### Parity
+### Coverage
 
-The port now covers every cryptographic operation the Rust PoC performs: unwrap
-the subnet's reply, **verify** it, then decrypt the sealed secret. There is no
-remaining functional gap between the two.
+This is a library, not a canister. It covers what happens to a `vetkd_derive_key`
+reply once a canister has it: unwrap it, **verify** it, decrypt the sealed
+secret. Fetching the reply is an ordinary management-canister call that Motoko
+can already make via `mo:ic-vetkeys`' `ManagementCanister.mo`.
 
-This is a library, not a canister. Fetching the reply in the first place —
-`vetkd_derive_key` — is an ordinary management-canister call that Motoko has
-always been able to make via `ManagementCanister.mo`, and was never the obstacle;
-what was missing is everything that happens to the reply afterwards.
+**One piece of the Rust PoC has no counterpart here:** offline derived-public-key
+computation — `MasterPublicKey::for_mainnet_key(…).derive_canister_key(…)
+.derive_sub_key(…)`. The Rust canister uses it to check the subnet's reply against
+a master key compiled into its own Wasm, which is the one step in the design that
+is not the subnet vouching for itself. A Motoko canister today would have to take
+the derived public key from `vetkd_public_key` instead, which is weaker.
 
-Getting there needed `hash_to_curve`, the single largest piece of the port —
-3,314 lines of the reference, across `map_g1.rs`, `expand_msg.rs`, `chain.rs` and
-`mod.rs`. `IbeCiphertext::decrypt` does not use it, needing only a pairing and a
-`G2` scalar multiplication, which is why an earlier revision of this port stopped
-short of it and could decrypt without being able to verify. That is a real
-difference in a security property: a canister without it takes the subnet's word
-for the key it was handed. See [The second finish line](#the-second-finish-line)
-for what closing it is checked against.
+Closing it is small — roughly 30 lines over the existing `G2.mul`, `G2.add` and
+`Scalar.hashToScalar`, plus the four hardcoded master-key constants — but it is
+not written yet, and until it is, `verifyBlsSignature` can only be as trustworthy
+as the key handed to it.
 
-### One bug worth recording
+The largest single piece already here is `hash_to_curve` — 3,314 lines of the reference,
+across `map_g1.rs`, `expand_msg.rs`, `chain.rs` and `mod.rs`. It is easy to
+mistake for optional, because `IbeCiphertext::decrypt` never calls it: decryption
+needs only a pairing and a `G2` scalar multiplication. Verification is what needs
+it, and the difference between the two is a security property — a canister that
+cannot verify takes the subnet's word for the key it was handed. See
+[Verifying a real subnet reply](#verifying-a-real-subnet-reply).
 
-The first working version of `hash_to_curve` produced points that were not on the
-curve, while every existing test still passed. The cause was a coordinate
-convention: the simplified SWU map and the 11-isogeny work in **homogeneous**
-projective coordinates, `(X/Z, Y/Z)`, and this port's `G1` is **Jacobian**,
-`(X/Z², Y/Z³)`. Both are internally consistent, so nothing in the `G1` suite
-could have caught it — only feeding a point from one into the other exposes it.
-`HashToCurve.toJacobian` is the three-multiplication conversion, and the comment
-there says why it exists.
+### Two coordinate conventions coexist here
+
+`G1.Point` is **Jacobian**: `(X : Y : Z)` denotes `(X/Z², Y/Z³)`. The simplified
+SWU map and the 11-isogeny inside `HashToCurve` are **homogeneous**: `(X/Z,
+Y/Z)`. Both use the same record type, and each is internally consistent, so
+nothing in the `G1` test suite can detect a value crossing from one to the other
+— it simply yields points that are not on the curve.
+
+`HashToCurve.toJacobian` is the conversion, `(X·Z : Y·Z² : Z)`, three
+multiplications and no inversion. Anything leaving `isoMap` must go through it
+before it touches `G1.add`, `G1.mul` or `G1.toAffine`.
