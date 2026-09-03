@@ -211,7 +211,7 @@ async function main() {
     seal(value, sealedSecretsIdentity(info.epoch)),
   );
   check(
-    "the cache did not serve the stale value after overwrite",
+    "an overwrite replaces the stored value rather than shadowing it",
     "Ok" in freshMatches &&
       freshMatches.Ok === true &&
       "Ok" in staleMatches &&

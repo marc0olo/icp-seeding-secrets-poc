@@ -88,10 +88,10 @@ fn init(args: InitArgs) {
 
 #[post_upgrade]
 fn post_upgrade() {
-    // Nothing to do: configuration and ciphertexts are in stable memory, and the
-    // caches rebuild lazily on first use. Deliberately does not rewrite the
-    // config — an upgrade must not be able to silently change the derivation and
-    // orphan every stored ciphertext.
+    // Nothing to do: configuration and secrets are in stable memory, and the
+    // vetKey cache rebuilds lazily on first use. Deliberately does not rewrite
+    // the config — an upgrade must not be able to silently change the derivation
+    // and so reject every subsequently sealed ciphertext.
 }
 
 fn require_controller() -> Result<(), SealedSecretsError> {

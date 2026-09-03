@@ -336,7 +336,7 @@ export SEAL_IDENTITY_PEM=/tmp/seed-id.pem
 cd seed && npm install
 export DUMMY_API_KEY='sk-example-not-a-real-key'
 
-CID=$(icp canister status sealed-secrets -e local --json | jq -r .id)
+CID=$(icp canister status sealed-secrets-rust -e local --json | jq -r .id)
 
 npm run seal -- \
   --canister "$CID" \
@@ -381,8 +381,8 @@ Then, if you want to watch the round trip rather than trust it, and check the wh
 derivation path is healthy:
 
 ```bash
-icp canister call sealed-secrets secret_reveal '("DUMMY_API_KEY")' -e local
-icp canister call sealed-secrets icp_sealed_secret_self_test '(opt variant { PocketIc })' -e local
+icp canister call sealed-secrets-rust secret_reveal '("DUMMY_API_KEY")' -e local
+icp canister call sealed-secrets-rust icp_sealed_secret_self_test '(opt variant { PocketIc })' -e local
 ```
 
 `self_test` takes the network you *believe* you are on and reports
@@ -510,12 +510,13 @@ because **a controller can obtain the secret anyway**. Two routes, no endpoint r
 
 1. **Install code that decrypts.** vetKD binds the key to the **canister ID**, not to the
    module hash — `vetkd_public_key` takes `{ canister_id, context, key_id }` and nothing
-   about the code. The ciphertext sits in stable memory and survives an upgrade, so any
-   module a controller installs on that canister can derive the same key. There is no way
-   to pin a sealed secret to a particular code version.
-2. **Read the heap out of a snapshot.** `take_canister_snapshot`, then
+   about the code. Any module a controller installs on that canister can derive the same
+   key, so a secret is bound to the canister, never to a particular code version.
+2. **Read the state out of a snapshot.** `take_canister_snapshot`, then
    `read_canister_snapshot_data` with `kind = variant { wasm_memory : record { offset; size } }`.
-   The decrypted plaintext cache is right there.
+   The canister stores the decrypted secret, so it is right there — and it would be there
+   anyway the moment any version of this canister used it, since the plaintext reaches the
+   heap and the heap is captured too.
 
 So what does a getter actually cost you?
 
@@ -704,8 +705,8 @@ DUMMY_API_KEY='the-new-key' npm run seal -- --canister <id> --name DUMMY_API_KEY
 DUMMY_API_KEY='the-new-key' npm run seal -- --canister <id> --name DUMMY_API_KEY --source mainnet --verify
 ```
 
-The e2e suite covers this: *overwriting bumps the revision* and *the cache did not serve
-the stale value after overwrite*.
+The e2e suite covers this: *overwriting bumps the revision* and *an overwrite replaces the
+stored value rather than shadowing it*.
 
 Rotating the *vetKD key* — the epoch in the identity — is a separate thing, and is
 deferred; see [FOLLOW-UPS.md](./FOLLOW-UPS.md). It is almost never what you want. If a

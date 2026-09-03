@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://github.com/dfinity/icp-cli/raw/refs/heads/main/docs/schemas/icp-yaml-schema.json
 
 canisters:
-  - name: sealed-secrets
+  - name: sealed-secrets-rust
     # These steps mirror the official @dfinity/rust recipe rather than using it,
     # for one reason: the recipe has no parameter for cargo `--features`, and this
     # PoC needs `--features test-hooks` (see README, "Seeing the

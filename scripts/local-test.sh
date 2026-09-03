@@ -15,7 +15,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-CANISTER=sealed-secrets
+CANISTER=sealed-secrets-rust
 ENV=local
 HOST=http://127.0.0.1:8010
 SECRET_NAME=DUMMY_API_KEY
@@ -181,7 +181,7 @@ icp deploy -e "$ENV" --yes >/dev/null
 AFTER=$(icp canister call "$CANISTER" secret_reveal "(\"$SECRET_NAME\")" -e "$ENV" 2>/dev/null \
   | tr -d '\n' | sed -n 's/.*= "\(.*\)".*/\1/p')
 [ "$AFTER" = "$SECRET_VALUE" ] || fail "the secret did not survive the upgrade"
-echo "  ok — still readable after upgrade, ciphertext lives in stable memory"
+echo "  ok — still readable after upgrade, the secret lives in stable memory"
 
 say "12. the negative cases"
 npm --prefix seed run --silent e2e -- --canister "$CID" --host "$HOST" --source pocketic --pem "$PEM"
