@@ -7,6 +7,7 @@ license = "Apache-2.0"
 
 [dependencies]
 core = "2.6.1"
+sha2 = "0.2.5"
 sealed-secrets-bls = "../bls12-381"
 sealed-secrets-vetkeys = "../vetkeys"
 
