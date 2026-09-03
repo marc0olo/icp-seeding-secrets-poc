@@ -74,7 +74,7 @@ test("epoch must be a uint32", () => {
 });
 
 test("secret name validation", () => {
-  for (const good of ["A", "OPENAI_API_KEY", "stripe.live-key_2", "0", "n".repeat(MAX_NAME_LEN)]) {
+  for (const good of ["A", "DUMMY_API_KEY", "billing.live-key_2", "0", "n".repeat(MAX_NAME_LEN)]) {
     assert.doesNotThrow(() => validateSecretName(good), `rejected ${good}`);
   }
   for (const bad of ["", "n".repeat(MAX_NAME_LEN + 1), "a/b", "a b", "kéy"]) {

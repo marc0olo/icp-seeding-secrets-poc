@@ -18,7 +18,7 @@ cd "$(dirname "$0")/.."
 CANISTER=sealed-secrets
 ENV=local
 HOST=http://127.0.0.1:8010
-SECRET_NAME=DEMO_API_KEY
+SECRET_NAME=DUMMY_API_KEY
 SECRET_VALUE="sk-local-test-$(date +%s)-do-not-use"
 PEM="$(mktemp -t sealed-secrets-id)"
 TEST_IDENTITY=sealed-secrets-test

@@ -73,7 +73,7 @@ sequenceDiagram
     participant Can as Target canister
     participant Mgmt as Management canister<br/>(own subnet)
 
-    Dev->>Script: OPENAI_API_KEY=… npm run seal
+    Dev->>Script: DUMMY_API_KEY=… npm run seal
 
     rect rgba(120,120,120,.12)
     note over Script,Reg: Preflight — two properties, both required, neither implies the other
@@ -96,7 +96,7 @@ sequenceDiagram
     Script->>Script: assert public_key == dpk — else ABORT
 
     Script->>Script: ct = IbeCiphertext.encrypt(dpk, identity, secret, random seed)
-    Script->>Can: icp_sealed_secret_set("OPENAI_API_KEY", ct)
+    Script->>Can: icp_sealed_secret_set("DUMMY_API_KEY", ct)
 
     rect rgba(120,120,120,.12)
     note over Can,Mgmt: set is async and trial-decrypts — a wrong key fails HERE, not in production
@@ -113,7 +113,7 @@ sequenceDiagram
     end
 
     Can-->>Script: Ok(revision)
-    Script-->>Dev: ✓ Sealed OPENAI_API_KEY
+    Script-->>Dev: ✓ Sealed DUMMY_API_KEY
 ```
 
 Later, whenever the secret is used, the canister decrypts from the stored ciphertext
@@ -198,13 +198,13 @@ export SEAL_IDENTITY_PEM=/tmp/seed-id.pem
 
 # 3. seal a secret — read from the environment, never from argv
 cd seed && npm install
-export OPENAI_API_KEY='sk-example-not-a-real-key'
+export DUMMY_API_KEY='sk-example-not-a-real-key'
 
 CID=$(icp canister status sealed-secrets -e local --json | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])')
 
 npm run seal -- \
   --canister "$CID" \
-  --name OPENAI_API_KEY \
+  --name DUMMY_API_KEY \
   --host http://127.0.0.1:8010 \
   --source pocketic \
   --local          # see "Local vs mainnet" below for what this waives
@@ -213,8 +213,11 @@ npm run seal -- \
 ```
 preflight
   subnet:   w5bul-v73ez-…-7ae
-  sev-snp:  UNVERIFIED — the registry did not report the feature flag
-  vetkd:    "key_1" NOT present — subnet holds no vetKD keys at all
+  sev-snp:  NOT REPORTED — expected on a local network, where SEV cannot be simulated
+  vetkd:    "key_1" NOT on this subnet — subnet holds no vetKD keys
+            On mainnet this is fatal: vetkd_derive_key is served by the
+            calling canister's own subnet. PocketIC does not enforce that,
+            so a local run will succeed anyway and hide the problem.
 
 key derivation
   source    pocketic:key_1
@@ -223,8 +226,8 @@ key derivation
   derived   a0d33e4e648337dafede99ae71fdc17a…
   verified  canister agrees with our offline derivation
 
-sealing "OPENAI_API_KEY" (34 bytes → 170 bytes)
-✓ sealed "OPENAI_API_KEY" at revision 0
+sealing "DUMMY_API_KEY" (25 bytes → 161 bytes)
+✓ sealed "DUMMY_API_KEY" at revision 0
   the canister trial-decrypted it before storing, so it is readable
 ```
 
@@ -232,7 +235,7 @@ Then confirm the canister really recovered the plaintext, and that the whole
 derivation path is healthy:
 
 ```bash
-icp canister call sealed-secrets secret_sha256 '("OPENAI_API_KEY")' -e local
+icp canister call sealed-secrets secret_sha256 '("DUMMY_API_KEY")' -e local
 icp canister call sealed-secrets icp_sealed_secret_self_test '(opt variant { PocketIc })' -e local
 ```
 
@@ -247,7 +250,7 @@ returns `opt false`. Pass `null` to skip the audit.
 Drop `--local` and switch the master-key table:
 
 ```bash
-npm run seal -- --canister <id> --name OPENAI_API_KEY \
+npm run seal -- --canister <id> --name DUMMY_API_KEY \
   --host https://icp-api.io --source mainnet
 ```
 

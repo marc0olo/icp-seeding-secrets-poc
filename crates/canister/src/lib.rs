@@ -164,7 +164,7 @@ fn icp_sealed_secret_unset(name: String) -> Result<(), SealedSecretsError> {
 ///
 /// Controller-gated, because it is more revealing than it looks: IBE overhead is
 /// a fixed 136 bytes, so `ciphertext_len` gives the exact plaintext length, and
-/// the names alone (`stripe_live_key`, …) are useful reconnaissance.
+/// the names alone (`billing_live_key`, …) are useful reconnaissance.
 ///
 /// Nothing here is derived from a plaintext. A digest of the plaintext would be
 /// an offline guessing oracle for low-entropy secrets; a digest of a randomised

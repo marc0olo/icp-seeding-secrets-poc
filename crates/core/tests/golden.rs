@@ -74,8 +74,8 @@ fn secret_name_validation() {
     let max_name = "n".repeat(MAX_NAME_LEN);
     for good in [
         "A",
-        "OPENAI_API_KEY",
-        "stripe.live-key_2",
+        "DUMMY_API_KEY",
+        "billing.live-key_2",
         "0",
         max_name.as_str(),
     ] {

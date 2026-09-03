@@ -47,7 +47,7 @@ fn init(key_name: String) { sealed_secrets_setup(key_name); /* â€¦your own initâ
 
 #[update]
 async fn ask_model(prompt: String) -> String {
-    let key = sealed_secret_str("openai_api_key").await.expect("not sealed");
+    let key = sealed_secret_str("dummy_api_key").await.expect("not sealed");
     call_api(&key, &prompt).await          // key is Zeroizing<String>
 }
 ```
@@ -193,7 +193,7 @@ history, and is echoed into CI logs.
 canisters:
   - name: backend
     secrets:
-      OPENAI_API_KEY: { env: OPENAI_API_KEY }
+      DUMMY_API_KEY: { env: DUMMY_API_KEY }
 ```
 
 No inline values, no file paths. The manifest then cannot carry a secret, stays safe to
