@@ -13,3 +13,5 @@ ic_bls12_381 = { version = "0.10.1", default-features = false, features = ["grou
 hex = "0.4.3"
 ic-vetkeys = { workspace = true }
 sha2 = "0.10"
+sealed-secrets-core = { path = "../core" }
+candid = { workspace = true }

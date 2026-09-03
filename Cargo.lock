@@ -1119,9 +1119,11 @@ dependencies = [
 name = "vectorgen"
 version = "0.1.0"
 dependencies = [
+ "candid",
  "hex",
  "ic-vetkeys",
  "ic_bls12_381",
+ "sealed-secrets-core",
  "sha2",
 ]
 

@@ -91,6 +91,7 @@ fn main() {
     emit_hash_to_scalar_vectors();
     emit_hash_to_curve_vectors();
     emit_encrypted_vetkey_vector();
+    emit_derivation_vectors();
     emit_ibe_vector();
 
     println!("}}");
@@ -304,4 +305,76 @@ fn emit_encrypted_vetkey_vector() {
         hex::encode(vetkey.signature_bytes())
     );
     println!("  }},");
+}
+
+/// Offline derived-public-key computation.
+///
+/// This is how a canister checks the subnet's reply against a master key
+/// compiled into its own Wasm rather than asking the subnet to vouch for itself,
+/// so a port that cannot reproduce these bytes cannot implement the check.
+///
+/// Generated through `sealed_secrets_core::derive_public_key`, the same path the
+/// Rust canister takes — not by calling `ic-vetkeys` directly — so these vectors
+/// also pin the PoC's own context encoding.
+///
+/// Both master-key tables appear on purpose. `for_mainnet_key("key_1")` and
+/// `for_pocketic_key("key_1")` are different keys, and selecting the table by key
+/// *name* is a live bug in `ic-vetkeys`' own `compute_vrf` (`utils/mod.rs:411`
+/// vs `:422`). A port that conflates them passes every single-network test and
+/// then produces undecryptable ciphertext on the other network.
+fn emit_derivation_vectors() {
+    use sealed_secrets_core::{derive_public_key, key_id, sealed_secrets_context, MasterKeySource};
+
+    let cases = [
+        (
+            MasterKeySource::Mainnet,
+            "key_1",
+            "rwlgt-iiaaa-aaaaa-aaaaa-cai",
+            "",
+        ),
+        (
+            MasterKeySource::Mainnet,
+            "test_key_1",
+            "rrkah-fqaaa-aaaaa-aaaaq-cai",
+            "",
+        ),
+        (
+            MasterKeySource::PocketIc,
+            "key_1",
+            "rwlgt-iiaaa-aaaaa-aaaaa-cai",
+            "",
+        ),
+        (
+            MasterKeySource::PocketIc,
+            "test_key_1",
+            "ryjl3-tyaaa-aaaaa-aaaba-cai",
+            "demo",
+        ),
+    ];
+
+    println!("  \"derived_public_key\": [");
+    let mut first = true;
+    for (source, name, canister, app_sep) in cases {
+        let cid = candid::Principal::from_text(canister).expect("valid principal");
+        let context = sealed_secrets_context(app_sep).expect("valid separator");
+        let dpk = derive_public_key(source, &key_id(name), &cid, &context).expect("known key");
+        if !first {
+            println!(",");
+        }
+        first = false;
+        print!(
+            "    {{ \"source\": \"{}\", \"key_name\": \"{}\", \"canister_id\": \"{}\", \"canister_id_bytes\": \"{}\", \"app_separator\": \"{}\", \"context\": \"{}\", \"derived_public_key\": \"{}\" }}",
+            match source {
+                MasterKeySource::Mainnet => "mainnet",
+                MasterKeySource::PocketIc => "pocketic",
+            },
+            name,
+            canister,
+            hex::encode(cid.as_slice()),
+            app_sep,
+            hex::encode(&context),
+            hex::encode(dpk.serialize())
+        );
+    }
+    println!("\n  ],");
 }

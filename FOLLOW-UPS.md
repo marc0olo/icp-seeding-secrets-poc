@@ -365,8 +365,8 @@ verification and the no-getter rule are the same design decision viewed from two
 `motoko/` holds an **experimental, unaudited** BLS12-381 implementation for
 Motoko: the whole field tower (`Fp`, `Fp2`, `Fp6`, `Fp12`), both curve groups
 with compression, the optimal ate pairing, HKDF-SHA256, SHAKE256,
-`expand_message_xmd`, `hash_to_scalar`, RFC 9380 `hash_to_curve`, IBE decryption
-and `decrypt_and_verify`. 95 tests — see [motoko/vetkeys/README.md](./motoko/vetkeys/README.md).
+`expand_message_xmd`, `hash_to_scalar`, RFC 9380 `hash_to_curve`, IBE decryption,
+`decrypt_and_verify`, and offline derived-public-key computation. 102 tests — see [motoko/vetkeys/README.md](./motoko/vetkeys/README.md).
 
 Upstream has none of this. `backend/mo/ic_vetkeys/src/` has `key_manager`,
 `encrypted_maps`, `ManagementCanister` and `Types`, and no mops package provides
@@ -387,19 +387,10 @@ reduces with `%` where the reference uses Montgomery form, so it divides where
 the reference multiplies. Fixing that, not switching to a limb representation, is
 the optimisation if anyone ever needs one.
 
-**What is missing.** Two things, both small, neither yet written:
-
-- **`derive_canister_key` / `derive_sub_key`** — computing a derived public key
-  offline from a hardcoded master key. Roughly 30 lines on top of what is already
-  here (`G2.mul`, `G2.add`, `Scalar.hashToScalar`) plus the four master-key
-  constants. It matters more than its size suggests: it is how a canister checks
-  the subnet's reply against a key compiled into its own Wasm instead of asking
-  the subnet to vouch for itself. Without it a Motoko canister has to trust
-  `vetkd_public_key`.
-- **A canister that actually runs it.** Everything is exercised by `mops test`
-  and `mops bench`, which do run in a replica, but always against fixed vectors.
-  No Motoko canister has yet called `vetkd_derive_key` and verified what came
-  back.
+**What is missing.** A canister that actually runs it. Everything is exercised by
+`mops test` and `mops bench`, which do run in a replica, but always against fixed
+vectors. No Motoko canister has yet called `vetkd_derive_key` and verified what
+came back.
 
 **And it is unaudited.** Nothing here should reach production before a
 cryptographer has been through it. The value is that the conversation can be

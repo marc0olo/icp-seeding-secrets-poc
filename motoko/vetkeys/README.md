@@ -240,7 +240,7 @@ skips verification and returns whatever it unwrapped.
 | **IBE decryption** | ✅ **6 tests — decrypts the reference ciphertext** |
 | `hash_to_curve` — RFC 9380, simplified SWU + 11-isogeny | ✅ 4 tests against reference vectors |
 | **`decryptAndVerify`** | ✅ **10 tests against a real `vetkd_derive_key` reply** |
-| `derive_canister_key` / `derive_sub_key` | ⬜ not implemented — see [Coverage](#coverage) |
+| `MasterPublicKey` / `derive_canister_key` / `derive_sub_key` | ✅ 7 tests, derivation matching the Rust reference byte for byte |
 
 ### Coverage
 
@@ -249,17 +249,11 @@ reply once a canister has it: unwrap it, **verify** it, decrypt the sealed
 secret. Fetching the reply is an ordinary management-canister call that Motoko
 can already make via `mo:ic-vetkeys`' `ManagementCanister.mo`.
 
-**One piece of the Rust PoC has no counterpart here:** offline derived-public-key
-computation — `MasterPublicKey::for_mainnet_key(…).derive_canister_key(…)
-.derive_sub_key(…)`. The Rust canister uses it to check the subnet's reply against
-a master key compiled into its own Wasm, which is the one step in the design that
-is not the subnet vouching for itself. A Motoko canister today would have to take
-the derived public key from `vetkd_public_key` instead, which is weaker.
-
-Closing it is small — roughly 30 lines over the existing `G2.mul`, `G2.add` and
-`Scalar.hashToScalar`, plus the four hardcoded master-key constants — but it is
-not written yet, and until it is, `verifyBlsSignature` can only be as trustworthy
-as the key handed to it.
+`PublicKey.mo` covers the other half of the trust story: offline
+derived-public-key computation from a master key compiled into the canister. It
+is what lets `decryptAndVerify` mean anything — verification is only as good as
+the key handed to it, and a canister that fetches that key from
+`vetkd_public_key` is asking the subnet to vouch for itself.
 
 The largest single piece already here is `hash_to_curve` — 3,314 lines of the reference,
 across `map_g1.rs`, `expand_msg.rs`, `chain.rs` and `mod.rs`. It is easy to
