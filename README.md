@@ -647,10 +647,10 @@ treat them as optional — see [FOLLOW-UPS.md](./FOLLOW-UPS.md).
   rather than the two agreeing because they share one.
 - **Errors are a typed variant**, so tooling can branch on `VetKdUnavailable` versus
   `InvalidCiphertext` rather than parsing prose.
-- **`self_test`'s `undecryptable` list is always empty** in these implementations, because
-  a record holds the decrypted secret and there is nothing stored that could fail to
-  decrypt. The field stays in the response so the interface does not depend on that
-  choice: an implementation that keeps ciphertext at rest populates it.
+- **`self_test` proves the key works, not that each secret does.** It derives the vetKey
+  and verifies it against the master key compiled into the Wasm; there is nothing stored
+  that could fail to decrypt, because a record holds the decrypted secret. Decryption
+  itself is exercised by `set` and `matches`.
 - **`list` is controller-gated.** It looks harmless but is not: IBE overhead is a fixed
   136 bytes, so `ciphertext_len` reveals the exact plaintext length, and names alone
   are useful reconnaissance.

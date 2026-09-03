@@ -306,12 +306,6 @@ async fn icp_sealed_secret_self_test(
 
     let vetkd_derive_ok = keys::vetkey(config.epoch).await.is_ok();
 
-    // Always empty now that records hold plaintext: there is nothing stored that
-    // could fail to decrypt. Kept in the response so the interface does not
-    // change and so a canister that goes back to storing ciphertext can populate
-    // it again.
-    let undecryptable: Vec<String> = Vec::new();
-
     Ok(SelfTestReport {
         vetkd_public_key_ok: reported.is_some(),
         vetkd_derive_ok,
@@ -320,7 +314,6 @@ async fn icp_sealed_secret_self_test(
         effective_context: ByteBuf::from(context),
         epoch: config.epoch,
         num_secrets: records.len() as u64,
-        undecryptable,
     })
 }
 

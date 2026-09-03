@@ -213,12 +213,6 @@ mixin (
       case (#Err(_)) false;
     };
 
-    // Always empty now that records hold plaintext: there is nothing stored that
-    // could fail to decrypt. Kept in the response so the interface does not
-    // change and so a canister that goes back to storing ciphertext can populate
-    // it again.
-    let undecryptable : [Text] = [];
-
     #Ok({
       vetkd_public_key_ok = publicKeyOk;
       vetkd_derive_ok = deriveOk;
@@ -227,7 +221,6 @@ mixin (
       effective_context = Keys.context().toBlob();
       epoch = config.epoch;
       num_secrets = secrets.size().toNat64();
-      undecryptable;
     });
   };
 };

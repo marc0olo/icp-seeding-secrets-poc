@@ -290,10 +290,6 @@ export interface SelfTestReport {
      */
     num_secrets: bigint;
     /**
-     * Names that failed to decrypt. Should always be empty.
-     */
-    undecryptable: Array<string>;
-    /**
      * Whether `vetkd_derive_key` answered and verified.
      */
     vetkd_derive_ok: boolean;
@@ -424,7 +420,6 @@ function from_candid_record_n19(value: {
     epoch: number;
     effective_key_name: string;
     num_secrets: bigint;
-    undecryptable: Array<string>;
     vetkd_derive_ok: boolean;
     vetkd_public_key_ok: boolean;
 }): {
@@ -433,7 +428,6 @@ function from_candid_record_n19(value: {
     epoch: number;
     effective_key_name: string;
     num_secrets: bigint;
-    undecryptable: Array<string>;
     vetkd_derive_ok: boolean;
     vetkd_public_key_ok: boolean;
 } {
@@ -443,7 +437,6 @@ function from_candid_record_n19(value: {
         epoch: value.epoch,
         effective_key_name: value.effective_key_name,
         num_secrets: value.num_secrets,
-        undecryptable: value.undecryptable,
         vetkd_derive_ok: value.vetkd_derive_ok,
         vetkd_public_key_ok: value.vetkd_public_key_ok
     };

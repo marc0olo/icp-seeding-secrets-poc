@@ -265,10 +265,6 @@ export interface SelfTestReport {
    */
   'num_secrets' : bigint,
   /**
-   * Names that failed to decrypt. Should always be empty.
-   */
-  'undecryptable' : Array<string>,
-  /**
    * Whether `vetkd_derive_key` answered and verified.
    */
   'vetkd_derive_ok' : boolean,
@@ -538,7 +534,6 @@ export const idlFactory: IDL.InterfaceFactory = ({ IDL }) => {
     'epoch' : IDL.Nat32,
     'effective_key_name' : IDL.Text,
     'num_secrets' : IDL.Nat64,
-    'undecryptable' : IDL.Vec(IDL.Text),
     'vetkd_derive_ok' : IDL.Bool,
     'vetkd_public_key_ok' : IDL.Bool,
   });

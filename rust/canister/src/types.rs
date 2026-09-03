@@ -109,8 +109,6 @@ pub struct SelfTestReport {
     pub epoch: u32,
     /// How many secrets are stored.
     pub num_secrets: u64,
-    /// Names that failed to decrypt. Should always be empty.
-    pub undecryptable: Vec<String>,
 }
 
 /// Typed errors, so that tooling can branch on the cause rather than parsing prose.

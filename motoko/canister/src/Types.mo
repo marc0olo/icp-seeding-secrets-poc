@@ -76,8 +76,6 @@ module {
     effective_context : Blob;
     epoch : Nat32;
     num_secrets : Nat64;
-    /// Names that failed to decrypt. Should always be empty.
-    undecryptable : [Text];
   };
 
   /// Typed errors, so tooling can branch on the cause rather than parse prose.
