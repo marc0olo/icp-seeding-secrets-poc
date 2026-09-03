@@ -54,14 +54,23 @@ jobs:
       - name: Build canister (default — no observation endpoints)
         run: cargo build -p sealed-secrets-canister --target wasm32-unknown-unknown --release --locked
 
+      # Checked against the wasm binary rather than the extracted Candid: a
+      # canister method IS a wasm export, so a name absent from the bytes cannot
+      # be called at all. Confirmed by hand once — calling secret_reveal on a
+      # default build is rejected by the replica with IC0536.
       - name: Assert the default build cannot observe a secret
         run: |
-          did=$(candid-extractor target/wasm32-unknown-unknown/release/sealed_secrets_canister.wasm)
-          if grep -qE 'secret_reveal|secret_sha256' <<<"$did"; then
-            echo "::error::test-hooks endpoints leaked into the default build"
-            exit 1
-          fi
-          echo "ok — no secret_reveal, no secret_sha256"
+          wasm=target/wasm32-unknown-unknown/release/sealed_secrets_canister.wasm
+          for hook in secret_reveal secret_sha256; do
+            if grep -aq "$hook" "$wasm"; then
+              echo "::error::'$hook' is present in the default build; test-hooks is leaking into production"
+              exit 1
+            fi
+          done
+          # Control, so this cannot pass by inspecting the wrong or a stale file.
+          grep -aq "icp_sealed_secret_set" "$wasm" \
+            || { echo "::error::control failed: icp_sealed_secret_set missing from $wasm"; exit 1; }
+          echo "ok — neither hook appears in the binary (control: set does)"
 
       - name: Build canister (test-hooks)
         run: cargo build -p sealed-secrets-canister --target wasm32-unknown-unknown --release --locked --features test-hooks

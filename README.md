@@ -200,7 +200,7 @@ export SEAL_IDENTITY_PEM=/tmp/seed-id.pem
 cd seed && npm install
 export DUMMY_API_KEY='sk-example-not-a-real-key'
 
-CID=$(icp canister status sealed-secrets -e local --json | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])')
+CID=$(icp canister status sealed-secrets -e local --json | jq -r .id)
 
 npm run seal -- \
   --canister "$CID" \
@@ -305,8 +305,21 @@ Verifying that decryption *worked* does not require handing out the plaintext:
 computed one. That is the check to rely on.
 
 But if you want to see it with your own eyes, build with `--features test-hooks` (which
-`icp.yaml` already does) and call `secret_reveal`. `local-test.sh` step 7 does exactly
+`icp.yaml` already does) and call `secret_reveal`. `local-test.sh` step 8 does exactly
 this and prints both values.
+
+**The hooks are genuinely absent from a default build, not merely hidden.** A canister
+method is a wasm export, so this is checkable four ways, and all four agree:
+
+| Check | Default build | `--features test-hooks` |
+|---|---|---|
+| Candid interface (`candid-extractor`) | absent | present |
+| Wasm export section | no `canister_update secret_reveal` | present |
+| Byte scan of the whole binary | **0** occurrences of the string | present |
+| Calling it on a deployed canister | rejected, `IC0536 Canister has no update method 'secret_reveal'` | returns the value |
+
+`local-test.sh` and CI assert the byte scan on every run, with a control (that
+`icp_sealed_secret_set` *is* present) so the check cannot pass by reading the wrong file.
 
 ### Can I just add a getter?
 

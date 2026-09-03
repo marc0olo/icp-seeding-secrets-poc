@@ -30,19 +30,34 @@ cleanup() { rm -f "$PEM"; }
 trap cleanup EXIT
 
 say "1. the default build exposes no way to observe a secret"
+# Checked against the wasm binary, not just the extracted Candid: a canister
+# method IS a wasm export, so a name absent from the bytes cannot be called at
+# all. Confirmed once by hand — calling secret_reveal on a default build is
+# rejected by the replica with IC0536 "Canister has no update method".
 cargo build -p sealed-secrets-canister --target wasm32-unknown-unknown --release --locked >/dev/null 2>&1
-DEFAULT_DID=$(candid-extractor target/wasm32-unknown-unknown/release/sealed_secrets_canister.wasm 2>/dev/null || true)
-if grep -qE "secret_reveal|secret_sha256" <<<"$DEFAULT_DID"; then
-  fail "the default build exports an observation endpoint; test-hooks is leaking into it"
-fi
-echo "  ok — no secret_reveal, no secret_sha256"
+PROD_WASM=target/wasm32-unknown-unknown/release/sealed_secrets_canister.wasm
+for hook in secret_reveal secret_sha256; do
+  if grep -aq "$hook" "$PROD_WASM"; then
+    fail "'$hook' is present in the default build; test-hooks is leaking into production"
+  fi
+done
+# A control, so this cannot pass by looking at the wrong file or a stale build.
+grep -aq "icp_sealed_secret_set" "$PROD_WASM" \
+  || fail "control failed: icp_sealed_secret_set missing from $PROD_WASM"
+echo "  ok — neither hook appears in the binary (control: set does)"
 
 say "2. the generated TypeScript bindings match the canister"
 ( cd seed && [ -d node_modules ] || npm install --silent >/dev/null 2>&1 )
-BEFORE=$(shasum -a 256 seed/src/declarations/*.ts | shasum -a 256)
+# git is the portable diff here: no shasum/sha256sum, which differ across macOS
+# and slim Linux images. The declarations are tracked, so regenerating and
+# finding no change is the check.
+cargo build -p sealed-secrets-canister --target wasm32-unknown-unknown --release --locked \
+  --features test-hooks >/dev/null 2>&1
+candid-extractor target/wasm32-unknown-unknown/release/sealed_secrets_canister.wasm \
+  > crates/canister/sealed_secrets_canister.did
 npm --prefix seed run --silent bindings >/dev/null 2>&1
-AFTER=$(shasum -a 256 seed/src/declarations/*.ts | shasum -a 256)
-[ "$BEFORE" = "$AFTER" ] || fail "seed/src/declarations is stale — run 'npm --prefix seed run bindings' and commit"
+git diff --quiet -- crates/canister/sealed_secrets_canister.did seed/src/declarations \
+  || fail "the .did or seed/src/declarations is stale — run 'npm --prefix seed run bindings' and commit"
 echo "  ok — declarations are up to date with the .did"
 
 say "3. make sure an identity exists"
@@ -67,7 +82,7 @@ fi
 
 say "5. deploy (with --features test-hooks, per icp.yaml)"
 icp deploy -e "$ENV" >/dev/null
-CID=$(icp canister status "$CANISTER" -e "$ENV" --json | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])')
+CID=$(icp canister status "$CANISTER" -e "$ENV" --json | jq -r .id)
 echo "  canister: $CID"
 
 say "6. health check — does this subnet actually serve vetKD?"
