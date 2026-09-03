@@ -61,7 +61,7 @@ jobs:
       - name: Assert the default build cannot observe a secret
         run: |
           wasm=target/wasm32-unknown-unknown/release/sealed_secrets_canister.wasm
-          for hook in secret_reveal secret_sha256; do
+          for hook in secret_reveal; do
             if grep -aq "$hook" "$wasm"; then
               echo "::error::'$hook' is present in the default build; test-hooks is leaking into production"
               exit 1
@@ -70,7 +70,7 @@ jobs:
           # Control, so this cannot pass by inspecting the wrong or a stale file.
           grep -aq "icp_sealed_secret_set" "$wasm" \
             || { echo "::error::control failed: icp_sealed_secret_set missing from $wasm"; exit 1; }
-          echo "ok — neither hook appears in the binary (control: set does)"
+          echo "ok — secret_reveal absent from the binary (control: set present)"
 
       - name: Build canister (test-hooks)
         run: cargo build -p sealed-secrets-canister --target wasm32-unknown-unknown --release --locked --features test-hooks

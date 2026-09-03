@@ -32,4 +32,5 @@ sealed-secrets-core = { path = "../core" }
 serde = { workspace = true }
 serde_bytes = { workspace = true }
 sha2 = { workspace = true }
+subtle = { workspace = true }
 zeroize = { workspace = true }

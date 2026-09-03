@@ -40,6 +40,7 @@ interface Options {
   host: string;
   pem: string;
   source: MasterKeySource;
+  verify: boolean;
   allowUnverifiedSev: boolean;
   allowMissingVetkdKey: boolean;
   list: boolean;
@@ -85,6 +86,9 @@ Escape hatches
                          local run succeeds and hides the problem.
   --local                Shorthand for both of the above.
   --list                 List the secrets the canister already holds.
+  --verify               Ask whether the canister already holds the value in
+                         the environment, instead of sealing a new one. Answers
+                         yes/no; neither side discloses the secret.
 `.trim();
 
 function parseArgs(argv: string[]): Options {
@@ -118,6 +122,7 @@ function parseArgs(argv: string[]): Options {
     host: get("--host") ?? "http://127.0.0.1:8000",
     pem: get("--pem") ?? process.env.SEAL_IDENTITY_PEM ?? "",
     source,
+    verify: has("--verify"),
     allowUnverifiedSev: has("--allow-unverified-sev") || has("--local"),
     allowMissingVetkdKey: has("--allow-missing-vetkd-key") || has("--local"),
     list,
@@ -253,6 +258,20 @@ async function main() {
     fail(
       `ciphertext is ${ciphertext.length} bytes, canister accepts at most ${info.max_ciphertext_len}`,
     );
+  }
+
+  // ------------------------------------------------- verify instead of seal
+  if (opts.verify) {
+    const same = unwrap(
+      await actor.icp_sealed_secret_matches(opts.name, ciphertext),
+      "icp_sealed_secret_matches",
+    );
+    console.log(
+      same
+        ? `\n✓ the canister already holds this value for "${opts.name}"`
+        : `\n✗ the canister holds a DIFFERENT value for "${opts.name}"`,
+    );
+    process.exit(same ? 0 : 1);
   }
 
   console.log(`\nsealing "${opts.name}" (${plaintext.length} bytes → ${ciphertext.length} bytes)`);

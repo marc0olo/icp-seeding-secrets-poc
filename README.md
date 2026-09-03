@@ -298,17 +298,53 @@ The e2e suite covers the cases that matter — ciphertext sealed to the wrong ep
 malformed blobs, oversized input, invalid names, anonymous callers, that rejected writes
 leave no trace, and that overwriting does not serve a stale cached plaintext.
 
-### Seeing the decrypted secret
+### Confirming the right secret is deployed
 
-Verifying that decryption *worked* does not require handing out the plaintext:
-`secret_sha256` returns a digest, and the e2e suite compares it against a locally
-computed one. That is the check to rely on.
+The question an operator actually has is *"is the value I hold the one in the canister?"*
+— and they already know the value, so they need one bit back, not the secret.
 
-But if you want to see it with your own eyes, build with `--features test-hooks` (which
-`icp.yaml` already does) and call `secret_reveal`. `local-test.sh` step 8 does exactly
-this and prints both values.
+```bash
+DUMMY_API_KEY='the-value-i-expect' npm run seal -- \
+  --canister <id> --name DUMMY_API_KEY --verify --source mainnet
+```
 
-**The hooks are genuinely absent from a default build, not merely hidden.** A canister
+```
+✓ the canister already holds this value for "DUMMY_API_KEY"
+```
+
+Exit status is 0 on a match and 1 on a mismatch, so it scripts. Under the hood this is
+`icp_sealed_secret_matches`: the client seals its candidate with a fresh IBE seed exactly
+as it would for `set`, and the canister decrypts both and compares in constant time.
+
+This is deliberately **not** a "return me a digest of the plaintext" endpoint:
+
+- a digest of a low-entropy secret is brute-forceable offline by anyone who sees it, and
+  replies cross a boundary node in the clear;
+- sending `sha256(expected)` in the *request* would put the same brute-forceable digest on
+  the wire;
+- a ciphertext discloses nothing in either direction, and a boolean tells the caller
+  everything a digest would.
+
+It is controller-gated, because for anyone else it is an oracle for confirming guesses.
+For a controller it discloses nothing new — they can already read the secret by installing
+code that decrypts it.
+
+**This is safe in production and is the intended verification path.**
+
+### Seeing the plaintext
+
+`matches` proves the right value is there. If you additionally want to *look* at it —
+which is the whole point of a PoC someone is deciding whether to trust — build with
+`--features test-hooks` (which `icp.yaml` does) and call `secret_reveal`.
+`local-test.sh` step 8 prints both the sealed and the revealed value.
+
+That feature exists for exactly one reason: convincing a human. Nothing automated needs it.
+A successful `set` already proves the canister could decrypt, since `set` trial-decrypts
+before storing, and `matches` covers verification. **A generalized implementation would
+ship no such endpoint at all**, and neither should any real deployment — see
+[Can I just add a getter?](#can-i-just-add-a-getter).
+
+**The hook is genuinely absent from a default build, not merely hidden.** A canister
 method is a wasm export, so this is checkable four ways, and all four agree:
 
 | Check | Default build | `--features test-hooks` |
@@ -320,39 +356,6 @@ method is a wasm export, so this is checkable four ways, and all four agree:
 
 `local-test.sh` and CI assert the byte scan on every run, with a control (that
 `icp_sealed_secret_set` *is* present) so the check cannot pass by reading the wrong file.
-
-### Can I just add a getter?
-
-Not in production — but the reason is more interesting than "it would leak the key",
-because **a controller can obtain the secret anyway**. Two routes, no endpoint required:
-
-1. **Install code that decrypts.** vetKD binds the key to the **canister ID**, not to the
-   module hash — `vetkd_public_key` takes `{ canister_id, context, key_id }` and nothing
-   about the code. The ciphertext sits in stable memory and survives an upgrade, so any
-   module a controller installs on that canister can derive the same key. There is no way
-   to pin a sealed secret to a particular code version.
-2. **Read the heap out of a snapshot.** `take_canister_snapshot`, then
-   `read_canister_snapshot_data` with `kind = variant { wasm_memory : record { offset; size } }`.
-   The decrypted plaintext cache is right there.
-
-So what does a getter actually cost you?
-
-- **It ships the plaintext to a boundary node.** Replies are not encrypted end-to-end; the
-  boundary node terminates TLS and sits *outside* the subnet's SEV-SNP trust boundary. That
-  undoes in the outbound direction exactly what sealing achieved on the way in. (Note a
-  `query` is the *less* bad choice here — an `update` reply is written into replicated state
-  on every node, whereas a query reply is ephemeral.)
-- **It destroys the property that makes the code auditable.** "The published code never
-  returns the plaintext" is something a reader can verify by reading it. Replace it with
-  "…unless the caller is a controller" and the guarantee now rests on the controller set
-  being, and remaining, exactly what you believe.
-- **It leaves no trace.** Installing leaky code changes the module hash, which is visible
-  in the state tree. A call to a getter leaves nothing behind.
-
-The corollary is the one that matters for deployment: **since a controller can always get
-the secret, the canister must be blackholed or SNS/NNS-governed for any of this to mean
-anything.** On a blackholed canister a controller-gated getter is inert — nobody is a
-controller — but by then you have no way to observe the secret anyway, which is the point.
 
 ## Client bindings
 
@@ -398,6 +401,7 @@ and sidestepping the Unicode confusables an arbitrary Candid `text` would admit.
 ```candid
 icp_sealed_secret_info      : ()               -> (variant { Ok : SealedSecretInfo; Err : SealedSecretsError });
 icp_sealed_secret_set       : (text, blob)     -> (variant { Ok : nat64; Err : SealedSecretsError });
+icp_sealed_secret_matches   : (text, blob)     -> (variant { Ok : bool;  Err : SealedSecretsError });
 icp_sealed_secret_unset     : (text)           -> (variant { Ok; Err : SealedSecretsError });
 icp_sealed_secret_list      : ()               -> (variant { Ok : vec SealedSecretEntry; Err : … }) query;
 icp_sealed_secret_self_test : (opt KeySource)  -> (variant { Ok : SelfTestReport; Err : … });
@@ -406,8 +410,9 @@ icp_sealed_secret_self_test : (opt KeySource)  -> (variant { Ok : SelfTestReport
 Install args are just `(record { key_name : text })`.
 
 Only the first two are load-bearing for a tool that seals: `info` says what to encrypt to,
-`set` receives it. `list`, `unset` and `self_test` are convenience, and a generalized
-version should treat them as optional — see [FOLLOW-UPS.md](./FOLLOW-UPS.md).
+`set` receives it. `matches` is what an operator uses to confirm the right value is
+deployed. `list`, `unset` and `self_test` are convenience, and a generalized version should
+treat them as optional — see [FOLLOW-UPS.md](./FOLLOW-UPS.md).
 
 - **`info` is an update**, because `public_key` comes from `vetkd_public_key` —
   authoritative for whichever subnet the canister is actually on. It is cached, so only
@@ -435,8 +440,8 @@ version should treat them as optional — see [FOLLOW-UPS.md](./FOLLOW-UPS.md).
   implies it.
 - **A successful `set` already proves the canister can decrypt**, because it trial-decrypts
   before storing. Tooling therefore never needs a read-back endpoint to confirm a seal
-  worked — which is the same design decision as "there is no `get`", seen from the other
-  side.
+  worked, and `matches` covers "is it still the right value?" — which is the same design
+  decision as "there is no `get`", seen from the other side.
 
 ## Security model
 
@@ -582,9 +587,8 @@ The core/canister split is deliberate. It keeps the format layer free of `ic-cdk
 
 ## Deliberately out of scope
 
-Rotation, `icp_sealed_secret_matches` for idempotent re-seeding, the macros that would
-make this three lines in someone else's canister, splitting `ic-vetkeys` itself along a
-Cargo feature, and any icp-cli integration. All of it is discussed in
+Rotation, the macros that would make this three lines in someone else's canister,
+splitting `ic-vetkeys` itself along a Cargo feature, and any icp-cli integration. All of it is discussed in
 **[FOLLOW-UPS.md](./FOLLOW-UPS.md)**; none of it belongs in something whose job is to
 start a design conversation.
 

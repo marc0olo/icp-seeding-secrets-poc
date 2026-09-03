@@ -47,15 +47,15 @@ export type Result = { 'Ok' : SealedSecretInfo } |
   { 'Err' : SealedSecretsError };
 export type Result_1 = { 'Ok' : Array<SealedSecretEntry> } |
   { 'Err' : SealedSecretsError };
-export type Result_2 = { 'Ok' : SelfTestReport } |
+export type Result_2 = { 'Ok' : boolean } |
   { 'Err' : SealedSecretsError };
-export type Result_3 = { 'Ok' : bigint } |
+export type Result_3 = { 'Ok' : SelfTestReport } |
   { 'Err' : SealedSecretsError };
-export type Result_4 = { 'Ok' : null } |
+export type Result_4 = { 'Ok' : bigint } |
   { 'Err' : SealedSecretsError };
-export type Result_5 = { 'Ok' : string } |
+export type Result_5 = { 'Ok' : null } |
   { 'Err' : SealedSecretsError };
-export type Result_6 = { 'Ok' : Uint8Array } |
+export type Result_6 = { 'Ok' : string } |
   { 'Err' : SealedSecretsError };
 /**
  * One stored secret, as reported by `list`. Carries nothing derived from the
@@ -264,6 +264,31 @@ export interface _SERVICE {
    */
   'icp_sealed_secret_list' : ActorMethod<[], Result_1>,
   /**
+   * Answers "is the value I hold the one you have stored?" without either side
+   * disclosing it.
+   * 
+   * The caller seals its candidate exactly as it would for `set` — a fresh IBE
+   * seed, so the ciphertext is unlinkable to any other — and the canister decrypts
+   * both and compares in constant time. One bit comes back.
+   * 
+   * This is the endpoint an operator should reach for when they want to confirm
+   * the right secret is deployed, and it is deliberately *not* "return me a
+   * digest of the plaintext":
+   * 
+   * - a digest of a low-entropy secret is brute-forceable offline by anyone who
+   * sees it, and replies cross a boundary node in the clear;
+   * - the caller already knows the value they are checking, so a boolean tells
+   * them everything a digest would;
+   * - a ciphertext discloses nothing in the request direction either, whereas
+   * sending `sha256(expected)` would put the same brute-forceable digest on the
+   * wire.
+   * 
+   * Controller-gated, because for anyone else it is an oracle for confirming
+   * guesses. For a controller it discloses nothing new — they can already read
+   * the secret by installing code that decrypts it.
+   */
+  'icp_sealed_secret_matches' : ActorMethod<[string, Uint8Array], Result_2>,
+  /**
    * Exercises the full decryption path and reports what actually happened.
    * 
    * Run this right after deploying and after every upgrade. It is the difference
@@ -275,7 +300,7 @@ export interface _SERVICE {
    * not the subnet vouching for itself. Do this once per deployment with the
    * network you believe you are on.
    */
-  'icp_sealed_secret_self_test' : ActorMethod<[[] | [KeySource]], Result_2>,
+  'icp_sealed_secret_self_test' : ActorMethod<[[] | [KeySource]], Result_3>,
   /**
    * Stores a sealed secret, after proving it can actually be decrypted.
    * 
@@ -286,11 +311,11 @@ export interface _SERVICE {
    * 
    * Returns the new revision.
    */
-  'icp_sealed_secret_set' : ActorMethod<[string, Uint8Array], Result_3>,
+  'icp_sealed_secret_set' : ActorMethod<[string, Uint8Array], Result_4>,
   /**
    * Removes a secret and drops its cached plaintext.
    */
-  'icp_sealed_secret_unset' : ActorMethod<[string], Result_4>,
+  'icp_sealed_secret_unset' : ActorMethod<[string], Result_5>,
   /**
    * Demonstrates the intended shape of *using* a secret: the plaintext is read
    * inside the canister and only a derived result leaves it.
@@ -303,7 +328,7 @@ export interface _SERVICE {
    * The length is not a new disclosure: `list` already reveals it, since IBE
    * overhead is a fixed 136 bytes.
    */
-  'secret_len' : ActorMethod<[string], Result_3>,
+  'secret_len' : ActorMethod<[string], Result_4>,
   /**
    * Returns a decrypted secret **in the clear**. Requires the `test-hooks` feature.
    * 
@@ -326,18 +351,11 @@ export interface _SERVICE {
    * 3. **leaves no trace.** Installing code that leaks changes the module hash,
    * which is visible in the state tree. A call to this leaves nothing behind.
    * 
-   * If you must observe a secret in production, don't: use `secret_sha256` under
-   * the same feature and compare against a value you already hold.
+   * If you want to confirm the right secret is deployed, use
+   * `icp_sealed_secret_matches` instead — it answers the same question with one
+   * bit and is safe to keep in a production build.
    */
-  'secret_reveal' : ActorMethod<[string], Result_5>,
-  /**
-   * SHA-256 of a decrypted secret. **Requires the `test-hooks` feature.**
-   * 
-   * Lets a test prove the canister recovered the exact plaintext without any
-   * endpoint returning one. Still an oracle for a guessed value, hence
-   * controller-gated and feature-gated.
-   */
-  'secret_sha256' : ActorMethod<[string], Result_6>,
+  'secret_reveal' : ActorMethod<[string], Result_6>,
 }
 export const idlFactory: IDL.InterfaceFactory = ({ IDL }) => {
   const InitArgs = IDL.Record({ 'key_name' : IDL.Text });
@@ -381,6 +399,7 @@ export const idlFactory: IDL.InterfaceFactory = ({ IDL }) => {
     'Ok' : IDL.Vec(SealedSecretEntry),
     'Err' : SealedSecretsError,
   });
+  const Result_2 = IDL.Variant({ 'Ok' : IDL.Bool, 'Err' : SealedSecretsError });
   const KeySource = IDL.Variant({
     'Mainnet' : IDL.Null,
     'PocketIc' : IDL.Null,
@@ -395,38 +414,38 @@ export const idlFactory: IDL.InterfaceFactory = ({ IDL }) => {
     'vetkd_derive_ok' : IDL.Bool,
     'vetkd_public_key_ok' : IDL.Bool,
   });
-  const Result_2 = IDL.Variant({
+  const Result_3 = IDL.Variant({
     'Ok' : SelfTestReport,
     'Err' : SealedSecretsError,
   });
-  const Result_3 = IDL.Variant({
+  const Result_4 = IDL.Variant({
     'Ok' : IDL.Nat64,
     'Err' : SealedSecretsError,
   });
-  const Result_4 = IDL.Variant({ 'Ok' : IDL.Null, 'Err' : SealedSecretsError });
-  const Result_5 = IDL.Variant({ 'Ok' : IDL.Text, 'Err' : SealedSecretsError });
-  const Result_6 = IDL.Variant({
-    'Ok' : IDL.Vec(IDL.Nat8),
-    'Err' : SealedSecretsError,
-  });
+  const Result_5 = IDL.Variant({ 'Ok' : IDL.Null, 'Err' : SealedSecretsError });
+  const Result_6 = IDL.Variant({ 'Ok' : IDL.Text, 'Err' : SealedSecretsError });
   
   return IDL.Service({
     'icp_sealed_secret_info' : IDL.Func([], [Result], []),
     'icp_sealed_secret_list' : IDL.Func([], [Result_1], ['query']),
+    'icp_sealed_secret_matches' : IDL.Func(
+        [IDL.Text, IDL.Vec(IDL.Nat8)],
+        [Result_2],
+        [],
+      ),
     'icp_sealed_secret_self_test' : IDL.Func(
         [IDL.Opt(KeySource)],
-        [Result_2],
+        [Result_3],
         [],
       ),
     'icp_sealed_secret_set' : IDL.Func(
         [IDL.Text, IDL.Vec(IDL.Nat8)],
-        [Result_3],
+        [Result_4],
         [],
       ),
-    'icp_sealed_secret_unset' : IDL.Func([IDL.Text], [Result_4], []),
-    'secret_len' : IDL.Func([IDL.Text], [Result_3], []),
-    'secret_reveal' : IDL.Func([IDL.Text], [Result_5], []),
-    'secret_sha256' : IDL.Func([IDL.Text], [Result_6], []),
+    'icp_sealed_secret_unset' : IDL.Func([IDL.Text], [Result_5], []),
+    'secret_len' : IDL.Func([IDL.Text], [Result_4], []),
+    'secret_reveal' : IDL.Func([IDL.Text], [Result_6], []),
   });
 };
 

@@ -10,7 +10,6 @@
  *   npx tsx src/e2e.ts --canister <id> --host <url> --source pocketic
  */
 
-import { createHash } from "node:crypto";
 import { HttpAgent, Actor, AnonymousIdentity } from "@icp-sdk/core/agent";
 import { Principal } from "@icp-sdk/core/principal";
 import { IbeCiphertext, IbeIdentity, IbeSeed, DerivedPublicKey } from "@icp-sdk/vetkeys";
@@ -113,16 +112,24 @@ async function main() {
     "Err" in setRes ? show(setRes.Err) : "",
   );
 
-  const digest = await actor.secret_sha256("e2e_probe").catch(() => null);
-  if (digest === null) {
-    console.log("  skip  canister recovered the exact plaintext (build lacks --features test-hooks)");
-  } else {
-    const expected = createHash("sha256").update(value).digest("hex");
-    check(
-      "canister recovered the exact plaintext",
-      "Ok" in digest && toHex(Uint8Array.from(digest.Ok)) === expected,
-    );
-  }
+  // `matches` is a stronger check than a digest would be: it confirms the stored
+  // value equals the one we hold AND that a different value is rejected, and it
+  // needs no endpoint that discloses anything.
+  const same = await actor.icp_sealed_secret_matches(
+    "e2e_probe",
+    seal(value, sealedSecretsIdentity(info.epoch)),
+  );
+  check("matches() is true for the value we sealed", "Ok" in same && same.Ok === true, show(same));
+
+  const different = await actor.icp_sealed_secret_matches(
+    "e2e_probe",
+    seal(`${value}-different`, sealedSecretsIdentity(info.epoch)),
+  );
+  check(
+    "matches() is false for a different value",
+    "Ok" in different && different.Ok === false,
+    show(different),
+  );
 
   // 3 ─ ciphertext sealed to the WRONG identity must be refused at seal time.
   //     This is the regression guard for making `set` async and trial-decrypting:
@@ -173,7 +180,11 @@ async function main() {
     `got ${errName(anonSet)}`,
   );
   check("anonymous caller cannot list secrets", errName(await anon.icp_sealed_secret_list()) === "Unauthorized");
-  check("anonymous caller cannot read a digest", errName(await anon.secret_sha256("e2e_probe")) === "Unauthorized");
+  check(
+    "anonymous caller cannot use matches as an oracle",
+    errName(await anon.icp_sealed_secret_matches("e2e_probe", seal(value, sealedSecretsIdentity(info.epoch)))) ===
+      "Unauthorized",
+  );
 
   // 8 ─ rejected writes left no trace
   const list = await actor.icp_sealed_secret_list();
@@ -191,18 +202,29 @@ async function main() {
     seal(newValue, sealedSecretsIdentity(info.epoch)),
   );
   check("overwriting bumps the revision", "Ok" in again && again.Ok > 0n, show(again));
-  const digest2 = await actor.secret_sha256("e2e_probe");
+  const freshMatches = await actor.icp_sealed_secret_matches(
+    "e2e_probe",
+    seal(newValue, sealedSecretsIdentity(info.epoch)),
+  );
+  const staleMatches = await actor.icp_sealed_secret_matches(
+    "e2e_probe",
+    seal(value, sealedSecretsIdentity(info.epoch)),
+  );
   check(
     "the cache did not serve the stale value after overwrite",
-    "Ok" in digest2 &&
-      toHex(Uint8Array.from(digest2.Ok)) === createHash("sha256").update(newValue).digest("hex"),
+    "Ok" in freshMatches &&
+      freshMatches.Ok === true &&
+      "Ok" in staleMatches &&
+      staleMatches.Ok === false,
   );
 
   // 10 ─ cleanup
   await actor.icp_sealed_secret_unset("e2e_probe");
   check(
     "unset removes the secret",
-    errName(await actor.secret_sha256("e2e_probe")) === "NotFound",
+    errName(
+      await actor.icp_sealed_secret_matches("e2e_probe", seal(value, sealedSecretsIdentity(info.epoch))),
+    ) === "NotFound",
   );
 
   console.log(`\n${passed} passed, ${failed} failed`);

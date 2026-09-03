@@ -22,6 +22,7 @@ use sealed_secrets_core::validate_secret_name;
 use serde::Deserialize;
 use serde_bytes::ByteBuf;
 use sha2::{Digest, Sha256};
+use subtle::ConstantTimeEq;
 
 use store::{Config, SealedRecord};
 use types::{KeySource, SealedSecretEntry, SealedSecretInfo, SealedSecretsError, SelfTestReport};
@@ -160,6 +161,50 @@ fn icp_sealed_secret_unset(name: String) -> Result<(), SealedSecretsError> {
     }
 }
 
+/// Answers "is the value I hold the one you have stored?" without either side
+/// disclosing it.
+///
+/// The caller seals its candidate exactly as it would for `set` — a fresh IBE
+/// seed, so the ciphertext is unlinkable to any other — and the canister decrypts
+/// both and compares in constant time. One bit comes back.
+///
+/// This is the endpoint an operator should reach for when they want to confirm
+/// the right secret is deployed, and it is deliberately *not* "return me a
+/// digest of the plaintext":
+///
+/// - a digest of a low-entropy secret is brute-forceable offline by anyone who
+///   sees it, and replies cross a boundary node in the clear;
+/// - the caller already knows the value they are checking, so a boolean tells
+///   them everything a digest would;
+/// - a ciphertext discloses nothing in the request direction either, whereas
+///   sending `sha256(expected)` would put the same brute-forceable digest on the
+///   wire.
+///
+/// Controller-gated, because for anyone else it is an oracle for confirming
+/// guesses. For a controller it discloses nothing new — they can already read
+/// the secret by installing code that decrypts it.
+#[update]
+async fn icp_sealed_secret_matches(
+    name: String,
+    candidate: ByteBuf,
+) -> Result<bool, SealedSecretsError> {
+    require_controller()?;
+
+    let record = store::get_record(&name).ok_or(SealedSecretsError::NotFound)?;
+    let config = store::config();
+
+    // Each side is opened under its own epoch: a client seals against the
+    // current one, while a stored record may predate a rotation.
+    let candidate_plaintext = keys::decrypt_with_epoch(&candidate.into_vec(), config.epoch).await?;
+    let stored_plaintext = keys::open(&name, &record).await?;
+
+    Ok(bool::from(
+        stored_plaintext
+            .as_slice()
+            .ct_eq(candidate_plaintext.as_slice()),
+    ))
+}
+
 /// Lists stored secrets.
 ///
 /// Controller-gated, because it is more revealing than it looks: IBE overhead is
@@ -258,20 +303,6 @@ async fn secret_len(name: String) -> Result<u64, SealedSecretsError> {
     Ok(plaintext.len() as u64)
 }
 
-/// SHA-256 of a decrypted secret. **Requires the `test-hooks` feature.**
-///
-/// Lets a test prove the canister recovered the exact plaintext without any
-/// endpoint returning one. Still an oracle for a guessed value, hence
-/// controller-gated and feature-gated.
-#[cfg(feature = "test-hooks")]
-#[update]
-async fn secret_sha256(name: String) -> Result<ByteBuf, SealedSecretsError> {
-    require_controller()?;
-    let record = store::get_record(&name).ok_or(SealedSecretsError::NotFound)?;
-    let plaintext = keys::open(&name, &record).await?;
-    Ok(ByteBuf::from(Sha256::digest(plaintext.as_slice()).to_vec()))
-}
-
 /// Returns a decrypted secret **in the clear**. Requires the `test-hooks` feature.
 ///
 /// It exists so you can see with your own eyes that decryption worked. It must
@@ -293,8 +324,9 @@ async fn secret_sha256(name: String) -> Result<ByteBuf, SealedSecretsError> {
 /// 3. **leaves no trace.** Installing code that leaks changes the module hash,
 ///    which is visible in the state tree. A call to this leaves nothing behind.
 ///
-/// If you must observe a secret in production, don't: use `secret_sha256` under
-/// the same feature and compare against a value you already hold.
+/// If you want to confirm the right secret is deployed, use
+/// `icp_sealed_secret_matches` instead — it answers the same question with one
+/// bit and is safe to keep in a production build.
 #[cfg(feature = "test-hooks")]
 #[update]
 async fn secret_reveal(name: String) -> Result<String, SealedSecretsError> {

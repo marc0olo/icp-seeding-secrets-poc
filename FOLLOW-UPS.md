@@ -90,7 +90,11 @@ no-op today.
 
 `crates/core` in this repo is a working demonstration of the seam.
 
-### Idempotent re-seeding: `icp_sealed_secret_matches`
+### Idempotent re-seeding (`matches` now exists; the diffing does not)
+
+`icp_sealed_secret_matches` is implemented in the PoC, because an operator needs to confirm
+the right value is deployed. What is *not* implemented is using it to make `icp deploy`
+idempotent.
 
 IBE is randomised, so a client can never compare its ciphertext to the stored one, and
 re-sealing on every deploy is not free: replacing a ciphertext invalidates the
@@ -101,7 +105,8 @@ icp_sealed_secret_matches : (text, blob) -> (variant { Ok : bool; Err : … });
 ```
 
 The client re-encrypts its candidate with a fresh seed; the canister decrypts both and
-compares in constant time. No new key material, nothing plaintext-derived at rest, and
+compares in constant time. A deploy would call it per declared secret and re-seal only
+what differs. No new key material, nothing plaintext-derived at rest, and
 the oracle is confined to principals who could already read the plaintext by upgrading
 the canister.
 
