@@ -4,8 +4,8 @@ canisters:
   - name: sealed-secrets
     # These steps mirror the official @dfinity/rust recipe rather than using it,
     # for one reason: the recipe has no parameter for cargo `--features`, and this
-    # PoC needs `--features test-hooks` (see README, "Seeing the decrypted
-    # secret"). Everything else here — the metadata injection and the shrink — is
+    # PoC needs `--features test-hooks` (see README, "Seeing the
+    # plaintext"). Everything else here — the metadata injection and the shrink — is
     # lifted straight from that recipe, because embedding candid:service is what
     # makes `icp canister call` print field names instead of hashes.
     build:

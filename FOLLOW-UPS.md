@@ -46,15 +46,51 @@ export_sealed_secrets_canister!(…);                          // all of it, dro
 fn init(key_name: String) { sealed_secrets_setup(key_name); /* …your own init… */ }
 
 #[update]
-async fn ask_model(prompt: String) -> String {
+async fn ask_model(prompt: String, idempotency_key: String) -> String {
     let key = sealed_secret_str("dummy_api_key").await.expect("not sealed");
-    call_api(&key, &prompt).await          // key is Zeroizing<String>
+    // key is Zeroizing<String>. See "Guidance for using a secret" below for what
+    // this call has to get right — constant URL, transform, idempotency key, and
+    // never returning the response body.
+    call_api(&key, &prompt, &idempotency_key).await
 }
 ```
 
 Name the internal accessor `sealed_secret_plaintext` so that
 `#[update] fn leak() -> String { sealed_secret_plaintext("x") }` reads as an obvious
 defect in review.
+
+### Guidance for *using* a secret, not just storing one
+
+A library that only covers sealing and decryption ships half the problem. The hazards
+adopters will hit are all downstream of `sealed_secret(...)` returning a plaintext, and
+none of them are obvious. The PoC's `call_api_with_secret` is a worked example of all four;
+the library should carry them as documentation, and possibly as a helper.
+
+- **Outcalls fan out to every node**, so one logical call becomes N real HTTP requests. A
+  `GET` does not care; a `POST` that charges a card or sends an email happens N times
+  unless the API deduplicates. Any non-idempotent call needs an idempotency key, and it
+  belongs in the *caller's* hands — only they know whether this is a retry of one
+  operation or a new one.
+- **A transform is mandatory**, because consensus needs byte-identical responses and
+  `Date`, request ids and cookies are not. Stripping response headers also stops a hostile
+  endpoint reflecting the credential into replicated state.
+- **Never return the response body** to the caller of a canister method. Endpoints that
+  echo request headers are common, and echoing your own `Authorization` header back
+  through a reply undoes the sealing entirely.
+- **Never take the URL as a parameter.** That is an exfiltration primitive; a controller
+  could achieve it by installing code anyway, but shipping the capability as an endpoint
+  is gratuitous.
+
+There is a case for a `sealed_secrets::http` helper that takes a secret name, a header
+name, a constant URL and an idempotency key, and enforces the last three points by
+construction. Worth weighing against the extra surface: a canister that needs anything
+unusual would bypass it, and a helper people bypass is worse than documentation people
+read. The PoC deliberately does not have one.
+
+Whatever form it takes, the security note belongs beside it: the request context, headers
+included, enters replicated state on **every** node before any of them executes the call.
+That is the moment the secret is most widely spread, and on a non-TEE subnet it is
+readable by every node operator.
 
 ### Pluggable access control
 
@@ -205,6 +241,13 @@ is missing, instead of surfacing a raw `CanisterError` from calling a method tha
 exist. This works only if the canister embeds `candid:service` in its wasm metadata —
 which the `@dfinity/rust` recipe does by default, and which this PoC's build steps copy
 from it.
+
+**What the canister does with the secret is none of the CLI's business.** icp-cli seeds;
+the canister uses. That boundary is worth stating because the two halves have very
+different failure modes — a seeding bug is loud and immediate, while a usage bug (no
+idempotency key on a mutating outcall, returning a response body that echoes the
+credential) is silent and expensive. The CLI cannot check for those; documentation and the
+library have to.
 
 **Which canister receives which secret** is answered by the manifest: the `secrets:` block
 sits under the canister that owns them, and icp-cli already resolves canister name →

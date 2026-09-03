@@ -323,7 +323,17 @@ sealing "DUMMY_API_KEY" (25 bytes → 161 bytes)
   the canister trial-decrypted it before storing, so it is readable
 ```
 
-Then confirm the canister really recovered the plaintext, and that the whole
+Confirm the canister holds the value you expect — the production-safe check, which
+discloses nothing in either direction:
+
+```bash
+DUMMY_API_KEY='sk-example-not-a-real-key' npm run seal -- \
+  --canister "$CID" --name DUMMY_API_KEY --host http://127.0.0.1:8010 \
+  --source pocketic --local --verify
+# ✓ the canister already holds this value for "DUMMY_API_KEY"
+```
+
+Then, if you want to watch the round trip rather than trust it, and check the whole
 derivation path is healthy:
 
 ```bash

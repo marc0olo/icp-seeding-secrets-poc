@@ -1,5 +1,5 @@
-//! A proof-of-concept canister that receives secrets sealed with vetKD IBE and
-//! decrypts them in memory.
+//! A proof-of-concept canister that receives secrets sealed with vetKD IBE,
+//! decrypts them in memory, and uses them.
 //!
 //! The point of the exercise: a client encrypts an API key to a public key it
 //! derives offline, sends the ciphertext in an ordinary update call, and only
@@ -7,10 +7,22 @@
 //! On a SEV-SNP subnet the decrypted value is protected from node operators by
 //! memory encryption and a launch-measurement-keyed data disk.
 //!
-//! Read `README.md` before deploying this anywhere real; in particular, note that
-//! a controller can read the plaintext out of a snapshot without upgrading the
+//! The endpoints fall into three groups:
+//!
+//! - **The proposed standard.** `icp_sealed_secret_{info,set}` are what any tool
+//!   needs to seal; `matches` is what an operator needs to confirm the right
+//!   value is deployed; `list`, `unset` and `self_test` are convenience.
+//! - **The worked example**, and the reason any of this exists:
+//!   `call_api_with_secret` authenticates an outbound HTTPS request with a sealed
+//!   secret, and `strip_response` makes its reply deterministic enough for
+//!   consensus. Neither is part of the standard — a real canister writes its own.
+//! - **A test hook.** `secret_reveal` returns a plaintext and exists only behind
+//!   `--features test-hooks`, so a human can watch the round trip work.
+//!
+//! Read `README.md` before deploying this anywhere real. In particular: a
+//! controller can read the plaintext out of a snapshot without upgrading the
 //! canister, so the guarantee only means something for a blackholed or governed
-//! canister.
+//! one.
 
 mod keys;
 mod store;

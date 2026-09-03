@@ -131,7 +131,12 @@ jobs:
         run: npm ci
 
       # Seals a secret and reads the plaintext back, so a silent decryption
-      # failure cannot pass. Also asserts the vetKD round trip via self_test.
+      # failure cannot pass; asserts the vetKD round trip via self_test; and
+      # makes a real authenticated HTTPS outcall.
+      #
+      # That last step reaches postman-echo.com. The script treats an unreachable
+      # API as a skip rather than a failure, so a third-party outage cannot turn
+      # this job red — but a *wrong* status still fails it.
       - name: Full round trip
         run: ./scripts/local-test.sh
 
