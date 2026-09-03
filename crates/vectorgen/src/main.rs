@@ -102,7 +102,9 @@ fn main() {
 /// `plaintext`, the port works. Nothing short of that proves it.
 fn emit_ibe_vector() {
     // Stand in for the subnet's master key. Fixed, so the vector is stable.
-    let msk = Scalar::from(0x5ea1ed_5ec4_e75u64);
+    // (The digits spell "sealed sec" — grouped conventionally because clippy's
+    // unusual_byte_groupings lint is right that cleverness costs readability.)
+    let msk = Scalar::from(0x0005_ea1e_d5ec_4e75_u64);
     let mpk = G2Affine::from(G2Projective::generator() * msk);
 
     let dpk = DerivedPublicKey::deserialize(&mpk.to_compressed())
