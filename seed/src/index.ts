@@ -1,16 +1,22 @@
 /**
  * Seals a secret with vetKD IBE and submits it to a canister.
  *
- * The flow, and why each step is there:
+ * The flow, and why each step is in that order:
  *
- *   1. Preflight the subnet — is it SEV-SNP, and does it hold the vetKD key?
- *   2. Derive the canister's public key OFFLINE, from a master key constant.
- *   3. Ask the canister what key it thinks it has, and abort on mismatch. The
- *      reported value is never used for encryption; it is only ever a cross-check.
- *      Trusting it would let anyone able to tamper with that response substitute
- *      a key they control and harvest the secret.
- *   4. Encrypt, and submit. The canister trial-decrypts before storing, so a
- *      wrong context or epoch fails here rather than in production.
+ *   1. Ask the canister what it uses — key name, context, identity, epoch, and
+ *      the public key it believes it has. First, so the preflight can check the
+ *      key name the canister will actually request rather than one we assumed.
+ *   2. Preflight the subnet: is it SEV-SNP, and does it hold that vetKD key?
+ *   3. Derive the public key OFFLINE from a master key constant we ship, and
+ *      abort unless it equals what the canister reported. The reported value is
+ *      never used for encryption — only as a cross-check. Trusting it would let
+ *      anyone able to tamper with that reply substitute a key they control.
+ *   4. Encrypt to the key WE derived, and submit. The canister trial-decrypts
+ *      before storing, so a wrong context or epoch fails here, not in production.
+ *
+ * With `--verify`, step 4 asks `icp_sealed_secret_matches` instead of sealing,
+ * which answers whether the canister already holds this value without either
+ * side disclosing it.
  *
  * The value is read from an environment variable and never from argv: argv is
  * world-readable via `ps`, lands in shell history, and is echoed into CI logs.

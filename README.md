@@ -64,6 +64,39 @@ and reviewed on both sides by `ic-vetkeys`.
 
 ## The flow
 
+Before the diagrams, the same thing in words — the mechanism is simpler than the API
+names make it look.
+
+**Set up once, in the canister's source.** Pick a context string. That string plus the
+canister's own id is what determines the keypair. Nothing is generated or stored; the
+keypair is *implied* by those two values.
+
+**Seeding, after the canister is deployed:**
+
+1. **Ask the canister what it uses** — which vetKD key, which context, which epoch, and
+   the public key it believes it has.
+2. **Check the subnet** actually holds that vetKD key, and is SEV-SNP.
+3. **Compute the public key yourself**, on your own machine: take the network's published
+   master public key (a hardcoded 96-byte constant), mix in the canister id, mix in the
+   context. Pure arithmetic, no network call. Abort unless it matches what the canister
+   said.
+4. **Encrypt the secret to it** — the result is the secret plus a fixed 136 bytes.
+5. **Send the ciphertext** in an ordinary update call. That message is visible to boundary
+   nodes and recorded like any other, and it is opaque. It is also bound to *this* canister
+   id, so replaying it elsewhere is useless.
+6. **The canister asks the subnet for its private key**, decrypts your ciphertext to prove
+   it can, and stores the *ciphertext* — not the plaintext.
+
+**Later, whenever the secret is used:** the canister decrypts from the stored ciphertext
+and caches the plaintext in memory. After an upgrade it repeats step 6 once and carries on.
+**You never re-seed.**
+
+Two things there are easy to skim past and matter a great deal. The public key in step 3 is
+*computed*, not *fetched* — if you asked the canister and believed the answer, anyone able
+to tamper with that reply could hand you a key they control. And step 6 decrypts *before*
+storing, which turns "wrong context, wrong key, wrong subnet" into an error in front of the
+operator instead of a ciphertext nobody discovers is unreadable until months later.
+
 ```mermaid
 sequenceDiagram
     autonumber
@@ -75,41 +108,44 @@ sequenceDiagram
 
     Dev->>Script: DUMMY_API_KEY=… npm run seal
 
+    Note over Script,Can: 1. ask the canister what it uses, so the preflight<br/>checks the key name it will actually request
+    Script->>Can: icp_sealed_secret_info()
+    Can->>Mgmt: vetkd_public_key (first call only, then cached)
+    Mgmt-->>Can: derived public key
+    Can-->>Script: public_key, context, identity, epoch, key_name
+
     rect rgba(120,120,120,.12)
-    note over Script,Reg: Preflight — two properties, both required, neither implies the other
+    Note over Script,Reg: 2. preflight — two properties, both required,<br/>and neither implies the other
     Script->>Reg: get_subnet_for_canister(cid)
     Reg-->>Script: subnet_id
     Script->>Reg: get_subnet(subnet_id)
-    Reg-->>Script: SubnetRecord { features.sev_enabled, chain_key_config }
-    Script->>Script: assert sev_enabled == true
-    Script->>Script: assert the vetKD key is present
+    Reg-->>Script: features.sev_enabled, chain_key_config
+    Script->>Script: assert sev_enabled is true
+    Script->>Script: assert the vetKD key is on THIS subnet
     end
 
     rect rgba(120,120,120,.12)
-    note over Script: Offline — pure arithmetic, zero network calls
+    Note over Script: 3. derive offline — pure arithmetic, zero network calls
     Script->>Script: mpk = MasterPublicKey.productionKey(key_1)
     Script->>Script: dpk = mpk.deriveCanisterKey(cid).deriveSubKey(CONTEXT)
+    Script->>Script: assert dpk equals the reported public_key, else ABORT
     end
 
-    Script->>Can: icp_sealed_secret_info()  [query]
-    Can-->>Script: { public_key, context, identity, epoch }
-    Script->>Script: assert public_key == dpk — else ABORT
-
+    Note over Script: 4. encrypt to the key WE derived, never the reported one
     Script->>Script: ct = IbeCiphertext.encrypt(dpk, identity, secret, random seed)
     Script->>Can: icp_sealed_secret_set("DUMMY_API_KEY", ct)
 
     rect rgba(120,120,120,.12)
-    note over Can,Mgmt: set is async and trial-decrypts — a wrong key fails HERE, not in production
-    Can->>Can: is_controller(caller)? ; IbeCiphertext::deserialize(ct)
+    Note over Can,Mgmt: set is async and trial-decrypts —<br/>a wrong key fails HERE, not in production
+    Can->>Can: is_controller(caller), then IbeCiphertext::deserialize(ct)
     Can->>Mgmt: raw_rand()
     Mgmt-->>Can: 32 bytes
     Can->>Can: tsk = TransportSecretKey::from_seed(seed)
-    Can->>Mgmt: vetkd_derive_key { context, identity, key_id, tsk.public_key() }
-    Mgmt-->>Can: EncryptedVetKey (192 B)
-    Can->>Can: dpk' = compiled-in master key → derive_canister_key(self) → derive_sub_key(CONTEXT)
-    Can->>Can: vk = EncryptedVetKey.decrypt_and_verify(tsk, dpk', identity)
-    Can->>Can: trial ct.decrypt(vk) — else Err(InvalidCiphertext)
-    Can->>Can: store ct in STABLE memory ; cache vk + plaintext in heap
+    Can->>Mgmt: vetkd_derive_key(context, identity, key_id, tsk.public_key())
+    Mgmt-->>Can: EncryptedVetKey, 192 bytes
+    Can->>Can: vk = EncryptedVetKey.decrypt_and_verify(tsk, dpk, identity)
+    Can->>Can: trial ct.decrypt(vk), else Err(InvalidCiphertext)
+    Can->>Can: store ct in STABLE memory, cache vk and plaintext in heap
     end
 
     Can-->>Script: Ok(revision)
@@ -130,27 +166,27 @@ sequenceDiagram
     participant Mgmt as Management canister
     participant API as the third-party API
 
-    User->>Can: call_api_with_secret("DUMMY_API_KEY")
-    Can->>Heap: plaintext cache (name, revision)?
+    User->>Can: call_api_with_secret("DUMMY_API_KEY", "op-0001")
+    Can->>Heap: plaintext cache, keyed by name and revision
     alt cache hit — the normal case, free
-        Heap-->>Can: Zeroizing<Vec<u8>>
+        Heap-->>Can: the plaintext
     else cache miss — first use, or after an upgrade
         Can->>Stable: read ciphertext
-        Can->>Heap: vetKey cache (epoch)?
+        Can->>Heap: vetKey cache, keyed by epoch
         alt vetKey miss — once per epoch per canister lifetime
             Can->>Mgmt: raw_rand() then vetkd_derive_key
-            Note over Can,Mgmt: 10B cycles at the 13-node reference, scaled by<br/>replication factor — 1 SDR cent, a few US cents.<br/>One identity serves ALL secrets.
+            Note over Can,Mgmt: 10B cycles at the 13-node reference, scaled by<br/>replication factor — 1 SDR cent. One identity<br/>serves ALL secrets, so this happens once.
             Mgmt-->>Can: EncryptedVetKey
-            Can->>Can: decrypt_and_verify → vk
+            Can->>Can: decrypt_and_verify gives vk
         end
-        Can->>Can: ct.decrypt(vk) → plaintext
-        Can->>Heap: cache plaintext (keyed by revision)
+        Can->>Can: ct.decrypt(vk) gives the plaintext
+        Can->>Heap: cache it, keyed by revision
     end
 
-    Can->>API: GET (constant URL), Authorization: Bearer <secret>
-    Note over Can,API: the request context — headers included — enters<br/>replicated state on EVERY node before any of them<br/>executes the call. SEV is what protects it there.
+    Can->>API: GET (constant URL)<br/>Authorization = the sealed secret, verbatim<br/>Idempotency-Key = "op-0001"
+    Note over Can,API: the request context — headers included — enters<br/>replicated state on EVERY node before any of them<br/>executes the call. SEV is what protects it there.<br/>The fan-out is also why a mutating call needs<br/>that idempotency key.
     API-->>Can: response
-    Can->>Can: transform: strip all response headers
+    Can->>Can: transform strips every response header
     Can-->>User: 200 — the status only, never the body
 ```
 

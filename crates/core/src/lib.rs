@@ -224,11 +224,13 @@ pub fn derive_public_key(
 
 /// Checks a public key obtained over the network against one derived offline.
 ///
-/// A client must call this before encrypting. Trusting a public key the canister
-/// reports would let anyone able to tamper with that response substitute a key
-/// they control and harvest the plaintext. The reported value is only ever used
-/// as a cross-check; the key actually encrypted to is the locally derived one,
-/// which is returned here.
+/// This is the Rust-side helper for the check every client must perform before
+/// encrypting; the TypeScript client in `seed/` does the same comparison inline.
+/// Trusting a public key the canister reports would let anyone able to tamper
+/// with that response substitute a key they control and harvest the plaintext.
+///
+/// The reported value is only ever a cross-check. The key actually encrypted to
+/// is the locally derived one, which is what this returns.
 pub fn verify_reported_public_key(
     source: MasterKeySource,
     key_id: &VetKDKeyId,

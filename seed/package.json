@@ -13,7 +13,8 @@
     "test": "tsx --test src/format.test.ts",
     "typecheck": "tsc --noEmit",
     "e2e": "tsx src/e2e.ts",
-    "bindings": "icp-bindgen --did-file ../crates/canister/sealed_secrets_canister.did --out-dir src/declarations --declarations-typescript --declarations-flat --force"
+    "bindings": "icp-bindgen --did-file ../crates/canister/sealed_secrets_canister.did --out-dir src/declarations --declarations-typescript --declarations-flat --force",
+    "check:diagrams": "node ../scripts/check-diagrams.mjs ../README.md ../FOLLOW-UPS.md"
   },
   "dependencies": {
     "@icp-sdk/core": "^6.1.0",
@@ -22,6 +23,7 @@
   "devDependencies": {
     "@icp-sdk/bindgen": "^0.4.0",
     "@types/node": "^22.10.0",
+    "mermaid": "^11.17.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }

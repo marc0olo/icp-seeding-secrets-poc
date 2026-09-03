@@ -90,6 +90,13 @@ jobs:
         working-directory: seed
         run: npm test
 
+      # GitHub renders mermaid, but a block with a syntax error renders as an
+      # error box rather than a diagram — silently user-visible. One had a `;`
+      # in message text, which mermaid treats as a statement separator.
+      - name: Mermaid diagrams parse
+        working-directory: seed
+        run: npm run check:diagrams
+
       # The Rust and TypeScript vectors are asserted to be byte-identical, so a
       # drift in either encoding fails one of the two suites above. This checks
       # the third copy: the generated client bindings.
