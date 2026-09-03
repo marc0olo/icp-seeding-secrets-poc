@@ -1,18 +1,31 @@
 /// vetKD key derivation and the in-memory caches.
 ///
-/// # A porting hazard that has no Rust equivalent
+/// # Why the caches are `transient`
 ///
-/// The Rust canister keeps ciphertext in stable memory and plaintext only in the
-/// heap, because a Rust canister's heap is discarded on upgrade unless it is
-/// explicitly serialised. **Motoko's enhanced orthogonal persistence inverts
-/// that**: the heap *is* the persisted state, and everything survives an upgrade
-/// unless it is marked `transient`.
+/// **Not for confidentiality.** It is tempting to think keeping plaintext out of
+/// persisted state keeps it off disk. It does not, in either language: the Wasm
+/// heap is replicated state, checkpointed to disk on every node and shipped in
+/// state sync, so a decrypted secret reaches disk the moment a checkpoint is
+/// taken. Only SEV-SNP changes who can read it. See the security model in
+/// `../../../README.md`.
 ///
-/// So the same design requires the opposite spelling. The caches below live in a
-/// class that `Main` holds in a `transient` field; without that keyword, a
-/// decrypted secret would be written into the canister's persisted state on
-/// every upgrade — the exact thing the Rust design avoids, arrived at by doing
-/// nothing.
+/// What `transient` actually decides is whether a cache survives a **code
+/// upgrade**, and here Motoko and Rust are spelled oppositely for the same
+/// result: a Rust canister's heap is discarded on upgrade unless explicitly
+/// serialised, whereas Motoko's enhanced orthogonal persistence keeps everything
+/// unless marked `transient`. `Main` holds this class in a `transient` field so
+/// that both canisters behave the same way across an upgrade — which, for an
+/// example whose point is parity, is the reason that matters.
+///
+/// The secondary reason is ordinary engineering: under orthogonal persistence,
+/// persisted fields are part of the type-compatibility contract checked at
+/// upgrade time. A cache that is reconstructible from stable state has no
+/// business in that contract, where it would constrain later refactors.
+///
+/// The trade is real and goes the other way on cost: persisting the vetKey cache
+/// would save one `vetkd_derive_key` (and its fee) after every upgrade. We take
+/// the re-derivation, because `selfTest` is meant to be run after an upgrade
+/// anyway and it would warm the cache regardless.
 ///
 /// Mirrors `rust/canister/src/keys.rs`.
 
