@@ -30,6 +30,7 @@ use std::rc::Rc;
 use zeroize::Zeroizing;
 
 use crate::store::{self, SealedRecord};
+use crate::types::SealedSecretsError;
 
 /// A decrypted secret, shared by reference so callers do not copy it around.
 pub type Plaintext = Rc<Zeroizing<Vec<u8>>>;
@@ -37,11 +38,11 @@ pub type Plaintext = Rc<Zeroizing<Vec<u8>>>;
 /// Plaintext cache key: the secret's name plus its revision, so an overwrite
 /// invalidates the entry without an explicit purge.
 type PlaintextCacheKey = (String, u64);
-use crate::types::SealedSecretsError;
 
 thread_local! {
-    /// Derived public keys, keyed by context. Pure computation, but two scalar
-    /// multiplications is enough to be worth not repeating per call.
+    /// Derived public keys, keyed by context. Each miss costs one
+    /// `vetkd_public_key` call, which is why `info` is an update; caching means
+    /// only the first call after a cold start pays for it.
     static DPK_CACHE: RefCell<HashMap<Vec<u8>, DerivedPublicKey>> = RefCell::new(HashMap::new());
 
     /// vetKeys by epoch. Each entry costs one `vetkd_derive_key` — on the order
@@ -207,10 +208,11 @@ pub fn purge_plaintext(name: &str) {
     PLAINTEXT_CACHE.with_borrow_mut(|c| c.retain(|(n, _), _| n != name));
 }
 
-/// Asks the subnet for its own view of the public key.
+/// Asks the subnet for this canister's public key.
 ///
-/// Used only by `self_test`, to detect a mismatch against our compiled-in master
-/// key. It is never used to choose the encryption key.
+/// This is authoritative — it is what [`public_key`] caches and what
+/// `decrypt_and_verify` checks against. `self_test` also calls it directly, to
+/// compare against a master key compiled into this Wasm.
 pub async fn reported_public_key() -> Result<Vec<u8>, SealedSecretsError> {
     let config = store::config();
     let context = context()?;

@@ -1,0 +1,139 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref; the e2e job spins up a replica and is
+# not worth running twice for the same branch.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # A local network needs no cycles ledger top-up, but icp-cli still prompts
+  # without this in a non-interactive shell.
+  ICP_ENVIRONMENT: local
+
+jobs:
+  # Fast feedback: everything that needs no replica.
+  check:
+    name: lint, unit tests, golden vectors
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/dfinity/icp-dev-env-all:v2.0.0
+    steps:
+      - uses: actions/checkout@v4
+
+      # rust-toolchain.toml pins a version the image does not ship, so rustup
+      # fetches it on first use. Caching that plus the registry is the
+      # difference between a ~4 minute job and a ~1 minute one.
+      - name: Cache cargo and rustup
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ~/.rustup/toolchains
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      - name: Formatting
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      # The canister must build both ways: the default build is what a real
+      # deployment uses, and test-hooks is what CI exercises.
+      - name: Build canister (default — no observation endpoints)
+        run: cargo build -p sealed-secrets-canister --target wasm32-unknown-unknown --release --locked
+
+      - name: Assert the default build cannot observe a secret
+        run: |
+          did=$(candid-extractor target/wasm32-unknown-unknown/release/sealed_secrets_canister.wasm)
+          if grep -qE 'secret_reveal|secret_sha256' <<<"$did"; then
+            echo "::error::test-hooks endpoints leaked into the default build"
+            exit 1
+          fi
+          echo "ok — no secret_reveal, no secret_sha256"
+
+      - name: Build canister (test-hooks)
+        run: cargo build -p sealed-secrets-canister --target wasm32-unknown-unknown --release --locked --features test-hooks
+
+      - name: Rust golden vectors
+        run: cargo test --workspace
+
+      - name: Install client dependencies
+        working-directory: seed
+        run: npm ci
+
+      - name: TypeScript typecheck
+        working-directory: seed
+        run: npm run typecheck
+
+      - name: TypeScript golden vectors
+        working-directory: seed
+        run: npm test
+
+      # The Rust and TypeScript vectors are asserted to be byte-identical, so a
+      # drift in either encoding fails one of the two suites above. This checks
+      # the third copy: the generated client bindings.
+      - name: Generated bindings are up to date
+        run: |
+          candid-extractor target/wasm32-unknown-unknown/release/sealed_secrets_canister.wasm \
+            > crates/canister/sealed_secrets_canister.did
+          npm --prefix seed run bindings
+          if ! git diff --quiet -- crates/canister/sealed_secrets_canister.did seed/src/declarations; then
+            echo "::error::the .did or seed/src/declarations is stale — run 'npm --prefix seed run bindings' and commit"
+            git diff --stat -- crates/canister/sealed_secrets_canister.did seed/src/declarations
+            exit 1
+          fi
+          echo "ok — declarations match the canister"
+
+  # The real thing: deploy to a local replica, seal a secret, decrypt it.
+  e2e:
+    name: end-to-end against a local replica
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/dfinity/icp-dev-env-all:v2.0.0
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache cargo and rustup
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ~/.rustup/toolchains
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      - name: Install client dependencies
+        working-directory: seed
+        run: npm ci
+
+      # Seals a secret and reads the plaintext back, so a silent decryption
+      # failure cannot pass. Also asserts the vetKD round trip via self_test.
+      - name: Full round trip
+        run: ./scripts/local-test.sh
+
+      - name: Stop the network
+        if: always()
+        run: icp network stop || true
+
+      - name: Upload replica logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: network-logs
+          path: .icp/cache/networks/local/network-launcher/
+          if-no-files-found: ignore

@@ -2,15 +2,32 @@
 
 canisters:
   - name: sealed-secrets
+    # These steps mirror the official @dfinity/rust recipe rather than using it,
+    # for one reason: the recipe has no parameter for cargo `--features`, and this
+    # PoC needs `--features test-hooks` (see README, "Seeing the decrypted
+    # secret"). Everything else here — the metadata injection and the shrink — is
+    # lifted straight from that recipe, because embedding candid:service is what
+    # makes `icp canister call` print field names instead of hashes.
     build:
       steps:
         - type: script
           commands:
-            # --features test-hooks adds secret_sha256 and secret_reveal so you
-            # can verify decryption locally. A real deployment builds WITHOUT it:
-            # the default build has no endpoint that observes a secret at all.
-            - cargo build -p sealed-secrets-canister --target wasm32-unknown-unknown --release --locked --features test-hooks
-            - cp target/wasm32-unknown-unknown/release/sealed_secrets_canister.wasm "$ICP_WASM_OUTPUT_PATH"
+            - command -v candid-extractor >/dev/null 2>&1 || { echo >&2 "candid-extractor not found. Run 'cargo install candid-extractor'."; exit 1; }
+            - command -v ic-wasm >/dev/null 2>&1 || { echo >&2 "ic-wasm not found; it ships with icp-cli."; exit 1; }
+
+        # --features test-hooks adds secret_sha256 and secret_reveal so you can
+        # verify decryption locally. A real deployment builds WITHOUT it: the
+        # default build has no endpoint that observes a secret at all.
+        - type: script
+          commands:
+            - cargo build --package sealed-secrets-canister --target wasm32-unknown-unknown --release --locked --features test-hooks
+            - TARGET_DIR=$(cargo metadata --format-version 1 --no-deps | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p'); cp "${TARGET_DIR}/wasm32-unknown-unknown/release/sealed_secrets_canister.wasm" "$ICP_WASM_OUTPUT_PATH"
+
+        - type: script
+          commands:
+            - did="$(mktemp)"; candid-extractor "$ICP_WASM_OUTPUT_PATH" >"$did" && ic-wasm "$ICP_WASM_OUTPUT_PATH" -o "$ICP_WASM_OUTPUT_PATH" metadata "candid:service" -f "$did" -v public --keep-name-section
+            - ic-wasm "$ICP_WASM_OUTPUT_PATH" -o "$ICP_WASM_OUTPUT_PATH" metadata "cargo:version" -d "$(cargo --version)" --keep-name-section
+            - ic-wasm "$ICP_WASM_OUTPUT_PATH" -o "$ICP_WASM_OUTPUT_PATH" shrink --keep-name-section
 
     # Just the key name. The canister asks the subnet for its public key rather
     # than deriving it from a compiled-in constant, so the same build runs against

@@ -138,7 +138,7 @@ sequenceDiagram
         Can->>Heap: vetKey cache (epoch)?
         alt vetKey miss — once per epoch per canister lifetime
             Can->>Mgmt: raw_rand() then vetkd_derive_key
-            Note over Can,Mgmt: ~10B cycles at 13 nodes, scaled by subnet size<br/>≈ 1–3 US cents. One identity serves ALL secrets.
+            Note over Can,Mgmt: 10B cycles at the 13-node reference, scaled by<br/>replication factor — 1 SDR cent, a few US cents.<br/>One identity serves ALL secrets.
             Mgmt-->>Can: EncryptedVetKey
             Can->>Can: decrypt_and_verify → vk
         end
@@ -146,6 +146,12 @@ sequenceDiagram
     end
     Can-->>User: a derived result — never the key
 ```
+
+**Cost.** `VETKD_FEE` is 10B cycles at the 13-node reference subnet, scaled by
+replication factor (`ic/rs/config/src/subnet_config.rs:130`), and the comment there puts
+10B cycles at **1 SDR cent** — a few US cents on a 34-node subnet. It is paid once per
+canister lifetime plus once after each upgrade, *not* per secret, because one identity
+serves them all. That is why cost is no reason to deviate from IBE.
 
 ### Three decisions worth understanding
 
@@ -272,9 +278,13 @@ match the canister's `.did`.
 Individually:
 
 ```bash
-cargo test                                   # golden vectors, name validation, derivation
-cd seed && npm test                          # the SAME golden vectors, in TypeScript
-cd seed && npm run e2e -- --canister <id>    # against a running canister
+cargo test          # golden vectors, name validation, key derivation
+cd seed && npm test # the SAME golden vectors, in TypeScript
+
+# against a running canister; needs a controller identity
+icp identity export "$(icp identity default)" > /tmp/id.pem
+cd seed && SEAL_IDENTITY_PEM=/tmp/id.pem npm run e2e -- \
+  --canister <id> --host http://127.0.0.1:8010 --source pocketic
 ```
 
 The Rust and TypeScript golden vectors are byte-for-byte identical on purpose: the two
@@ -396,7 +406,13 @@ Install args are just `(record { key_name : text })`.
   be an offline guessing oracle for low-entropy secrets; `ciphertext_sha256` is a
   digest of a *randomised* ciphertext, so it reveals nothing while still letting a
   client confirm its upload landed.
-- **There is no `get`.** No endpoint returns a plaintext, by construction.
+- **There is no `get` in a default build.** No endpoint returns a plaintext. The
+  `test-hooks` feature adds `secret_reveal`, which does — see
+  [Seeing the decrypted secret](#seeing-the-decrypted-secret) and
+  [Can I just add a getter?](#can-i-just-add-a-getter).
+- **`secret_len`** is the demo of *using* a secret internally: it reads the plaintext and
+  returns only a derived value. The length is not a new disclosure, since `list` already
+  implies it.
 
 ## Security model
 
