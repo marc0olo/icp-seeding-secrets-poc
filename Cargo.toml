@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/core", "crates/canister", "crates/vectorgen"]
+members = ["rust/core", "rust/canister", "rust/vectorgen"]
 resolver = "2"
 
 [workspace.package]

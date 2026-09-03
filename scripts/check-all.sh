@@ -32,24 +32,29 @@ step "generated bindings are up to date"
 # from, and the two feature sets produce different Candid.
 command -v candid-extractor >/dev/null \
   || { echo "candid-extractor not installed: cargo install candid-extractor"; exit 1; }
+# Compare against the content as it was *before* regenerating, not against
+# HEAD: the question is "does regeneration change anything", and a git-status
+# check would also fire on unrelated uncommitted edits to these same files.
+before=$(mktemp -d)
+cp -R rust/canister/sealed_secrets_canister.did seed/src/declarations "$before/"
 candid-extractor target/wasm32-unknown-unknown/release/sealed_secrets_canister.wasm \
-  > crates/canister/sealed_secrets_canister.did
+  > rust/canister/sealed_secrets_canister.did
 npm --prefix seed run --silent bindings >/dev/null
-changed=$(git status --porcelain -- \
-  crates/canister/sealed_secrets_canister.did seed/src/declarations)
-if [ -n "$changed" ]; then
-  echo "the .did or seed/src/declarations was stale — regenerated, review and commit:"
-  echo "$changed"
+if ! diff -r -q "$before/sealed_secrets_canister.did" rust/canister/sealed_secrets_canister.did \
+  || ! diff -r -q "$before/declarations" seed/src/declarations; then
+  echo "the .did or seed/src/declarations was stale — regenerated above, review and commit"
+  rm -rf "$before"
   exit 1
 fi
+rm -rf "$before"
 
 step "vectors match the reference"
 cargo run -q -p vectorgen > /tmp/vectors-check.json
-diff -q /tmp/vectors-check.json motoko/test/vectors.json \
-  || { echo "motoko/test/vectors.json is stale"; exit 1; }
+diff -q /tmp/vectors-check.json motoko/vetkeys/test/vectors.json \
+  || { echo "motoko/vetkeys/test/vectors.json is stale"; exit 1; }
 
 step "motoko: check and test"
-( cd motoko && mops check src/*.mo >/dev/null && mops test )
+( cd motoko/vetkeys && mops check src/*.mo >/dev/null && mops test )
 
 step "typescript: typecheck, tests, diagrams"
 ( cd seed && npm run --silent typecheck && npm test && npm run --silent check:diagrams )

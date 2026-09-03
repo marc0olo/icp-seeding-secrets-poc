@@ -13,7 +13,7 @@ before the interface in the README has been argued over.
 Target: a `sealed_secrets` module in
 [`dfinity/vetkeys`](https://github.com/dfinity/vetkeys) under
 `backend/rs/ic_vetkeys/src/`, with the PoC canister becoming the reference
-implementation. `crates/core` here is already shaped to be that module's format layer.
+implementation. `rust/core` here is already shaped to be that module's format layer.
 
 ### Revisit `info` as a query
 
@@ -124,7 +124,7 @@ additive unification points the right way. Minor version bump, not breaking — 
 theoretical break is a consumer already passing `default-features = false`, which is a
 no-op today.
 
-`crates/core` in this repo is a working demonstration of the seam.
+`rust/core` in this repo is a working demonstration of the seam.
 
 ### Idempotent re-seeding (`matches` now exists; the diffing does not)
 
@@ -191,7 +191,7 @@ painful than carrying four unused bytes.
 and returns `PROD_G2_TEST_KEY_1`, which differs from `POCKETIC_G2_TEST_KEY_1`
 (`utils/mod.rs:411` vs `:422`). Under PocketIC, `compute_vrf` with `test_key_1`
 therefore derives the wrong public key. The PoC's `MasterKeySource` is explicit
-precisely to avoid repeating this; `crates/core/tests/golden.rs` has the regression test.
+precisely to avoid repeating this; `rust/core/tests/golden.rs` has the regression test.
 
 Also: `derive_unencrypted_vetkey`'s doc comment claims `Ok(VetKey)` but it returns
 `Result<Vec<u8>, _>`.
@@ -304,7 +304,7 @@ commit, and bundles are trivially safe because there is nothing to inline.
 
 Placement is a **sibling of `settings`**, not inside it: `Settings` is the manifest
 projection of the management canister's `canister_settings` record
-(`impl From<Settings> for CanisterSettings`, `crates/icp/src/canister/mod.rs:230`), and
+(`impl From<Settings> for CanisterSettings`, `rust/icp/src/canister/mod.rs:230`), and
 `icp canister settings show/sync` treat it as such. A sealed secret is application state
 written through an application endpoint.
 
@@ -318,7 +318,7 @@ operation, at seal time.
 
 The CLI should hard-fail on mainnet when the subnet is not SEV-SNP or does not hold the
 vetKD key, with an explicit override flag. It already resolves canister → subnet via
-`get_subnet_for_canister` (`crates/icp/src/operations/canister_migration.rs:113`), so
+`get_subnet_for_canister` (`rust/icp/src/operations/canister_migration.rs:113`), so
 this is one extra registry query — the same two checks
 [`seed/src/preflight.ts`](./seed/src/preflight.ts) makes.
 
@@ -366,7 +366,7 @@ verification and the no-getter rule are the same design decision viewed from two
 Motoko: the whole field tower (`Fp`, `Fp2`, `Fp6`, `Fp12`), both curve groups
 with compression, the optimal ate pairing, HKDF-SHA256, SHAKE256,
 `expand_message_xmd`, `hash_to_scalar`, RFC 9380 `hash_to_curve`, IBE decryption
-and `decrypt_and_verify`. 95 tests — see [motoko/README.md](./motoko/README.md).
+and `decrypt_and_verify`. 95 tests — see [motoko/vetkeys/README.md](./motoko/vetkeys/README.md).
 
 Upstream has none of this. `backend/mo/ic_vetkeys/src/` has `key_manager`,
 `encrypted_maps`, `ManagementCanister` and `Types`, and no mops package provides
@@ -412,7 +412,7 @@ possible.
 the Rust crate. This port is evidence it can be done, and a starting point for
 doing it properly.
 
-*Motoko team:* [motoko/PROPOSAL.md](./motoko/PROPOSAL.md) — a measured case that
+*Motoko team:* [motoko/vetkeys/PROPOSAL.md](./motoko/vetkeys/PROPOSAL.md) — a measured case that
 one missing runtime primitive accounts for most of the 10× gap. Motoko's `Nat` is
 libtommath, which already implements Barrett and Montgomery reduction, modular
 exponentiation and modular inversion; the runtime compiles in an explicit subset
@@ -467,7 +467,7 @@ There is no pairing-free route to "encrypt to a public key" with IBE.
 
 ### Why the golden vectors exist
 
-[`crates/core/tests/golden.rs`](./crates/core/tests/golden.rs) and
+[`rust/core/tests/golden.rs`](./rust/core/tests/golden.rs) and
 [`seed/src/format.test.ts`](./seed/src/format.test.ts) assert byte-for-byte identical
 values. A Motoko port asserting the same vectors is provably interoperable with both,
 before any integration test is written.

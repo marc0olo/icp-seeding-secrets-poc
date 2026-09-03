@@ -1,9 +1,9 @@
 /**
- * Wire format, mirroring `crates/core/src/lib.rs`.
+ * Wire format, mirroring `rust/core/src/lib.rs`.
  *
  * The two implementations are kept in step by the golden vectors in
  * `format.test.ts`, which are byte-for-byte the same values asserted by the Rust
- * tests in `crates/core/tests/golden.rs`. If you change an encoding, both sets
+ * tests in `rust/core/tests/golden.rs`. If you change an encoding, both sets
  * must be updated together — and every previously sealed ciphertext becomes
  * undecryptable, so don't.
  */

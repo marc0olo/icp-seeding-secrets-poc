@@ -3,7 +3,7 @@
  *
  * The canister's own interface is **generated** — see
  * `src/declarations/sealed_secrets_canister.did.ts`, produced by
- * `npm run bindings` from `crates/canister/sealed_secrets_canister.did`. Do not
+ * `npm run bindings` from `rust/canister/sealed_secrets_canister.did`. Do not
  * hand-write it: an earlier revision of this file did, and it silently drifted
  * from the canister twice (when `info` became an update, and when the
  * `test-hooks` endpoints appeared).

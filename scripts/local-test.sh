@@ -62,11 +62,11 @@ say "2. the generated TypeScript bindings match the canister"
 cargo build -p sealed-secrets-canister --target wasm32-unknown-unknown --release --locked \
   --features test-hooks >/dev/null 2>&1
 candid-extractor target/wasm32-unknown-unknown/release/sealed_secrets_canister.wasm \
-  > crates/canister/sealed_secrets_canister.did
+  > rust/canister/sealed_secrets_canister.did
 # Compare the working tree against itself across a regeneration, rather than
 # against HEAD: this must pass mid-change, before anything is committed. CI runs
 # the stricter "regenerated output matches what is committed" check.
-GEN_PATHS="crates/canister/sealed_secrets_canister.did seed/src/declarations"
+GEN_PATHS="rust/canister/sealed_secrets_canister.did seed/src/declarations"
 BEFORE=$(git diff -- $GEN_PATHS; git status --porcelain -- $GEN_PATHS)
 npm --prefix seed run --silent bindings >/dev/null 2>&1
 AFTER=$(git diff -- $GEN_PATHS; git status --porcelain -- $GEN_PATHS)

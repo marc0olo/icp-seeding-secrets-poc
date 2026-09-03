@@ -1,5 +1,5 @@
 /**
- * Golden vectors, byte-for-byte identical to `crates/core/tests/golden.rs`.
+ * Golden vectors, byte-for-byte identical to `rust/core/tests/golden.rs`.
  *
  * This file is the reason the Rust and TypeScript implementations cannot drift:
  * a change to either encoding breaks one of the two suites. Any future Motoko
