@@ -18,6 +18,35 @@ For what productizing it would look like, see **[FOLLOW-UPS.md](./FOLLOW-UPS.md)
 
 ---
 
+## Contents
+
+- [The problem this solves](#the-problem-this-solves)
+- [Why it needs vetKD](#why-it-needs-vetkd)
+- [The flow](#the-flow)
+  - [Using the secret — the point of all this](#using-the-secret--the-point-of-all-this)
+  - [Three decisions worth understanding](#three-decisions-worth-understanding)
+- [Quick start](#quick-start)
+  - [On mainnet](#on-mainnet)
+- [Testing locally](#testing-locally)
+  - [Confirming the right secret is deployed](#confirming-the-right-secret-is-deployed)
+  - [Seeing the plaintext](#seeing-the-plaintext)
+  - [Can I just add a getter?](#can-i-just-add-a-getter)
+- [Client bindings](#client-bindings)
+- [Wire format](#wire-format)
+- [Interface](#interface)
+- [Security model](#security-model)
+  - [Who this protects against](#who-this-protects-against)
+  - [Who it does not protect against, by design](#who-it-does-not-protect-against-by-design)
+  - [When the controller *is* in your threat model](#when-the-controller-is-in-your-threat-model)
+  - [Rotating a secret](#rotating-a-secret)
+  - [HTTPS outcalls](#https-outcalls)
+- [Do not lose the canister ID](#do-not-lose-the-canister-id)
+- [Prerequisites for a real deployment](#prerequisites-for-a-real-deployment)
+  - [Local vs mainnet — what a local run does and does not prove](#local-vs-mainnet--what-a-local-run-does-and-does-not-prove)
+- [A Motoko canister could do this too](#a-motoko-canister-could-do-this-too)
+- [Layout](#layout)
+- [Deliberately out of scope](#deliberately-out-of-scope)
+- [Licence](#licence)
 ## The problem this solves
 
 icp-cli's current answer to "my canister needs an API key" is a plaintext canister

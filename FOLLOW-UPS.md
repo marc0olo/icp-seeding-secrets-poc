@@ -8,6 +8,33 @@ before the interface in the README has been argued over.
 
 ---
 
+## Contents
+
+- [1. Productize into `ic-vetkeys`](#1-productize-into-ic-vetkeys)
+  - [Revisit `info` as a query](#revisit-info-as-a-query)
+  - [Macros, so adoption is three lines](#macros-so-adoption-is-three-lines)
+  - [Guidance for *using* a secret, not just storing one](#guidance-for-using-a-secret-not-just-storing-one)
+  - [Pluggable access control](#pluggable-access-control)
+  - [A Cargo feature split](#a-cargo-feature-split)
+  - [Idempotent re-seeding (`matches` now exists; the diffing does not)](#idempotent-re-seeding-matches-now-exists-the-diffing-does-not)
+  - [Rotation](#rotation)
+  - [Also worth carrying over](#also-worth-carrying-over)
+  - [A bug to fix while in there](#a-bug-to-fix-while-in-there)
+  - [Example and docs](#example-and-docs)
+- [2. icp-cli integration](#2-icp-cli-integration)
+  - [What a canister must implement, and how the CLI finds out](#what-a-canister-must-implement-and-how-the-cli-finds-out)
+  - [The asymmetry that shapes the UX](#the-asymmetry-that-shapes-the-ux)
+  - [Command surface](#command-surface)
+  - [Manifest: names and env vars only](#manifest-names-and-env-vars-only)
+  - [Enforce the subnet properties](#enforce-the-subnet-properties)
+  - [Deploy integration](#deploy-integration)
+  - [Two mechanical gotchas](#two-mechanical-gotchas)
+- [3. A Motoko library](#3-a-motoko-library)
+  - [What `mo:ic-vetkeys` should actually gain](#what-moic-vetkeys-should-actually-gain)
+  - [Reusing the Rust implementation instead](#reusing-the-rust-implementation-instead)
+  - [Options for a Motoko canister today](#options-for-a-motoko-canister-today)
+  - [Why the golden vectors exist](#why-the-golden-vectors-exist)
+- [Considered and rejected](#considered-and-rejected)
 ## 1. Productize into `ic-vetkeys`
 
 Target: a `sealed_secrets` module in
