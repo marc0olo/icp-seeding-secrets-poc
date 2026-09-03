@@ -54,20 +54,13 @@ of `Fp` multiplications, plus a final exponentiation of similar magnitude. So:
 | Miller loop | 487,669,141 | 1.2% |
 | Final exponentiation | 590,961,027 | 1.5% |
 | **Full pairing** | **1,078,628,674** | **2.7%** |
-| `hashToCurve` (RFC 9380) | 190,523,836 | 0.5% |
-| **Full IBE decryption** | **1,792,820,565** | **4.5%** |
-| **`decryptAndVerify`** | **3,573,000,849** | **8.9%** |
-| **Both — the cold path** | **≈ 5,365,821,414** | **≈ 13.4%** |
+| `hashToCurve` (RFC 9380) | 190,502,640 | 0.5% |
 
-The number that matters is the last one. A canister cannot just decrypt: it must
-first unwrap the reply from `vetkd_derive_key` and check that what came back is
-genuinely its own vetKey, which is `decryptAndVerify` — two multipairings and a
-hash-to-curve, and the more expensive half by a factor of two. Quoting the IBE
-decryption alone would understate the real cost by a third.
-
-Together they are about **13% of what a single update call is allowed**, and they
-are paid once: the Rust PoC caches both the vetKey and the decrypted value, and a
-Motoko port would do the same.
+Those are the primitives. What a canister actually pays is the vetKD layer built
+on them — decrypting a sealed secret, and first verifying the vetKey it decrypts
+with — which comes to about **13% of a single update call**, paid once.
+[`../vetkeys/README.md`](../vetkeys/README.md#cost) has that table, next to the
+code it measures.
 
 ### Against the Rust implementation
 

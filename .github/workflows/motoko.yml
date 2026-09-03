@@ -1,0 +1,87 @@
+# The experimental Motoko implementation: three packages, all unaudited.
+#
+# Its vectors are generated from the Rust reference, so this also proves the
+# generator still runs and that the committed vectors still match what the
+# reference produces.
+name: Motoko
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # A local network needs no cycles ledger top-up, but icp-cli still prompts
+  # without this in a non-interactive shell.
+  ICP_ENVIRONMENT: local
+
+jobs:
+  motoko:
+    name: unit tests (experimental)
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/dfinity/icp-dev-env-all:v2.0.0
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trust the workspace
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      # rust-toolchain.toml pins a version the image does not ship, so rustup
+      # fetches it on first use. Caching that plus the registry is the
+      # difference between a ~4 minute job and a ~1 minute one.
+      - name: Cache cargo and rustup
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ~/.rustup/toolchains
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      - name: Vectors still match the Rust reference
+        run: |
+          cargo run -q -p vectorgen > /tmp/vectors.json
+          if ! diff -q /tmp/vectors.json motoko/vectors.json >/dev/null; then
+            echo "::error::motoko/vectors.json is stale — run 'cargo run -p vectorgen > motoko/vectors.json' and commit"
+            diff /tmp/vectors.json motoko/vectors.json | head -20
+            exit 1
+          fi
+          echo "ok — committed vectors match the reference"
+
+      # mops check exits 0 on warnings, so the lints enabled in each mops.toml
+      # need an explicit gate or a regression lands silently.
+      - name: No moc warnings
+        run: |
+          for pkg in bls12-381 vetkeys canister; do
+            cd "motoko/$pkg"
+            out=$(mops check src/*.mo 2>&1) || { echo "$out"; exit 1; }
+            if echo "$out" | grep -q warning; then
+              echo "$out" | grep warning
+              echo "::error::moc warnings in motoko/$pkg — run 'mops check --fix'"
+              exit 1
+            fi
+            cd - >/dev/null
+          done
+          echo "ok — no moc warnings"
+
+      - name: bls12-381 — the curve
+        working-directory: motoko/bls12-381
+        run: mops test
+
+      - name: vetkeys — IBE, vetKey verification, offline derivation
+        working-directory: motoko/vetkeys
+        run: mops test
+
+      - name: canister — wire-format golden vectors
+        working-directory: motoko/canister
+        run: mops test

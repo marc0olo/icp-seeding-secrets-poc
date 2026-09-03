@@ -1,0 +1,98 @@
+# The Rust canister: does it build, lint, and keep its promise about what it
+# does NOT expose?
+name: Rust
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # A local network needs no cycles ledger top-up, but icp-cli still prompts
+  # without this in a non-interactive shell.
+  ICP_ENVIRONMENT: local
+
+jobs:
+  rust:
+    name: build, lint, golden vectors
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/dfinity/icp-dev-env-all:v2.0.0
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trust the workspace
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      # rust-toolchain.toml pins a version the image does not ship, so rustup
+      # fetches it on first use. Caching that plus the registry is the
+      # difference between a ~4 minute job and a ~1 minute one.
+      - name: Cache cargo and rustup
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ~/.rustup/toolchains
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      - name: Formatting
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      # The canister must build both ways: the default build is what a real
+      # deployment uses, and test-hooks is what the end-to-end workflow uses.
+      - name: Build canister (default — no observation endpoints)
+        run: cargo build -p sealed-secrets-canister --target wasm32-unknown-unknown --release --locked
+
+      # Checked against the wasm binary rather than the extracted Candid: a
+      # canister method IS a wasm export, so a name absent from the bytes cannot
+      # be called at all. Confirmed by hand once — calling secret_reveal on a
+      # default build is rejected by the replica with IC0536.
+      - name: Assert the default build cannot observe a secret
+        run: |
+          wasm=target/wasm32-unknown-unknown/release/sealed_secrets_canister.wasm
+          for hook in secret_reveal; do
+            if grep -aq "$hook" "$wasm"; then
+              echo "::error::'$hook' is present in the default build; test-hooks is leaking into production"
+              exit 1
+            fi
+          done
+          # Control, so this cannot pass by inspecting the wrong or a stale file.
+          grep -aq "icp_sealed_secret_set" "$wasm" \
+            || { echo "::error::control failed: icp_sealed_secret_set missing from $wasm"; exit 1; }
+          echo "ok — secret_reveal absent from the binary (control: set present)"
+
+      - name: Build canister (test-hooks)
+        run: cargo build -p sealed-secrets-canister --target wasm32-unknown-unknown --release --locked --features test-hooks
+
+      - name: Golden vectors and unit tests
+        run: cargo test --workspace
+
+      # The .did is extracted from the wasm and the TypeScript declarations are
+      # generated from the .did, so this is the third copy of the interface and
+      # the one nothing else would catch drifting.
+      - name: Generated .did and TypeScript bindings are current
+        run: |
+          candid-extractor target/wasm32-unknown-unknown/release/sealed_secrets_canister.wasm \
+            > rust/canister/sealed_secrets_canister.did
+          npm --prefix seed run bindings
+          changed=$(git status --porcelain -- \
+            rust/canister/sealed_secrets_canister.did seed/src/declarations)
+          if [ -n "$changed" ]; then
+            echo "::error::the .did or seed/src/declarations is stale — run 'npm --prefix seed run bindings' and commit"
+            echo "$changed"
+            exit 1
+          fi
+          echo "ok — declarations match the canister"

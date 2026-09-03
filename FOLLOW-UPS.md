@@ -393,7 +393,8 @@ annotated as having been produced by the replica's threshold implementation.
 
 **What it costs.** 3.57 billion instructions to unwrap and verify the subnet's
 reply, plus 1.79 billion to decrypt — about 5.4 billion cold against the 40
-billion an update call gets, paid once because both results are cached. On the
+billion an update call gets, and paid on `set` and `matches` only — the vetKey is
+cached and the decrypted value is stored, so spending a secret costs neither. On the
 decryption alone, the like-for-like comparison, that is about 10.8× the Rust
 implementation measured the same way. 85% of the gap is one thing: this port
 reduces with `%` where the reference uses Montgomery form, so it divides where

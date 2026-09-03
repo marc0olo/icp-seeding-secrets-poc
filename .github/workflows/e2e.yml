@@ -1,0 +1,89 @@
+# The real thing: a local replica, a deploy, and a secret sealed and spent.
+#
+# One workflow rather than two because both canisters share a network and a
+# deploy, so splitting it would double the slowest part. The implementations are
+# separate STEPS instead, so a failure names the culprit without opening the log.
+# `scripts/local-test.sh` takes the same phase names, so any step here is one
+# command locally.
+name: End-to-end
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # A local network needs no cycles ledger top-up, but icp-cli still prompts
+  # without this in a non-interactive shell.
+  ICP_ENVIRONMENT: local
+
+jobs:
+  e2e:
+    name: seal and spend, against a local replica
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/dfinity/icp-dev-env-all:v2.0.0
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trust the workspace
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      # rust-toolchain.toml pins a version the image does not ship, so rustup
+      # fetches it on first use. Caching that plus the registry is the
+      # difference between a ~4 minute job and a ~1 minute one.
+      - name: Cache cargo and rustup
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ~/.rustup/toolchains
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      - name: Install client dependencies
+        working-directory: seed
+        run: npm ci
+
+      - name: Build assertions (no replica needed)
+        run: ./scripts/local-test.sh build
+
+      - name: Start the network and deploy both canisters
+        run: ./scripts/local-test.sh setup
+
+      # Seals a secret, reads the plaintext back through the test-hooks build so
+      # a silent decryption failure cannot pass, makes a real authenticated
+      # HTTPS outcall, upgrades, and runs the 17 negative cases.
+      #
+      # The outcall reaches postman-echo.com. An unreachable API is treated as a
+      # skip rather than a failure, so a third-party outage cannot turn this red
+      # — but a *wrong* status still fails it.
+      - name: Rust canister — seal, spend, upgrade, negative cases
+        run: ./scripts/local-test.sh rust
+
+      # The same, on this repo's experimental pure-Motoko crypto, driven by the
+      # same seeding client with nothing changed but the canister id. That is the
+      # claim this repo makes, and running the suite twice is what tests it.
+      - name: Motoko canister — seal, spend, upgrade, negative cases
+        run: ./scripts/local-test.sh motoko
+
+      - name: Stop the network
+        if: always()
+        run: icp network stop || true
+
+      - name: Upload replica logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: network-logs
+          path: .icp/cache/networks/local/network-launcher/
+          if-no-files-found: ignore

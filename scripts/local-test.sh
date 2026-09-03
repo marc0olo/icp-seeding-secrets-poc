@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
 #
-# One-command local verification of the whole round trip.
+# Local verification of the whole round trip, for both canisters.
 #
-#   ./scripts/local-test.sh
+#   ./scripts/local-test.sh            everything, in order
+#   ./scripts/local-test.sh build      build-level assertions; no network needed
+#   ./scripts/local-test.sh setup      identity, network, deploy
+#   ./scripts/local-test.sh rust       seal and spend a secret, Rust canister
+#   ./scripts/local-test.sh motoko     the same, Motoko canister
+#
+# The phases exist so CI can run them as separately named steps: a single
+# opaque "round trip" step tells you it broke but not which implementation.
+# Each phase re-derives what it needs, so they can also be run one at a time
+# while iterating.
 #
 # Starts a local network, deploys, seals a secret, and proves the canister
 # recovered the exact plaintext — including reading it back in the clear via the
@@ -37,6 +46,20 @@ fail() { printf '\033[31mFAIL: %s\033[0m\n' "$*" >&2; exit 1; }
 cleanup() { rm -f "$PEM"; }
 trap cleanup EXIT
 
+# Re-derived per phase rather than passed between them, so any phase can run
+# alone. Both are cheap: a status query and a key export.
+resolve_cid() {
+  icp canister status "$1" -e "$ENV" --json | jq -r .id
+}
+
+ensure_pem() {
+  IDENTITY=$(icp identity default 2>/dev/null || true)
+  [ -n "$IDENTITY" ] || fail "no default identity; run the 'setup' phase first"
+  icp identity export "$IDENTITY" > "$PEM"
+  ( cd seed && [ -d node_modules ] || npm install --silent >/dev/null 2>&1 )
+}
+
+phase_build() {
 say "1. the default build exposes no way to observe a secret"
 # Checked against the wasm binary, not just the extracted Candid: a canister
 # method IS a wasm export, so a name absent from the bytes cannot be called at
@@ -53,6 +76,7 @@ done
 grep -aq "icp_sealed_secret_set" "$PROD_WASM" \
   || fail "control failed: icp_sealed_secret_set missing from $PROD_WASM"
 echo "  ok — secret_reveal absent from the binary (control: set present)"
+
 
 say "2. the generated TypeScript bindings match the canister"
 ( cd seed && [ -d node_modules ] || npm install --silent >/dev/null 2>&1 )
@@ -74,6 +98,9 @@ AFTER=$(git diff -- $GEN_PATHS; git status --porcelain -- $GEN_PATHS)
   || fail "seed/src/declarations was stale — regenerating changed it. Review and commit."
 echo "  ok — declarations are up to date with the .did"
 
+}
+
+phase_setup() {
 say "3. make sure there is an identity we can export"
 # The network seeds cycles to the default identity at start-up, so this has to
 # happen BEFORE the network comes up.
@@ -110,6 +137,11 @@ icp deploy -e "$ENV" --yes >/dev/null
 CID=$(icp canister status "$CANISTER" -e "$ENV" --json | jq -r .id)
 echo "  canister: $CID"
 
+}
+
+phase_rust() {
+  CID=$(resolve_cid "$CANISTER")
+  ensure_pem
 say "6. health check — does this subnet actually serve vetKD?"
 icp canister call "$CANISTER" icp_sealed_secret_self_test '(opt variant { PocketIc })' -e "$ENV" 2>/dev/null \
   | grep -qE "public_key_matches_master = opt true" \
@@ -186,6 +218,10 @@ echo "  ok — still readable after upgrade, the secret lives in stable memory"
 say "12. the negative cases"
 npm --prefix seed run --silent e2e -- --canister "$CID" --host "$HOST" --source pocketic --pem "$PEM"
 
+}
+
+phase_motoko() {
+  ensure_pem
 say "13. the same round trip against the Motoko canister"
 # The point of this step is that nothing below is Motoko-specific except the
 # canister name. The same seeding script, the same wire format, the same
@@ -248,6 +284,25 @@ MO_AFTER=$(mo_status "motoko-after-upgrade")
 case "$MO_AFTER" in
   *"Ok=200"*) echo "  ok — survives an upgrade with no re-seeding" ;;
   *)          fail "the Motoko canister lost its secret across an upgrade: $MO_AFTER" ;;
+esac
+
+# The same 17 assertions step 12 runs against the Rust canister, with nothing
+# changed but the canister id. That is the claim this repo makes -- one wire
+# format, one client, two implementations -- and running the suite twice is what
+# tests it. It needs no test hooks, which is why the Motoko canister can pass it
+# without shipping an endpoint that discloses a secret.
+say "14. the full negative-case suite against the Motoko canister"
+npm --prefix seed run --silent e2e -- --canister "$MO_CID" --host "$HOST" --source pocketic --pem "$PEM"
+
+}
+
+case "${1:-all}" in
+  build)  phase_build ;;
+  setup)  phase_setup ;;
+  rust)   phase_rust ;;
+  motoko) phase_motoko ;;
+  all)    phase_build; phase_setup; phase_rust; phase_motoko ;;
+  *)      fail "unknown phase '$1' — use build, setup, rust, motoko, or all" ;;
 esac
 
 say "done"

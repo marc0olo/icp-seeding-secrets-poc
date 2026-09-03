@@ -1,0 +1,51 @@
+# The TypeScript seeding client: the thing an operator actually runs.
+name: Client
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # A local network needs no cycles ledger top-up, but icp-cli still prompts
+  # without this in a non-interactive shell.
+  ICP_ENVIRONMENT: local
+
+jobs:
+  client:
+    name: typecheck, golden vectors, diagrams
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/dfinity/icp-dev-env-all:v2.0.0
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trust the workspace
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Install client dependencies
+        working-directory: seed
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: seed
+        run: npm run typecheck
+
+      # Asserted to be byte-identical to the Rust vectors, so an encoding drift
+      # in either language fails one of the two suites.
+      - name: Golden vectors
+        working-directory: seed
+        run: npm test
+
+      # GitHub renders mermaid, but a block with a syntax error renders as an
+      # error box rather than a diagram — silently user-visible. One had a `;`
+      # in message text, which mermaid treats as a statement separator.
+      - name: Mermaid diagrams parse
+        working-directory: seed
+        run: npm run check:diagrams

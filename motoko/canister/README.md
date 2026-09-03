@@ -9,7 +9,9 @@
 The same design as [`../../rust/canister`](../../rust/canister), on this repo's
 pure-Motoko crypto instead of `ic-vetkeys`. It speaks the identical Candid
 interface, so [`../../seed`](../../seed) drives it with no changes — which is the
-claim worth testing, and `scripts/local-test.sh` step 13 tests it.
+claim worth testing, and `scripts/local-test.sh motoko` tests it — including the
+same 17 negative-case assertions the Rust canister faces, from the same suite,
+with nothing changed but the canister id.
 
 ## What it proves
 
@@ -99,7 +101,8 @@ section without help.
 ```bash
 icp network start local --background
 icp deploy -e local --yes
-./scripts/local-test.sh     # steps 1-12 Rust, step 13 Motoko
+./scripts/local-test.sh            # everything, both canisters
+./scripts/local-test.sh motoko     # just this one
 ```
 
 ```bash

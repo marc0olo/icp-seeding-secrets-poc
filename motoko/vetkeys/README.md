@@ -57,9 +57,9 @@ gets. Both results are cached, so a canister pays this once.
 
 | | Instructions | Share of an update call |
 |---|---:|---:|
-| `decryptAndVerify` — two multipairings and a hash-to-curve | 3,573,000,849 | 8.9% |
+| `decryptAndVerify` — two multipairings and a hash-to-curve | 3,572,979,653 | 8.9% |
 | `Ibe.decrypt` — one pairing | 1,792,820,565 | 4.5% |
-| **The cold path — both** | **≈ 5,365,821,414** | **≈ 13.4%** |
+| **The cold path — both** | **≈ 5,365,800,218** | **≈ 13.4%** |
 
 Quoting the decryption figure alone understates the real cost by a third: a
 canister cannot just decrypt, it must first establish that the key it is
