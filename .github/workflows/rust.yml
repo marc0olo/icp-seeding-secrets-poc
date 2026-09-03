@@ -80,6 +80,13 @@ jobs:
       - name: Golden vectors and unit tests
         run: cargo test --workspace
 
+      # Needed by the bindings check below: it generates the TypeScript
+      # declarations, so it needs the client's dev dependencies even though
+      # nothing else in this workflow touches TypeScript.
+      - name: Install client dependencies
+        working-directory: seed
+        run: npm ci
+
       # The .did is extracted from the wasm and the TypeScript declarations are
       # generated from the .did, so this is the third copy of the interface and
       # the one nothing else would catch drifting.
