@@ -93,12 +93,24 @@ through the same encoding the protocol uses, and the strongest check asserts tha
 every one of them satisfies `y² = x³ + 4` — exercising the modulus, `add`, `mul`
 and `square` together against data this code had no hand in producing.
 
+## The finish line
+
+`test/vectors.json` carries a complete IBE triple — a derived public key, an
+identity, a vetKey, a ciphertext and the plaintext it must yield. The generator
+**decrypts it in Rust before emitting it**, so it cannot send the port chasing a
+phantom.
+
+When this Motoko code turns `vetkey` + `ciphertext` back into `plaintext`, the
+port works. Nothing short of that proves it, and every layer below is scaffolding
+toward it.
+
 ## Status
 
 | Layer | State |
 |---|---|
-| `Fp` — base field | ✅ implemented, 11 tests against reference vectors |
-| `Fp2`, `Fp6`, `Fp12` — the tower | ⬜ not started |
+| `Fp` — base field | ✅ 11 tests against reference vectors |
+| `Fp2` — quadratic extension | ✅ 11 tests, anchored on the G2 curve equation |
+| `Fp6`, `Fp12` — the rest of the tower | ⬜ not started |
 | `G1`, `G2` — curve groups, compression | ⬜ not started |
 | Pairing — Miller loop, final exponentiation | ⬜ not started |
 | `hash_to_curve` | ⬜ not started — needed only if the canister verifies the vetKey |

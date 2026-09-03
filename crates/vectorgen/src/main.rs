@@ -13,7 +13,9 @@
 //! Regenerate whenever `ic_bls12_381` is upgraded; a diff in the output is a
 //! signal worth reading, not noise to commit past.
 
+use ic_bls12_381::hash_to_curve::{ExpandMsgXmd, HashToCurve};
 use ic_bls12_381::{G1Affine, G1Projective, G2Affine, G2Projective, Scalar};
+use ic_vetkeys::{DerivedPublicKey, IbeCiphertext, IbeIdentity, IbeSeed, VetKey};
 
 /// Scalars chosen to cover the boring cases and the awkward ones: identity,
 /// small values, a power of two, and something large and irregular.
@@ -79,8 +81,68 @@ fn main() {
         hex::encode(G1Affine::identity().to_compressed())
     );
     println!(
-        "  \"g2_identity_compressed\": \"{}\"",
+        "  \"g2_identity_compressed\": \"{}\",",
         hex::encode(G2Affine::identity().to_compressed())
     );
+
+    emit_ibe_vector();
+
     println!("}}");
+}
+
+/// The finish line for the Motoko port: a complete, valid IBE triple.
+///
+/// Everything here is generated offline by playing the role of the subnet — pick
+/// a master secret, derive the public key from it, and produce the vetKey as the
+/// BLS signature over the identity that the subnet would have produced. The
+/// resulting ciphertext is indistinguishable from a real one, because it *is*
+/// one: the same `IbeCiphertext::encrypt` the client uses.
+///
+/// When the Motoko implementation can turn `vetkey` + `ciphertext` back into
+/// `plaintext`, the port works. Nothing short of that proves it.
+fn emit_ibe_vector() {
+    // Stand in for the subnet's master key. Fixed, so the vector is stable.
+    let msk = Scalar::from(0x5ea1ed_5ec4_e75u64);
+    let mpk = G2Affine::from(G2Projective::generator() * msk);
+
+    let dpk = DerivedPublicKey::deserialize(&mpk.to_compressed())
+        .expect("master public key should parse as a derived public key");
+
+    let identity = b"icp-sealed-secrets-v1-demo-identity";
+    let plaintext = b"a sealed secret";
+
+    // The vetKey IS a BLS signature: H(pk || identity) * msk, with the augmented
+    // domain separator ic-vetkeys uses (utils/mod.rs:1396).
+    let mut signature_input = Vec::new();
+    signature_input.extend_from_slice(&mpk.to_compressed());
+    signature_input.extend_from_slice(identity);
+    let h = <G1Projective as HashToCurve<ExpandMsgXmd<sha2::Sha256>>>::hash_to_curve(
+        signature_input,
+        b"BLS_SIG_BLS12381G1_XMD:SHA-256_SSWU_RO_AUG_",
+    );
+    let signature = G1Affine::from(h * msk);
+    let vetkey = VetKey::deserialize(&signature.to_compressed()).expect("valid vetkey");
+
+    // A fixed seed keeps the ciphertext reproducible run to run.
+    let seed = IbeSeed::from_bytes(&[0x42u8; 32]).expect("valid seed");
+    let ciphertext = IbeCiphertext::encrypt(
+        &dpk,
+        &IbeIdentity::from_bytes(identity),
+        plaintext,
+        &seed,
+    );
+
+    // Prove the triple is self-consistent before emitting it. A vector that does
+    // not decrypt in Rust would send the Motoko port chasing a phantom.
+    let recovered = ciphertext.decrypt(&vetkey).expect("the vector must decrypt");
+    assert_eq!(recovered, plaintext, "generated vector is not self-consistent");
+
+    println!("  \"ibe\": {{");
+    println!("    \"_comment\": \"decrypting ciphertext with vetkey must yield plaintext\",");
+    println!("    \"derived_public_key\": \"{}\",", hex::encode(dpk.serialize()));
+    println!("    \"identity_utf8\": \"{}\",", String::from_utf8_lossy(identity));
+    println!("    \"vetkey\": \"{}\",", hex::encode(vetkey.serialize()));
+    println!("    \"ciphertext\": \"{}\",", hex::encode(ciphertext.serialize()));
+    println!("    \"plaintext_utf8\": \"{}\"", String::from_utf8_lossy(plaintext));
+    println!("  }}");
 }

@@ -1120,7 +1120,9 @@ name = "vectorgen"
 version = "0.1.0"
 dependencies = [
  "hex",
+ "ic-vetkeys",
  "ic_bls12_381",
+ "sha2",
 ]
 
 [[package]]
