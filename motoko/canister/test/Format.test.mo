@@ -3,9 +3,10 @@
 /// These are the same values `rust/core/tests/golden.rs` and
 /// `seed/src/format.test.ts` assert. Three implementations, identical bytes —
 /// which is the only thing that makes them interoperable. A divergence here
-/// means this canister derives a different keypair, and every ciphertext the
-/// existing seeder produces becomes undecryptable without any error at seal
-/// time.
+/// means this canister derives a different keypair, so every ciphertext the
+/// seeder produces is one it cannot open. `set` would catch that — it decrypts
+/// before storing — but as an opaque `InvalidCiphertext` on every seal, with
+/// nothing pointing at the byte that moved. These vectors are what name it.
 
 import { test } "mo:test";
 import Format "../src/lib/Format";

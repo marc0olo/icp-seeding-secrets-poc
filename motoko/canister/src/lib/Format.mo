@@ -5,9 +5,10 @@
 /// against the same golden vectors the Rust and TypeScript sides assert.
 ///
 /// Those vectors are the contract. If any byte here diverges, this canister
-/// derives a different keypair and every ciphertext sealed by the existing
-/// TypeScript seeder becomes undecryptable — silently, since a wrong context
-/// produces a perfectly well-formed ciphertext that simply never opens.
+/// derives a different keypair and no ciphertext the TypeScript seeder produces
+/// will open. Encryption gives no hint — a wrong context yields a perfectly
+/// well-formed ciphertext — so the failure surfaces at `set`, which decrypts
+/// before storing, as an `InvalidCiphertext` that says nothing about the cause.
 
 import Nat "mo:core/Nat";
 import Nat8 "mo:core/Nat8";

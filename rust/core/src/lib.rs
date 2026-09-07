@@ -105,8 +105,9 @@ impl std::error::Error for FormatError {}
 /// Mainnet and PocketIC both have a key called `key_1`, backed by different
 /// master keys — necessarily, since a local environment cannot hold mainnet's
 /// master secret. So a key name does not identify a key, and inferring the table
-/// from it is guessing: guess wrong and you get a ciphertext nobody can ever
-/// decrypt, with no error at seal time. `ic-vetkeys`'
+/// from it is guessing: guess wrong and encryption still succeeds, producing a
+/// ciphertext the canister cannot open. `set` catches it — it decrypts before
+/// storing — which is precisely why that check is not optional. `ic-vetkeys`'
 /// `management_canister::compute_vrf` infers it today and is wrong under
 /// PocketIC as a result.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
