@@ -17,8 +17,8 @@ path is meant to be read start to finish:
 
 | file                                                           | size      |
 | -------------------------------------------------------------- | --------- |
-| [`rust/canister/src/lib.rs`](./rust/canister/src/lib.rs)       | 209 lines |
-| [`motoko/canister/src/Main.mo`](./motoko/canister/src/Main.mo) | 220 lines |
+| [`rust/canister/src/lib.rs`](./rust/canister/src/lib.rs)       | 204 lines |
+| [`motoko/canister/src/Main.mo`](./motoko/canister/src/Main.mo) | 215 lines |
 | [`seed/src/index.ts`](./seed/src/index.ts)                     | 164 lines |
 
 > A fuller version of this — a proposed standard interface, subnet preflight
@@ -173,9 +173,11 @@ derivation is deterministic in `(caller, context, label, key_id)`, none of which
 depends on the secrets. Without the cache every write would pay a derivation and
 a round through consensus for a key that never changes.
 
-What _does_ invalidate it is editing `CONTEXT` or `KEY_LABEL`. The Rust cache is
-heap and is discarded on upgrade, so it re-derives; the Motoko one persists, and
-will keep serving the key for the old values until the canister is reinstalled.
+Both canisters drop the cache on upgrade, so the first write afterwards derives
+again. Motoko could keep it — orthogonal persistence gives that for free — but
+then editing `CONTEXT` or `KEY_LABEL` would leave a cache serving the key for the
+old values until the canister was reinstalled. A production canister might take
+that trade; a PoC should not hand you the sharp edge.
 
 ## Try it
 

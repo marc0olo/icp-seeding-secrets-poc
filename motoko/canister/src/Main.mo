@@ -58,20 +58,16 @@ persistent actor DummySecret {
   /// rejected outright, so this is the published figure for `key_1`.
   transient let VETKD_FEE = 26_153_846_153;
 
-  /// The derived private key, cached after the first use.
+  /// The vetKey, cached after the first use.
   ///
-  /// Safe to hold forever: derivation is deterministic in
-  /// `(caller, context, input, key_id)`, none of which depends on the secrets,
-  /// so it can never go stale.
+  /// Safe to cache: derivation is deterministic in
+  /// `(caller, context, input, key_id)`, none of which depends on the secrets.
   ///
-  /// Unlike the Rust canister's, this survives upgrades — orthogonal
-  /// persistence gives that for free, so a redeploy costs no re-derivation.
-  ///
-  /// The one thing that DOES invalidate it is a code change: edit `CONTEXT` or
-  /// `KEY_LABEL` and this cache still holds the key for the old ones, silently,
-  /// until the canister is reinstalled. Nothing at runtime can go stale, but
-  /// that is not the same as nothing at all.
-  var vetkey : ?G1.Affine = null;
+  /// `transient`, so an upgrade clears it and the next write derives again.
+  /// Orthogonal persistence would keep it for free, but then editing `CONTEXT`
+  /// or `KEY_LABEL` would leave a cache serving the key for the old values until
+  /// the canister was reinstalled.
+  transient var vetkey : ?G1.Affine = null;
 
   /// The decrypted secrets, by name. The name is bookkeeping only — it is not
   /// part of any derivation and never leaves this canister.
@@ -90,13 +86,12 @@ persistent actor DummySecret {
 
   /// Fetches the vetKey for `KEY_LABEL`, once, and caches it.
   ///
-  /// "Private key" would be loose shorthand. What comes back is one G1 point
-  /// that is two things at once: a BLS **signature** over `KEY_LABEL`, which
-  /// makes it verifiable against the derived public key, and the IBE
-  /// **decryption key** for that label, which opens the ciphertexts.
+  /// The vetKey is a single G1 point that serves two purposes: it is a BLS
+  /// signature over `KEY_LABEL`, which makes it verifiable against the derived
+  /// public key, and it is the IBE decryption key for that label, which opens
+  /// the ciphertexts.
   ///
-  /// The canister does not derive it either — the subnet does. This asks for a
-  /// derivation and unwraps the reply.
+  /// The subnet performs the derivation; this asks for one and unwraps the reply.
   ///
   /// Two concurrent callers on a cold cache will both derive. Accepted rather
   /// than prevented: derivation is deterministic, so both get the identical key
@@ -120,7 +115,7 @@ persistent actor DummySecret {
     };
     let tsk = Scalar.hashToScalar(seed.toArray(), DS_TRANSPORT);
 
-    // 2. Ask for the private key belonging to (this canister, CONTEXT, KEY_LABEL).
+    // 2. Ask for the vetKey belonging to (this canister, CONTEXT, KEY_LABEL).
     //    The management canister routes this to a subnet holding the key — not
     //    necessarily our own — where each node contributes a share. What binds
     //    the result to us is that the caller's canister id is a derivation input,

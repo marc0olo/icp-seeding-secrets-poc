@@ -48,19 +48,15 @@ const KEY_LABEL: &[u8] = b"dummy-secrets";
 const KEY_NAME: &str = "key_1";
 
 thread_local! {
-    /// The derived private key, cached after the first use.
+    /// The vetKey, cached after the first use.
     ///
-    /// Safe to hold forever: derivation is deterministic in
-    /// `(caller, context, input, key_id)`, none of which depends on the secrets,
-    /// so this can never go stale. Without it every write would pay a
-    /// `vetkd_derive_key` — 26 billion cycles and a round through consensus —
-    /// for a key that never changes.
+    /// Safe to cache: derivation is deterministic in
+    /// `(caller, context, input, key_id)`, none of which depends on the secrets.
+    /// Without it every write would pay a `vetkd_derive_key` — 26 billion cycles
+    /// and a round through consensus — for a key that never changes.
     ///
-    /// Lost on upgrade, because this is the heap and nothing serialises it; the
-    /// first write afterwards re-derives. The Motoko canister keeps its cache
-    /// across upgrades, since orthogonal persistence gives that for free — which
-    /// means editing `CONTEXT` or `KEY_LABEL` there needs a reinstall, not an
-    /// upgrade, or it keeps serving the key for the old ones.
+    /// Lost on upgrade, because this is the heap and nothing serialises it, so
+    /// the first write afterwards derives again.
     static VETKEY: RefCell<Option<VetKey>> = const { RefCell::new(None) };
 
     /// The decrypted secrets, by name. The name is bookkeeping only — it is not
@@ -77,13 +73,12 @@ fn key_id() -> VetKDKeyId {
 
 /// Fetches the vetKey for `KEY_LABEL`, once, and caches it.
 ///
-/// "Private key" is loose shorthand. What comes back is one G1 point that is two
-/// things at the same time: a BLS **signature** over `KEY_LABEL`, which is what
-/// makes it verifiable against the derived public key, and the IBE **decryption
-/// key** for that label, which is what opens the ciphertexts. See the README.
+/// The vetKey is a single G1 point that serves two purposes: it is a BLS
+/// signature over `KEY_LABEL`, which is what makes it verifiable against the
+/// derived public key, and it is the IBE decryption key for that label, which is
+/// what opens the ciphertexts.
 ///
-/// The canister does not derive it either — the subnet does. This asks for a
-/// derivation and unwraps the reply.
+/// The subnet performs the derivation; this asks for one and unwraps the reply.
 ///
 /// Two concurrent callers on a cold cache will both derive. That is accepted
 /// rather than prevented: derivation is deterministic, so both get the identical
@@ -111,7 +106,7 @@ async fn vetkey() -> Result<VetKey, String> {
     let seed = raw_rand().await.map_err(|e| format!("raw_rand: {e}"))?;
     let tsk = TransportSecretKey::from_seed(seed).map_err(|e| format!("transport key: {e}"))?;
 
-    // 2. Ask for the private key belonging to (this canister, CONTEXT, KEY_LABEL).
+    // 2. Ask for the vetKey belonging to (this canister, CONTEXT, KEY_LABEL).
     //    The management canister routes this to a subnet holding the key — not
     //    necessarily our own — where each node contributes a share and none ever
     //    holds the whole key. What binds the result to us is that the caller's
