@@ -23,12 +23,9 @@ ENV=local
 # The timestamp is not decoration: it makes every run's secret distinct, so a
 # value left over from a previous run cannot make the comparison pass.
 SECRET="super-secret-value-$(date +%s)"
-ARG=$(mktemp)
 
 say()  { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 fail() { printf '\033[31mFAIL: %s\033[0m\n' "$*" >&2; exit 1; }
-trap 'rm -f "$ARG"' EXIT
-
 # Printed because it decides everything below: whoever deploys becomes the
 # canister's controller, and `set_dummy_secret` accepts only the controller.
 # On a fresh container with no identity configured this is the ANONYMOUS
@@ -43,22 +40,14 @@ icp deploy -e "$ENV" --yes >/dev/null
 # Everything below runs identically against both canisters. That is the point:
 # one wire format, one client, two implementations.
 for canister in dummy-secret-rust dummy-secret-motoko; do
-  CID=$(icp canister status "$canister" -e "$ENV" -i)
+  # Deliberately the same command the README tells you to run, so the
+  # documented path is the tested one.
+  say "2. seal a secret into $canister"
+  DUMMY_SECRET="$SECRET" ./scripts/seal "$canister" "$ENV" >/dev/null
 
-  # Each canister names its methods the way its own language does.
-  SETTER=set_dummy_secret GETTER=get_dummy_secret
-  if [ "$canister" = dummy-secret-motoko ]; then
-    SETTER=setDummySecret GETTER=getDummySecret
-  fi
-
-  say "2. encrypt a secret for $canister ($CID) — offline, no identity"
-  DUMMY_SECRET="$SECRET" npm --prefix seed run --silent seal -- \
-    --canister "$CID" --source pocketic --out "$ARG"
-
-  say "3. send it — an ordinary call, made as a controller"
-  icp canister call "$canister" "$SETTER" --args-file "$ARG" -e "$ENV" >/dev/null
-
-  say "4. read it back out of $canister"
+  say "3. read it back out of $canister"
+  GETTER=get_dummy_secret
+  [ "$canister" = dummy-secret-motoko ] && GETTER=getDummySecret
   GOT=$(icp canister call "$canister" "$GETTER" '()' -e "$ENV" 2>/dev/null \
     | tr -d '\n' | sed -n 's/.*opt "\([^"]*\)".*/\1/p')
 

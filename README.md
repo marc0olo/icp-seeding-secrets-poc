@@ -9,10 +9,7 @@ in an ordinary update call, and only the target canister can recover the
 plaintext.
 
 ```bash
-# encrypt, offline — no identity needed
-DUMMY_SECRET=super-secret-value npm run seal -- --canister <id> --out arg.did
-# send it — an ordinary call, made by a controller of the canister
-icp canister call <canister> set_dummy_secret --args-file arg.did
+DUMMY_SECRET=super-secret-value ./scripts/seal dummy-secret-rust
 ```
 
 Two endpoints, two implementations of them, and one script. Everything on the
@@ -166,21 +163,29 @@ reads it back, and checks it matches. To do it by hand:
 icp network start local --background
 icp deploy -e local --yes
 
-CID=$(icp canister status dummy-secret-rust -e local -i)
-
-# encrypt — offline, and with no identity involved
-DUMMY_SECRET=super-secret-value npm --prefix seed run seal -- \
-  --canister "$CID" --source pocketic --out /tmp/arg.did
-
-# send it — an ordinary call, made by a controller of the canister
-icp canister call dummy-secret-rust set_dummy_secret --args-file /tmp/arg.did -e local
+DUMMY_SECRET=super-secret-value ./scripts/seal dummy-secret-rust
 
 icp canister call dummy-secret-rust get_dummy_secret '()' -e local
 # (variant { Ok = opt "super-secret-value" })
 ```
 
-For the Motoko canister, call `setDummySecret` and `getDummySecret` — each
-follows its own language's naming convention.
+`scripts/seal` is a wrapper over two steps that are worth seeing apart, because
+only one of them involves you:
+
+```bash
+CID=$(icp canister status dummy-secret-rust -e local -i)
+
+# 1. encrypt — offline, and with no identity involved
+DUMMY_SECRET=super-secret-value npm --prefix seed run seal -- \
+  --canister "$CID" --out /tmp/arg.did
+
+# 2. send it — an ordinary call, made by a controller of the canister
+icp canister call dummy-secret-rust set_dummy_secret --args-file /tmp/arg.did -e local
+```
+
+For the Motoko canister, pass `dummy-secret-motoko` and read it back with
+`getDummySecret` — each implementation names its methods the way its own
+language does, and the wrapper picks the right one.
 
 ### `--source` is not optional, and not guessable
 
@@ -240,7 +245,8 @@ fine: the controller is whoever seeded the secret, and already knows it.
 rust/canister/         the Rust canister — the reference implementation
 motoko/canister/       the same thing in Motoko
 seed/src/index.ts      the seeding script
-scripts/local-test.sh  the round trip, one command
+scripts/seal           encrypt a secret and send it, one command
+scripts/local-test.sh  the round trip, both canisters
 
 motoko/bls12-381/      EXPERIMENTAL, UNAUDITED BLS12-381 for Motoko
 motoko/vetkeys/        EXPERIMENTAL, UNAUDITED vetKD layer on it
