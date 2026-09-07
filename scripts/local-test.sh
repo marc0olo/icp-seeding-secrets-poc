@@ -40,10 +40,9 @@ SECRET_VALUE="sk-local-test-$(date +%s)-do-not-use"
 TEST_IDENTITY=sealed-secrets-test
 
 # Nothing here exports an identity. Sealing does not need one (encryption is
-# offline; `icp canister call` signs the send). The e2e harness brings its own,
-# generated in-process from a fixed seed — authorise_e2e adds its principal as a
-# controller, which is also what lets the suite test the controller gate with a
-# second, anonymous caller.
+# offline; `icp canister call` signs the send). The e2e harness is an in-process
+# client, so it does need a signing key — it generates its own from a published
+# fixed seed, and authorise_e2e makes that principal a controller.
 ARGS_FILE="$(mktemp -t sealed-secrets-args.XXXXXX)"
 
 say()  { printf '\n\033[1m== %s\033[0m\n' "$*"; }
@@ -64,6 +63,7 @@ ensure_client() {
 
 # The e2e suite calls controller-gated endpoints in-process, so its own
 # principal has to be a controller. Idempotent: adding one twice is a no-op.
+# It keeps a second, anonymous caller of its own to prove the gate rejects one.
 authorise_e2e() {
   ensure_client
   local principal

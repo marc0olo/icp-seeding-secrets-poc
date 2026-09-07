@@ -10,20 +10,34 @@
  *   npx tsx src/e2e.ts --print-principal            # who to authorise
  *   npx tsx src/e2e.ts --canister <id> --host <url> --source pocketic
  *
- * The suite needs BOTH a controller and a non-controller, because one of the
- * things it asserts is that the controller gate actually gates. It therefore
- * cannot run as the anonymous principal — that would have to be a controller,
- * and the gate test would pass vacuously.
+ * # Why this needs an identity of its own
  *
- * So it makes its own caller: an Ed25519 identity derived from the fixed seed
- * below, which never leaves this process and is not a secret (it is published,
- * right here, and only ever authorised on a throwaway local canister). Run
- * `--print-principal`, add that principal as a controller, then run the suite:
+ * This is an **in-process** client: most assertions build a ciphertext here and
+ * immediately call the canister, branching on the typed result. Update calls
+ * have to be signed, so the process needs a signing key. Three ways to get one,
+ * and only the third is acceptable:
+ *
+ *   1. Run as anonymous. Rejected — the suite asserts that anonymous callers are
+ *      turned away, so making that principal a controller would pass the gate
+ *      test vacuously.
+ *   2. Export the icp-cli identity. Rejected — nothing else in this repo asks
+ *      you to put a private key on disk, and a test harness is a poor reason to
+ *      start.
+ *   3. Generate one. An Ed25519 identity from the fixed seed below, which never
+ *      leaves this process and is not a secret: it is published right here, and
+ *      only ever authorised on a throwaway local canister.
  *
  *   icp canister settings update <canister> --add-controller <principal> -e local
  *
- * That is why nothing here asks you to export an identity. `scripts/local-test.sh`
- * wires up both steps.
+ * `scripts/local-test.sh` wires up both steps.
+ *
+ * Note this is a property of being in-process, not of the assertions themselves.
+ * `icp canister call --identity anonymous` works, so a shell harness could test
+ * the gate with no key at all — which is what the minimal PoC on `main` does,
+ * driving everything through icp-cli. The trade is that shell assertions parse
+ * Candid text where these branch on discriminated unions, and one client here
+ * drives both canisters unchanged, which is the interoperability claim this
+ * repo makes.
  */
 
 import { HttpAgent, Actor, AnonymousIdentity } from "@icp-sdk/core/agent";

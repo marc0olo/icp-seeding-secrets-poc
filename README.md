@@ -707,9 +707,9 @@ Individually:
 cargo test          # golden vectors, name validation, key derivation
 cd seed && npm test # the SAME golden vectors, in TypeScript
 
-# against a running canister. The suite brings its own caller — it needs both a
-# controller and a non-controller, since one of the things it checks is that the
-# controller gate gates — so authorise it once, then run it.
+# against a running canister. The suite is an in-process client, so it needs a
+# signing key; it generates its own from a published seed rather than asking you
+# to export one. Authorise that principal once, then run it.
 cd seed
 icp canister settings update <id> --add-controller "$(npm run --silent e2e -- --print-principal)" -e local
 npm run e2e -- --canister <id> --host http://127.0.0.1:8010 --source pocketic
