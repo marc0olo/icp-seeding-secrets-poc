@@ -53,40 +53,35 @@ for that key — which need not be the calling canister's own. What binds the ke
 to _your_ canister is not which subnet serves it, but that the derivation takes
 the **caller's** canister id as an input.
 
-Note what that does *not* fix: the key is still visible to the subnet, for the
-reasons above. What changes is that a client can encrypt to a canister offline,
-and only that canister can obtain the matching key. Trusting the subnet with the
-plaintext remains a requirement —
-[why this design needs a confidential subnet](#why-this-design-needs-a-confidential-subnet).
+### This uses vetKeys in the less common direction
 
-### Could the canister just generate a keypair?
+Most vetKeys designs put the canister on the _outside_ of the secret, and that
+is worth knowing before reading any further, because this one does the opposite.
 
-On a confidential subnet, very nearly — and it is worth being straight about
-that. `raw_rand` is not retrievable from outside the subnet: the random tape is
-a consensus artifact, it is not in the certified state tree, and peer-to-peer
-transport authenticates both ends as registered nodes. A key generated from it
-would be protected by exactly what protects a vetKey: SEV-SNP. **Confidentiality
-is not the reason to choose vetKD.**
+|                              | transport key held by | plaintext ends up in |
+| ---------------------------- | --------------------- | -------------------- |
+| `KeyManager`, encrypted maps | the **client**        | the user's browser   |
+| this PoC                     | the **canister**      | canister memory      |
 
-Four things are, and only the first is specific to seeding:
+In those designs the canister is a relay: it hands the encrypted key to the user,
+never holds a transport secret key, and never sees the plaintext of anything.
+Nothing about them needs a special subnet.
 
-- **The public key is derivable offline.** A client computes it from a published
-  master key and the canister id. With a self-generated key it has to _fetch_
-  one, over a path that boundary nodes terminate — so it must either trust that
-  reply or verify a certificate. Recoverable with certified data, at the cost of
-  building and reviewing that.
-- **You can seal before the canister has ever run.** The id is enough. A
-  self-generated key needs deploy, execute, and fetch first.
-- **The key outlives the canister's memory.** Reinstall and vetKD returns the
-  same key; a self-generated one is gone, and every ciphertext with it.
-- **Key quality does not depend on the canister's code.** A weak seed, or a key
-  that leaks into a log, is invisible to whoever is encrypting. With vetKD the
-  key comes from the protocol and the client never asks the canister for it at
-  all, so there is nothing about the canister's implementation to get right.
+Here the canister is the **reader** — it is the thing that will use the secret,
+in an outcall header — so it unwraps the key itself. Two consequences follow, and
+both are deliberate:
 
-For one credential in a canister you control, this is a close call. It stops
-being one as soon as clients should not have to trust the canister's code, or
-ciphertext has to survive a reinstall, or different readers need different keys.
+- the vetKey and the decrypted secrets live in canister memory, which is
+  replicated to every node and checkpointed to disk, so **the nodes of its subnet
+  can see both**;
+- protecting them there is SEV-SNP's job, not vetKD's.
+
+**So what does this actually buy?** The secret never travels in the clear. Not in
+an ingress message, not through a boundary node, not in a manifest, a shell
+history, or a CI log — and the ciphertext is useless to anyone but this one
+canister. That is a real and sufficient goal on its own, and it is the part
+vetKD solves. Everything after the secret lands is the subnet's problem, which is
+why this belongs on a fully SEV-SNP subnet and nowhere else.
 
 ## The flow
 
@@ -126,50 +121,21 @@ And **only the sending step involves you.** Encrypting is pure computation with
 no key of yours in it, so anyone can seal a secret _to_ this canister — and only
 the canister can open it. The call is what needs a signature, from a controller.
 
-## What the canister actually receives
+### What comes back
 
-Not a key. An `EncryptedVetKey` — three curve points — which it unwraps itself.
-Three things about that are not obvious from the call.
+Not a key: an `EncryptedVetKey`. Two things about that are worth knowing, because
+neither is visible in the call.
 
-**The vetKey is a BLS signature**, and the rest follows from that. The derived
-public key is an IBE _master_ public key, and the private key for a label is the
-**signature over that label** under the matching secret. "Derive the key for this
-label" and "sign this label" are the same operation.
+**The vetKey is a BLS signature** over `KEY_LABEL`. That is why "derive the key
+for this label" and "sign this label" are the same operation, and it is what
+makes the reply verifiable at all.
 
-**It arrives encrypted, and no node ever assembles it.** The canister sends a
-single-use _transport public key_ with the request, and that key goes into the
-share computation itself: each node produces a share **already encrypted under
-it** (`create_encrypted_key_share`), and combining encrypted shares yields an
-encrypted key (`combine_encrypted_key_shares`). At no point does any replica hold
-the plaintext vetKey — not the ones that computed it, and not whatever subnet
-served the request, which may not be this canister's own.
-
-**The canister does decrypt it**, with the transport secret key it generated and
-never sent. So the plaintext does exist, in the canister's memory — which is
-replicated to every node of its subnet and checkpointed to disk like any other
-canister state, and protected there by SEV-SNP and nothing else.
-
-What the transport key buys, then, is not that the key is never in the clear
-anywhere. It is that the plaintext never leaves the requesting canister's own
-state: never in a message, never in a cross-subnet stream, never known to the
-subnet that derived it.
-
-**Unwrapping is also a verification**, and that is what stops a forged reply.
-`decrypt_and_verify` does three things, in order:
-
-1. rejects a reply whose two randomisers disagree, before unwrapping anything;
-2. strips the transport blinding, which cancels exactly;
-3. checks the result is a valid BLS signature over `KEY_LABEL` under `dpk`.
-
-Step 3 is the one that matters. Without it the canister accepts whatever the
-reply contained; with it, forging a reply means forging a BLS signature under a
-key you do not have. The algebra is in
-[`ic-vetkeys`](https://github.com/dfinity/vetkeys) — `EncryptedVetKey::decrypt_and_verify`.
-
-Only then does it decrypt the secret, and that step is authenticated too: after
-recovering the plaintext it recomputes the scalar the ciphertext commits to and
-checks it matches, so a wrong key gives an error rather than plausible-looking
-garbage.
+**It arrives encrypted, and no node ever assembles it.** The transport public key
+goes into the share computation itself, so each node produces a share already
+encrypted under it. `decrypt_and_verify` then strips that blinding and checks the
+result really is a signature over `KEY_LABEL` — which is what makes a forged
+reply useless. The algebra is in
+[`ic-vetkeys`](https://github.com/dfinity/vetkeys).
 
 ## Storing more than one secret
 
@@ -271,57 +237,54 @@ To confirm the right secret is deployed _without_ an endpoint like this, seal
 the value you expect and have the canister compare plaintexts, answering one
 bit. The `standardization-proposal` branch does that.
 
-## Why this design needs a confidential subnet
+## What else this does not protect against
 
-vetKeys is more often used the other way round, and the difference is what makes
-SEV-SNP load-bearing here rather than a bonus.
+[Why this needs vetKD](#why-this-needs-vetkd) covers the main trade: the secret
+is protected in transit, and SEV-SNP is what protects it once it lands. Three
+smaller things are worth stating outright.
 
-|                              | transport key generated by | plaintext vetKey lives in |
-| ---------------------------- | -------------------------- | ------------------------- |
-| `KeyManager`, encrypted maps | the **client**             | the user's browser        |
-| this PoC                     | the **canister**           | canister memory           |
+**This PoC does not check that it is on a SEV-SNP subnet.** A real deployment
+must; the [`standardization-proposal`](../../tree/standardization-proposal)
+branch has that preflight.
 
-In those patterns the canister is a _relay_: it hands the `EncryptedVetKey` to
-the user and never holds a transport secret key, so the plaintext key never
-enters replicated state at all. Nothing needs a confidential subnet.
+**The controller can read the secret.** They can install code that decrypts it —
+vetKD binds the key to the _canister id_, not the module hash — or read it out of
+a canister snapshot. For this use case that is usually fine: the controller is
+whoever seeded the secret, and already knows it.
 
-Here the canister is the _reader_ — it is the thing that needs the secret, to put
-in an outcall header — so it generates the transport key and unwraps the reply
-itself. The plaintext key, and the plaintext secrets, therefore live in canister
-memory: replicated to every node, checkpointed to disk, and protected there by
-SEV-SNP and nothing else.
+**Whoever deploys becomes the controller**, and both endpoints accept only the
+controller. Nothing here creates or exports an identity. On a machine with none
+configured that principal is _anonymous_, which deploys fine but makes the check
+vacuous, since anyone can call as anonymous.
 
-So nothing here bends the protocol. No node ever assembles the key, exactly as
-designed; the canister holding it is the _point_, since the canister is the
-intended recipient. What follows from choosing that topology is that the subnet
-has to be one you would trust with the plaintext.
+## Could the canister just generate a keypair?
 
-## What this protects, and what it does not
+On a confidential subnet, very nearly — and it is worth being straight about
+that. `raw_rand` is not retrievable from outside the subnet: the random tape is
+a consensus artifact, it is not in the certified state tree, and peer-to-peer
+transport authenticates both ends as registered nodes. A key generated from it
+would be protected by exactly what protects a vetKey: SEV-SNP. **Confidentiality
+is not the reason to choose vetKD.**
 
-**Protects:** the secret in transit. It never appears in an ingress message, a
-Candid argument, shell history, or a CI log — and the ciphertext is bound to one
-canister id, so replaying it elsewhere is useless.
+Four things are, and only the first is specific to seeding:
 
-**Does not protect:** the secret at rest, on its own. The plaintext secrets and
-the derived key both live in canister memory, which is replicated state,
-checkpointed to disk on every node, and shipped in state sync. On an ordinary
-subnet a node operator can read them out of a checkpoint. **A SEV-SNP subnet is
-what changes that** — guest memory encrypted under a key the hypervisor cannot
-access, plus a data partition keyed to the launch measurement. See
-[why this design needs one](#why-this-design-needs-a-confidential-subnet).
+- **The public key is derivable offline.** A client computes it from a published
+  master key and the canister id. With a self-generated key it has to _fetch_
+  one, over a path that boundary nodes terminate — so it must either trust that
+  reply or verify a certificate. Recoverable with certified data, at the cost of
+  building and reviewing that.
+- **You can seal before the canister has ever run.** The id is enough. A
+  self-generated key needs deploy, execute, and fetch first.
+- **The key outlives the canister's memory.** Reinstall and vetKD returns the
+  same key; a self-generated one is gone, and every ciphertext with it.
+- **Key quality does not depend on the canister's code.** A weak seed, or a key
+  that leaks into a log, is invisible to whoever is encrypting. With vetKD the
+  key comes from the protocol and the client never asks the canister for it at
+  all, so there is nothing about the canister's implementation to get right.
 
-This PoC does not check whether it is on such a subnet. A real deployment must.
-
-**Whoever deploys is the controller**, and both endpoints accept only the
-controller. Nothing here creates or exports an identity — any client holding a
-controller identity can make the call. On a machine with none configured that is
-the _anonymous_ principal, which deploys fine but makes the check vacuous, since
-anyone can call as anonymous.
-
-**Also does not protect against the controller.** They can install code that
-decrypts the secret — vetKD binds the key to the _canister id_, not the module
-hash — or read it out of a canister snapshot. For this use case that is usually
-fine: the controller is whoever seeded the secret, and already knows it.
+For one credential in a canister you control, this is a close call. It stops
+being one as soon as clients should not have to trust the canister's code, or
+ciphertext has to survive a reinstall, or different readers need different keys.
 
 ## Layout
 
