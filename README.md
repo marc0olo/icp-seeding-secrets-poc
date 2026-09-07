@@ -89,8 +89,8 @@ encrypt to, because anyone able to tamper with that reply could hand it a key
 they control.
 
 And **the encrypting half needs no identity at all.** Deriving a public key and
-encrypting to it are pure computation — the ciphertext is the same whoever
-produces it.
+encrypting to it are pure computation: no key of yours goes in, so anyone can
+seal a secret *to* this canister. Only the canister can open it.
 
 Only the call needs a signature, and what it needs is a **controller of the
 canister** — any identity that controls it, from any client. This PoC uses

@@ -68,15 +68,19 @@ persistent actor DummySecret {
   /// Stores a secret that was encrypted to this canister's public key.
   ///
   /// The canister holds no private key — it has nowhere to hide one, since its
-  /// whole memory is replicated — so it asks the subnet to reconstruct one, uses
-  /// it once, and lets it go.
+  /// whole memory is replicated — so it has one reconstructed on demand, uses it
+  /// once, and lets it go.
   public shared ({ caller }) func setDummySecret(ciphertext : Blob) : async Result<()> {
     // Whoever seeds the secret should be whoever controls the canister.
     // Ungated, anyone could overwrite it with a value of their choosing.
     if (not caller.isController()) { return #Err("only a controller may set the secret") };
 
-    // 1. A single-use transport key, so the subnet's reply comes back encrypted
-    //    to us rather than readable by every node that helped produce it.
+    // 1. A single-use transport keypair. The private half never leaves here.
+    //
+    //    This is what keeps the vetKey off the wire and out of replicated state:
+    //    the nodes do not reconstruct it and then encrypt it, they compute their
+    //    shares ALREADY encrypted under the public half. The plaintext key
+    //    exists nowhere until step 3 unwraps it, here.
     let seed = try { await ic.raw_rand() } catch (e) {
       return #Err("raw_rand: " # e.message());
     };
@@ -97,10 +101,17 @@ persistent actor DummySecret {
       return #Err("vetkd_derive_key: " # e.message() # " — is " # KEY_NAME # " available here?");
     };
 
-    // 3. Unwrap it and check it really is our key. Verifying against a public
-    //    key the same subnet supplies is circular — a subnet that would lie here
-    //    already holds the master key. The non-circular check is on the client,
-    //    which derives the key offline and refuses to encrypt on a mismatch.
+    // 3. Unwrap it, and check that what fell out really is our key.
+    //
+    //    decryptAndVerify rejects a malformed reply whose two halves disagree,
+    //    strips the transport blinding, then verifies the result is a valid BLS
+    //    signature over IDENTITY under dpk. That last step is what makes a forged
+    //    reply useless.
+    //
+    //    Asking the same place for the public key is circular — a subnet that
+    //    would lie here already holds the master key. The non-circular check is
+    //    on the client, which derives offline and refuses to encrypt on a
+    //    mismatch.
     let reported = try {
       await ic.vetkd_public_key({ canister_id = null; context = CONTEXT; key_id = keyId });
     } catch (e) {

@@ -2,7 +2,7 @@
 //!
 //! The whole mechanism, in two endpoints:
 //!
-//!   set_dummy_secret(ciphertext)  ask the subnet for our private key, decrypt
+//!   set_dummy_secret(ciphertext)  have our private key derived, then decrypt
 //!   get_dummy_secret()            hand the plaintext back so you can see it worked
 //!
 //! The client encrypts to a public key it derives **offline** — no network call,
@@ -63,7 +63,7 @@ fn key_id() -> VetKDKeyId {
 ///
 /// Everything interesting happens here. The canister does not hold a private
 /// key — it has nowhere to hide one, since its whole memory is replicated — so
-/// it asks the subnet to reconstruct one, use it once, and lets it go.
+/// it has one reconstructed on demand, uses it once, and lets it go.
 #[update]
 async fn set_dummy_secret(ciphertext: Vec<u8>) -> Result<(), String> {
     // Whoever seeds the secret should be whoever controls the canister.
@@ -72,8 +72,13 @@ async fn set_dummy_secret(ciphertext: Vec<u8>) -> Result<(), String> {
         return Err("only a controller may set the secret".to_string());
     }
 
-    // 1. A single-use transport key, so the subnet's reply is encrypted to us
-    //    rather than sent in the clear where every node could read it.
+    // 1. A single-use transport keypair. The private key never leaves here; the
+    //    public half goes out with the request.
+    //
+    //    This is what keeps the vetKey off the wire and out of replicated state:
+    //    the nodes do not reconstruct it and then encrypt it, they compute their
+    //    shares ALREADY encrypted under this public key. The plaintext key
+    //    therefore exists nowhere until step 3 unwraps it, here.
     let seed = raw_rand().await.map_err(|e| format!("raw_rand: {e}"))?;
     let tsk = TransportSecretKey::from_seed(seed).map_err(|e| format!("transport key: {e}"))?;
 
@@ -91,11 +96,18 @@ async fn set_dummy_secret(ciphertext: Vec<u8>) -> Result<(), String> {
     .await
     .map_err(|e| format!("vetkd_derive_key: {e} — is {KEY_NAME} available here?"))?;
 
-    // 3. Unwrap it and check it really is our key. `decrypt_and_verify` needs the
-    //    matching public key; we ask the subnet for that too, which is admittedly
-    //    circular — a subnet that would lie here already holds the master key.
-    //    The check that is NOT circular happens on the client, which derives the
-    //    key offline and refuses to encrypt if this canister disagrees.
+    // 3. Unwrap it, and check that what fell out really is our key.
+    //
+    //    `decrypt_and_verify` does three things: rejects a malformed reply whose
+    //    two halves disagree, strips the transport blinding, and then verifies
+    //    the result is a valid BLS signature over IDENTITY under `dpk`. That
+    //    last step is what makes a forged reply useless.
+    //
+    //    It needs the matching public key, and asking the same place we just
+    //    asked for the private one is admittedly circular — a subnet that would
+    //    lie here already holds the master key. The non-circular check is on the
+    //    client, which derives the key offline and refuses to encrypt on a
+    //    mismatch.
     let dpk_bytes = vetkd_public_key(&VetKDPublicKeyArgs {
         canister_id: None,
         context: CONTEXT.to_vec(),

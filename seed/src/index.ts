@@ -15,8 +15,9 @@
  *   icp canister call dummy-secret-rust set_dummy_secret --args-file /tmp/arg.did -e local
  *
  * That split is deliberate. **Nothing here needs your identity.** Deriving a
- * public key and encrypting to it are pure computation — the ciphertext is the
- * same whoever produces it.
+ * public key and encrypting to it are pure computation: no key of yours goes in,
+ * so anyone can produce a valid ciphertext for this canister. (Each one differs,
+ * because IBE is randomised — but they all open to the same secret.)
  *
  * Only the call needs a signature, and what it needs is a *controller of the
  * canister*: any identity that controls it, from any client. Using icp-cli is
