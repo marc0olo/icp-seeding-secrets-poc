@@ -15,9 +15,13 @@
  *   icp canister call dummy-secret-rust set_dummy_secret --args-file /tmp/arg.did -e local
  *
  * That split is deliberate. **Nothing here needs your identity.** Deriving a
- * public key and encrypting to it are pure computation; only the call needs a
- * signature, and icp-cli makes it with the identity it already holds. So no
- * private key is ever exported to a file for this PoC to work.
+ * public key and encrypting to it are pure computation — the ciphertext is the
+ * same whoever produces it.
+ *
+ * Only the call needs a signature, and what it needs is a *controller of the
+ * canister*: any identity that controls it, from any client. Using icp-cli is
+ * simply convenient, because you already have it and it already holds one. So
+ * no private key is ever exported to a file for this PoC to work.
  *
  * The value is read from the environment, never from argv: argv is visible to
  * anyone who can run `ps`, lands in shell history, and is echoed into CI logs.
@@ -66,7 +70,8 @@ Encrypt a secret for a canister, and print the call argument.
                     NOT inferable from the key name: both networks have a
                     key_1, backed by different master keys.
 
-Then send it with icp-cli, which signs with the identity it already has:
+Then send it as a controller of the canister — icp-cli already holds an
+identity, so there is nothing to export:
 
   icp canister call <canister> set_dummy_secret --args-file <path> -e local
 `.trim();

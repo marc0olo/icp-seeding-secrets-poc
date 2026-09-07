@@ -7,9 +7,10 @@
 # Starts a local network, deploys both canisters, encrypts a secret for each,
 # sends it, reads it back, and checks it came out identical to what went in.
 #
-# Note what this does NOT do: export your identity. Encrypting needs no
-# identity at all — only the call does, and `icp canister call` signs that with
-# the identity icp-cli already holds.
+# Note what this does NOT do: export your identity. Encrypting needs no identity
+# at all; only the call does, and what it needs is a controller of the canister.
+# Any identity that controls it, from any client — this just uses icp-cli,
+# because you already have it and it already holds one.
 #
 # Reading the secret back is only possible because these canisters ship a
 # getter that exists purely so you can watch decryption work. A real canister
@@ -52,7 +53,7 @@ for canister in dummy-secret-rust dummy-secret-motoko; do
   DUMMY_SECRET="$SECRET" npm --prefix seed run --silent seal -- \
     --canister "$CID" --source pocketic --out "$ARG"
 
-  say "3. send it — icp-cli signs with the identity it already has"
+  say "3. send it — an ordinary call, made as a controller"
   icp canister call "$canister" "$SETTER" --args-file "$ARG" -e "$ENV" >/dev/null
 
   say "4. read it back out of $canister"

@@ -11,7 +11,7 @@ plaintext.
 ```bash
 # encrypt, offline — no identity needed
 DUMMY_SECRET=hunter2 npm run seal -- --canister <id> --out arg.did
-# send it, signed by the identity icp-cli already holds
+# send it — an ordinary call, made by a controller of the canister
 icp canister call <canister> set_dummy_secret --args-file arg.did
 ```
 
@@ -61,7 +61,7 @@ sequenceDiagram
     autonumber
     actor Dev as You
     participant Script as seed/src/index.ts
-    participant Cli as icp-cli
+    participant Cli as any controller
     participant Can as the canister
     participant Subnet as the subnet
 
@@ -73,8 +73,9 @@ sequenceDiagram
     Script-->>Dev: the ciphertext, as a call argument
 
     Dev->>Cli: 3. icp canister call set_dummy_secret
-    Cli->>Can: signed with the identity icp-cli already holds
+    Cli->>Can: an ordinary update call, signed
     Note over Cli,Can: opaque to boundary nodes,<br/>and bound to THIS canister id
+    Can->>Can: is_controller(caller)?
 
     Can->>Subnet: raw_rand, then vetkd_derive_key
     Note over Can,Subnet: each node contributes a share —<br/>the reply is encrypted to a<br/>single-use transport key
@@ -89,9 +90,13 @@ encrypt to, because anyone able to tamper with that reply could hand it a key
 they control.
 
 And **the encrypting half needs no identity at all.** Deriving a public key and
-encrypting to it are pure computation. Only the call needs a signature, and
-icp-cli makes it with the identity it already holds — so nothing here asks you
-to export a private key to a file.
+encrypting to it are pure computation — the ciphertext is the same whoever
+produces it.
+
+Only the call needs a signature, and what it needs is a **controller of the
+canister**. Any identity that controls it, from any client. This PoC happens to
+use `icp canister call` because you already have icp-cli and it already holds an
+identity — which is why nothing here asks you to export a private key to a file.
 
 
 ## Try it
@@ -116,7 +121,7 @@ CID=$(icp canister status dummy-secret-rust -e local --json | jq -r .id)
 DUMMY_SECRET=hunter2 npm --prefix seed run seal -- \
   --canister "$CID" --source pocketic --out /tmp/arg.did
 
-# send it — icp-cli signs with the identity it already has
+# send it — an ordinary call, made by a controller of the canister
 icp canister call dummy-secret-rust set_dummy_secret --args-file /tmp/arg.did -e local
 
 icp canister call dummy-secret-rust get_dummy_secret '()' -e local
