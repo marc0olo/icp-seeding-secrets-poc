@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+#
+# Encrypt a secret for a canister and send it.
+#
+#   DUMMY_SECRET=super-secret-value ./scripts/seal.sh dummy-secret-rust exchange-rate-api-key
+#   DUMMY_SECRET=super-secret-value ./scripts/seal.sh dummy-secret-rust exchange-rate-api-key ic
+#
+# Two steps behind one command, and they are worth knowing apart:
+#
+#   1. seed/src/index.ts encrypts. It needs no identity — deriving this
+#      canister's public key and encrypting to it is pure computation.
+#   2. `icp canister call` sends it, signed. That step needs a controller of
+#      the canister — any identity that controls it, from any client. This
+#      uses icp-cli because it already holds one, which is why nothing has
+#      to be exported.
+#
+# Run them by hand if you would rather watch each one; the README shows how.
+
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+CANISTER=${1:-}
+NAME=${2:-}
+ENV=${3:-local}
+if [ -z "$CANISTER" ] || [ -z "$NAME" ] || [ -z "${DUMMY_SECRET:-}" ]; then
+  echo "usage: DUMMY_SECRET=<value> $0 <canister-name> <secret-name> [environment]" >&2
+  echo "       e.g. DUMMY_SECRET=super-secret-value $0 dummy-secret-rust exchange-rate-api-key" >&2
+  exit 1
+fi
+
+# Which master-key table to derive from. Not guessable from the key name —
+# mainnet and a local network both have a key_1, backed by different keys.
+SOURCE=pocketic
+[ "$ENV" = ic ] && SOURCE=mainnet
+
+# Each canister names its methods the way its own language does.
+METHOD=set_dummy_secret
+[ "$CANISTER" = dummy-secret-motoko ] && METHOD=setDummySecret
+
+ARG=$(mktemp)
+trap 'rm -f "$ARG"' EXIT
+
+( cd seed && [ -d node_modules ] || npm install --silent >/dev/null 2>&1 )
+
+CID=$(icp canister status "$CANISTER" -e "$ENV" -i)
+npm --prefix seed run --silent seal -- \
+  --canister "$CID" --source "$SOURCE" --name "$NAME" --out "$ARG"
+icp canister call "$CANISTER" "$METHOD" --args-file "$ARG" -e "$ENV"

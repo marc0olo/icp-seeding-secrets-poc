@@ -19,6 +19,9 @@ seed/dist
 .env
 .env.*
 
-# mops
-motoko/.mops/
-motoko/.bench/
+# mops vendors dependencies into a .mops/ directory per package. Matched with a
+# leading ** rather than a fixed prefix: the packages moved once already, and a
+# path-anchored pattern silently stopped matching and committed 602 files.
+# mops.lock IS committed, so a checkout resolves the same versions.
+**/.mops/
+**/.bench/

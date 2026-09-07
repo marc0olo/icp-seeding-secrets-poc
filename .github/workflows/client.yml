@@ -19,7 +19,7 @@ env:
 
 jobs:
   client:
-    name: typecheck, golden vectors, diagrams
+    name: typecheck and diagrams
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/dfinity/icp-dev-env-all:v2.0.0
@@ -37,15 +37,8 @@ jobs:
         working-directory: seed
         run: npm run typecheck
 
-      # Asserted to be byte-identical to the Rust vectors, so an encoding drift
-      # in either language fails one of the two suites.
-      - name: Golden vectors
-        working-directory: seed
-        run: npm test
-
-      # GitHub renders mermaid, but a block with a syntax error renders as an
-      # error box rather than a diagram — silently user-visible. One had a `;`
-      # in message text, which mermaid treats as a statement separator.
-      - name: Mermaid diagrams parse
+      # GitHub renders a mermaid block with a syntax error as an error box
+      # rather than a diagram — silently broken, and visibly so.
+      - name: Mermaid diagram parses
         working-directory: seed
         run: npm run check:diagrams

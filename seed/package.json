@@ -1,30 +1,25 @@
 {
-  "name": "sealed-secrets-seed",
+  "name": "dummy-secret-seed",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Host-side tool that seals a secret with vetKD IBE and submits it to the canister",
-  "bin": {
-    "seal": "./dist/index.js"
-  },
+  "description": "Seals a secret with vetKD IBE and sends it to the canister",
   "scripts": {
-    "build": "tsc",
     "seal": "tsx src/index.ts",
-    "test": "tsx --test src/format.test.ts",
     "typecheck": "tsc --noEmit",
-    "e2e": "tsx src/e2e.ts",
-    "bindings": "icp-bindgen --did-file ../rust/canister/sealed_secrets_canister.did --out-dir src/declarations --declarations-typescript --declarations-flat --force",
-    "check:diagrams": "node ../scripts/check-diagrams.mjs ../README.md ../FOLLOW-UPS.md"
+    "check:diagrams": "node ../scripts/check-diagrams.mjs ../README.md"
   },
   "dependencies": {
     "@icp-sdk/core": "^6.1.0",
     "@icp-sdk/vetkeys": "^0.7.0"
   },
   "devDependencies": {
-    "@icp-sdk/bindgen": "^0.4.0",
     "@types/node": "^22.10.0",
     "mermaid": "^11.17.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }

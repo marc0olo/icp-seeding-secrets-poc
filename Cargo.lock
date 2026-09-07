@@ -265,6 +265,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "dummy-secret-canister"
+version = "0.1.0"
+dependencies = [
+ "candid",
+ "ic-cdk",
+ "ic-cdk-management-canister",
+ "ic-dummy-getrandom-for-wasm",
+ "ic-vetkeys",
+]
+
+[[package]]
 name = "either"
 version = "1.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -827,36 +838,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
-name = "sealed-secrets-canister"
-version = "0.1.0"
-dependencies = [
- "candid",
- "ic-cdk",
- "ic-cdk-management-canister",
- "ic-dummy-getrandom-for-wasm",
- "ic-stable-structures",
- "ic-vetkeys",
- "sealed-secrets-core",
- "serde",
- "serde_bytes",
- "sha2",
- "subtle",
- "zeroize",
-]
-
-[[package]]
-name = "sealed-secrets-core"
-version = "0.1.0"
-dependencies = [
- "candid",
- "hex",
- "ic-cdk-management-canister",
- "ic-vetkeys",
- "rand",
- "rand_chacha",
-]
-
-[[package]]
 name = "serde"
 version = "1.0.229"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1113,18 +1094,6 @@ checksum = "fc1de2c688dc15305988b563c3854064043356019f97a4b46276fe734c4f07ea"
 dependencies = [
  "crypto-common",
  "subtle",
-]
-
-[[package]]
-name = "vectorgen"
-version = "0.1.0"
-dependencies = [
- "candid",
- "hex",
- "ic-vetkeys",
- "ic_bls12_381",
- "sealed-secrets-core",
- "sha2",
 ]
 
 [[package]]

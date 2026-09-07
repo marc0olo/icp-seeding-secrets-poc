@@ -1,10 +1,9 @@
 /// Tests for offline derived-public-key computation.
 ///
-/// The vectors come from `vectorgen`, which computes them through
-/// `sealed_secrets_core::derive_public_key` — the same path the Rust canister
-/// takes. Agreeing with them means a Motoko canister derives the identical key
-/// the Rust one does, and therefore checks the subnet's reply against the same
-/// constant.
+/// The vectors come from `vectorgen`, which derives them with `ic-vetkeys` —
+/// the audited Rust implementation. Agreeing with them means a Motoko canister
+/// derives the identical key a Rust one does, under the same context the
+/// canisters in this repo use.
 
 import { test } "mo:test";
 import G2 "mo:sealed-secrets-bls/G2";
@@ -53,10 +52,10 @@ type Vector = {
 };
 
 let vectors : [Vector] = [
-  { source = #Mainnet; keyName = "key_1"; canisterId = "00000000000000000101"; context = "01156963702d7365616c65642d736563726574732d763100"; expected = "a163d3160505c1144b654f4e384d7fe1b43f95733bf1518a515578024d3804c28a91ad83ead4552deb4f3a0c7c6e2f1e0cdf045744abf52e3cff5d8440bb5ee78fc2df155f35dbd5201767426ca6ba5796d89a3766a9f12b2a7483b5348f552a" },
-  { source = #Mainnet; keyName = "test_key_1"; canisterId = "00000000000000010101"; context = "01156963702d7365616c65642d736563726574732d763100"; expected = "aef30c2eeca9a466dd31b56b122547d1571d04aea90c7924cd7d08022042497451e7ebd00b4e40e4334ee2c4be8e4714097d0716158a31d1ab75152e6eb1cc89fd273869306c2054de6c2bc191c8ceeb4fadeac97a7afd6b6142a8e7d3895d1c" },
-  { source = #PocketIc; keyName = "key_1"; canisterId = "00000000000000000101"; context = "01156963702d7365616c65642d736563726574732d763100"; expected = "913a2d8245103febc15b48154fbba011343293f18909648ceeb4c8de6cf7d1642a37182fdd55d4ddfda676d5924ffece053f156aa89f84d76aab5f7e3a5902e62d0befc56b74eec7ea3ae1dff9e0940e2f3f3b7196acbe34ab767daf9ed48527" },
-  { source = #PocketIc; keyName = "test_key_1"; canisterId = "00000000000000020101"; context = "01156963702d7365616c65642d736563726574732d76310464656d6f"; expected = "af43dae7da1ec0a7dc3806b8dbd46fd56ea8047782a35ee255d801dc6a8e0f48021588d7a26bf0bca2dde12f6473db0d0c9e08c8727d631a20f78324c8d051ac62592be719e557c216591269c4c0bb2bb2c12a5f6fb56376d85991215269dd6e" },
+  { source = #Mainnet; keyName = "key_1"; canisterId = "00000000000000000101"; context = "64756d6d792d7365637265742d706f63"; expected = "a487b4d783a87f9e8d63fee0fcb6d94cd7507665960dc6e09555173fc74a6a4ddd3ab45bb494903687ed133b96abb71004f67b0fd4a5bf8e1b83aa0e238f5faf0a2ff589de7ab47a81e1f5a7db3ba2783e758d7ee7d40214204bb644362ff73c" },
+  { source = #Mainnet; keyName = "test_key_1"; canisterId = "00000000000000010101"; context = "64756d6d792d7365637265742d706f63"; expected = "b4f53f3ce01c85ce3299d044ce32f924f79796b6cd2a84cdc74c0ac31ffdd022dd27a87d567806e17333d05ed2924190059c2b81433b1b500a4f90180327b5db855bb4fa82405f874f17b940b8ffd9ce45618184284d7faa83a9e5fa7e5a7360" },
+  { source = #PocketIc; keyName = "key_1"; canisterId = "00000000000000000101"; context = "64756d6d792d7365637265742d706f63"; expected = "8b9e87a030deed4f85f89d48a6271070898fb1e9a5e1099536aa21f96b444498db0813c98ddc9d7e9356feb689f37b2e033859f1c03690007de3dee4e8ebb7e1a2da3546452cb684ce698bdae3571afecfc1c107ee86f43c45a6f49e4f9054fb" },
+  { source = #PocketIc; keyName = "test_key_1"; canisterId = "00000000000000020101"; context = "64756d6d792d7365637265742d706f63"; expected = "b644f8c5a4a28ef28669c013e26dc73976241aea7e2c0e471c2d192b9776c614cacb719364d5efe145a7c5c00181a2e70bb4d2e5280ed4355cd2a0291d99e06630500b7cb3cd2d99174e572a0b5414c11ec11833aa3ad0e3d0e78dcda64713c4" },
 ];
 
 func derive(v : Vector) : G2.Affine {

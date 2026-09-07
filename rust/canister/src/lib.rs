@@ -1,499 +1,205 @@
-//! A proof-of-concept canister that receives secrets sealed with vetKD IBE,
-//! decrypts them in memory, and uses them.
+//! A canister that receives secrets, encrypted with vetKD IBE.
 //!
-//! The point of the exercise: a client encrypts an API key to a public key it
-//! derives offline, sends the ciphertext in an ordinary update call, and only
-//! this canister — on a subnet holding the vetKD key — can recover the plaintext.
-//! On a SEV-SNP subnet the decrypted value is protected from node operators by
-//! memory encryption and a launch-measurement-keyed data disk.
+//! The whole mechanism, in two endpoints:
 //!
-//! The endpoints fall into three groups:
+//!   set_dummy_secret(name, ciphertext)  decrypt and store under that name
+//!   get_dummy_secret(name)              hand the plaintext back so you can see it worked
 //!
-//! - **The proposed standard.** `icp_sealed_secret_{info,set}` are what any tool
-//!   needs to seal; `matches` is what an operator needs to confirm the right
-//!   value is deployed; `list`, `unset` and `self_test` are convenience.
-//! - **The worked example**, and the reason any of this exists:
-//!   `call_api_with_secret` authenticates an outbound HTTPS request with a sealed
-//!   secret, and `strip_response` makes its reply deterministic enough for
-//!   consensus. Neither is part of the standard — a real canister writes its own.
-//! - **A test hook.** `secret_reveal` returns a plaintext and exists only behind
-//!   `--features test-hooks`, so a human can watch the round trip work.
-//!
-//! Read `README.md` before deploying this anywhere real. In particular: a
-//! controller can read the plaintext — by installing code that decrypts, or by
-//! snapshotting the heap — because vetKD binds the key to the canister ID rather
-//! than the module hash. For the case this is built for that is not a defect: the
-//! controller is whoever seeded the secret. It matters only if your threat model
-//! puts the controller in scope, and the answer there is governance, not
-//! blackholing, which would leave a canister that can never be seeded or rotated.
+//! The client encrypts to a public key it derives **offline** — no network call,
+//! nothing to trust — and only this canister can have the matching private key
+//! derived for it. See ../../README.md.
 
-mod keys;
-mod store;
-mod types;
-
-use candid::CandidType;
-use ic_cdk::{init, post_upgrade, query, update};
+use ic_cdk::{query, update};
 use ic_cdk_management_canister::{
-    HttpHeader, HttpMethod, HttpRequestArgs, HttpRequestResult, TransformArgs,
+    raw_rand, vetkd_derive_key, vetkd_public_key, VetKDCurve, VetKDDeriveKeyArgs, VetKDKeyId,
+    VetKDPublicKeyArgs,
 };
-use sealed_secrets_core::validate_secret_name;
-use serde::Deserialize;
-use serde_bytes::ByteBuf;
-use sha2::{Digest, Sha256};
-use subtle::ConstantTimeEq;
+use ic_vetkeys::{DerivedPublicKey, EncryptedVetKey, IbeCiphertext, TransportSecretKey, VetKey};
+use std::cell::RefCell;
+use std::collections::BTreeMap;
 
-use store::{Config, SealedRecord};
-use types::{KeySource, SealedSecretEntry, SealedSecretInfo, SealedSecretsError, SelfTestReport};
+/// The vetKD **context**: what selects the *keypair*.
+///
+/// The derivation is caller -> context, so changing this byte for byte gives
+/// this canister an entirely different keypair. One context per purpose: a
+/// canister using vetKD for two unrelated things gives each its own, and neither
+/// can open the other's ciphertext.
+const CONTEXT: &[u8] = b"dummy-secret-poc";
 
-/// Version of the wire interface this canister speaks.
-const STANDARD_VERSION: u32 = 1;
+/// The label under which every secret here is sealed — in vetKD terms the **IBE
+/// identity**, and the `input` to `vetkd_derive_key`.
+///
+/// Not a key, and not a secret's name. `(caller, context)` fixes a keypair; this
+/// picks one of the infinitely many keys under it, and one key opens every
+/// ciphertext sealed to it. That is why storing many secrets costs exactly one
+/// derivation: they all share this label, and the per-secret names below are
+/// just map keys that never reach vetKD.
+///
+/// Giving each secret its own label would cost a separate `vetkd_derive_key` —
+/// 26 billion cycles each — and buy nothing, because there is no privilege
+/// boundary inside a canister to enforce: this code can derive any label's key
+/// whenever it likes.
+const KEY_LABEL: &[u8] = b"dummy-secrets";
 
-/// Where `call_api_with_secret` sends its authenticated request.
-///
-/// postman-echo's `/basic-auth` genuinely **evaluates** the credential — the
-/// documented `postman:password` gets `200 {"authenticated":true}`, anything else
-/// gets `401` — and it does not echo the credential back, which matters because
-/// the response body enters replicated state on every node.
-///
-/// Using a *publicly documented* credential is right for a demo and wrong for
-/// production, and the distinction is worth being precise about. A published
-/// credential proves nothing about **secrecy**. But it is ideal for proving the
-/// **mechanism**, because the test can seal the correct value and see `200`, then
-/// seal a wrong one and see `401`, with no setup and no real key anywhere. An
-/// endpoint that ignores `Authorization` could not show that: it answers `200`
-/// whatever the canister sends.
-///
-/// Point this at your own API for anything real.
-const DEMO_API_ENDPOINT: &str = "https://postman-echo.com/basic-auth";
+/// The vetKD key to use. `key_1` exists on mainnet and on a local network, so
+/// one constant covers both. Deliberately not an install argument, because
+/// `#[init]` does not re-run on upgrade and an empty key name fails with a
+/// message that does not point at the cause.
+const KEY_NAME: &str = "key_1";
 
-/// Installation arguments.
-///
-/// Just the key name. The canister asks the subnet for its public key rather
-/// than deriving it from a compiled-in constant, so the same build runs against
-/// a local network and mainnet with nothing to configure — and nothing to get
-/// wrong in a way that silently orphans every sealed ciphertext.
-#[derive(CandidType, Deserialize, Debug, Clone)]
-pub struct InitArgs {
-    /// vetKD key name, e.g. `key_1`.
-    pub key_name: String,
+thread_local! {
+    /// The vetKey, cached after the first use.
+    ///
+    /// Safe to cache: derivation is deterministic in
+    /// `(caller, context, input, key_id)`, none of which depends on the secrets.
+    /// Without it every write would pay a `vetkd_derive_key` — 26 billion cycles
+    /// and a round through consensus — for a key that never changes.
+    ///
+    /// Lost on upgrade, because this is the heap and nothing serialises it, so
+    /// the first write afterwards derives again.
+    static VETKEY: RefCell<Option<VetKey>> = const { RefCell::new(None) };
+
+    /// The decrypted secrets, by name. The name is bookkeeping only — it is not
+    /// part of any derivation and never leaves this canister.
+    static SECRETS: RefCell<BTreeMap<String, String>> = const { RefCell::new(BTreeMap::new()) };
 }
 
-#[init]
-fn init(args: InitArgs) {
-    store::set_config(Config {
-        key_name: args.key_name,
-        ..Config::default()
-    });
-}
-
-#[post_upgrade]
-fn post_upgrade() {
-    // Nothing to do: configuration and secrets are in stable memory, and the
-    // vetKey cache rebuilds lazily on first use. Deliberately does not rewrite
-    // the config — an upgrade must not be able to silently change the derivation
-    // and so reject every subsequently sealed ciphertext.
-}
-
-fn require_controller() -> Result<(), SealedSecretsError> {
-    if ic_cdk::api::is_controller(&ic_cdk::api::msg_caller()) {
-        Ok(())
-    } else {
-        Err(SealedSecretsError::Unauthorized)
+fn key_id() -> VetKDKeyId {
+    VetKDKeyId {
+        curve: VetKDCurve::Bls12_381_G2,
+        name: KEY_NAME.to_string(),
     }
 }
 
-/// Everything a client needs to seal for this canister.
+/// Fetches the vetKey for `KEY_LABEL`, once, and caches it.
 ///
-/// An update rather than a query, because `public_key` comes from
-/// `vetkd_public_key` — authoritative for whichever subnet this canister is
-/// actually on. It is cached, so only the first call pays for the round trip.
+/// The vetKey is a single G1 point that serves two purposes: it is a BLS
+/// signature over `KEY_LABEL`, which is what makes it verifiable against the
+/// derived public key, and it is the IBE decryption key for that label, which is
+/// what opens the ciphertexts.
 ///
-/// A client must treat `public_key` as a cross-check against its **own** offline
-/// derivation, never as the key to encrypt to. That comparison is the real
-/// defence: this response crosses boundary nodes, and a client that trusted it
-/// could be handed a key an attacker controls.
-#[update]
-async fn icp_sealed_secret_info() -> Result<SealedSecretInfo, SealedSecretsError> {
-    let config = store::config();
-    let context = keys::context()?;
-    let public_key = keys::public_key().await?;
+/// The subnet performs the derivation; this asks for one and unwraps the reply.
+///
+/// Two concurrent callers on a cold cache will both derive. That is accepted
+/// rather than prevented: derivation is deterministic, so both get the identical
+/// key and the only cost is a duplicate fee. Rejecting the second is bad UX on a
+/// write path, and making it wait is not implementable — they are separate
+/// message executions and neither can await the other.
+async fn vetkey() -> Result<VetKey, String> {
+    // Read and drop the borrow before any await; holding one across a call
+    // would panic when the canister re-enters.
+    if let Some(cached) = VETKEY.with_borrow(|v| v.clone()) {
+        return Ok(cached);
+    }
 
-    Ok(SealedSecretInfo {
-        standard_version: STANDARD_VERSION,
-        context: ByteBuf::from(context),
-        identity: ByteBuf::from(keys::identity(config.epoch)),
-        epoch: config.epoch,
-        key_name: config.key_name,
-        public_key: ByteBuf::from(public_key.serialize()),
-        max_ciphertext_len: config.max_ciphertext_len,
-        max_secrets: config.max_secrets,
+    // 1. A single-use transport keypair. The private half never leaves here.
+    //
+    //    The public half goes into the share computation itself, so no node ever
+    //    assembles the plaintext key: each produces a share already encrypted
+    //    under it, and combining encrypted shares yields an encrypted key.
+    //
+    //    Step 3 does decrypt it, and the result then lives in this canister's
+    //    memory — replicated and checkpointed like any other canister state, and
+    //    protected there by SEV-SNP alone. What the transport key buys is that
+    //    the plaintext never leaves here: not in a message, not in a
+    //    cross-subnet stream, and not known to the subnet that derived it.
+    let seed = raw_rand().await.map_err(|e| format!("raw_rand: {e}"))?;
+    let tsk = TransportSecretKey::from_seed(seed).map_err(|e| format!("transport key: {e}"))?;
+
+    // 2. Ask for the vetKey belonging to (this canister, CONTEXT, KEY_LABEL).
+    //    The management canister routes this to a subnet holding the key — not
+    //    necessarily our own — where each node contributes a share and none ever
+    //    holds the whole key. What binds the result to us is that the caller's
+    //    canister id is an input to the derivation, and `vetkd_derive_key` has no
+    //    field for naming a different one.
+    let reply = vetkd_derive_key(&VetKDDeriveKeyArgs {
+        input: KEY_LABEL.to_vec(),
+        context: CONTEXT.to_vec(),
+        key_id: key_id(),
+        transport_public_key: tsk.public_key(),
     })
-}
+    .await
+    .map_err(|e| format!("vetkd_derive_key: {e} — is {KEY_NAME} available here?"))?;
 
-/// Stores a sealed secret, after proving it can actually be decrypted.
-///
-/// The trial decryption is the whole point of making this `async` rather than a
-/// cheap synchronous write. Without it, a ciphertext sealed under the wrong
-/// context, epoch or key id is accepted happily and only discovered to be
-/// unreadable at the first production use, potentially months later.
-///
-/// Returns the new revision.
-#[update]
-async fn icp_sealed_secret_set(
-    name: String,
-    ciphertext: ByteBuf,
-) -> Result<u64, SealedSecretsError> {
-    require_controller()?;
-    validate_secret_name(&name).map_err(|e| SealedSecretsError::InvalidName(e.to_string()))?;
-
-    let config = store::config();
-    let ciphertext = ciphertext.into_vec();
-
-    if ciphertext.len() as u64 > config.max_ciphertext_len {
-        return Err(SealedSecretsError::TooLarge {
-            max: config.max_ciphertext_len,
-        });
-    }
-
-    let existing = store::get_record(&name);
-    if existing.is_none() && store::len() >= config.max_secrets {
-        return Err(SealedSecretsError::TooMany {
-            max: config.max_secrets,
-        });
-    }
-
-    // Fails here, in front of the deployer, rather than in production — and its
-    // output is what gets stored, so the decryption is not merely a check.
-    let plaintext = keys::decrypt_with_epoch(&ciphertext, config.epoch).await?;
-
-    let now = ic_cdk::api::time();
-    let revision = existing.as_ref().map(|r| r.revision + 1).unwrap_or(0);
-    let created_at_ns = existing.as_ref().map(|r| r.created_at_ns).unwrap_or(now);
-
-    store::put_record(
-        &name,
-        SealedRecord {
-            epoch: config.epoch,
-            revision,
-            created_at_ns,
-            updated_at_ns: now,
-            ciphertext_sha256: Sha256::digest(&ciphertext).to_vec(),
-            ciphertext_len: ciphertext.len() as u64,
-            // The trial decryption above produced this. Storing it is what lets
-            // every later read be a map lookup instead of a vetKD round trip.
-            plaintext: plaintext.to_vec(),
-        },
-    );
-
-    Ok(revision)
-}
-
-/// Removes a secret.
-#[update]
-fn icp_sealed_secret_unset(name: String) -> Result<(), SealedSecretsError> {
-    require_controller()?;
-    match store::remove_record(&name) {
-        // Nothing to purge: the record was the only copy, so removing it is the
-        // whole operation.
-        Some(_) => Ok(()),
-        None => Err(SealedSecretsError::NotFound),
-    }
-}
-
-/// Answers "is the value I hold the one you have stored?" without either side
-/// disclosing it.
-///
-/// The caller seals its candidate exactly as it would for `set` — a fresh IBE
-/// seed, so the ciphertext is unlinkable to any other — and the canister decrypts
-/// both and compares in constant time. One bit comes back.
-///
-/// This is the endpoint an operator should reach for when they want to confirm
-/// the right secret is deployed, and it is deliberately *not* "return me a
-/// digest of the plaintext":
-///
-/// - a digest of a low-entropy secret is brute-forceable offline by anyone who
-///   sees it, and replies cross a boundary node in the clear;
-/// - the caller already knows the value they are checking, so a boolean tells
-///   them everything a digest would;
-/// - a ciphertext discloses nothing in the request direction either, whereas
-///   sending `sha256(expected)` would put the same brute-forceable digest on the
-///   wire.
-///
-/// Controller-gated, because for anyone else it is an oracle for confirming
-/// guesses. For a controller it discloses nothing new — they can already read
-/// the secret by installing code that decrypts it.
-#[update]
-async fn icp_sealed_secret_matches(
-    name: String,
-    candidate: ByteBuf,
-) -> Result<bool, SealedSecretsError> {
-    require_controller()?;
-
-    let record = store::get_record(&name).ok_or(SealedSecretsError::NotFound)?;
-    let config = store::config();
-
-    // Only the candidate is sealed; the stored side is already plaintext. The
-    // comparison stays constant-time regardless, because a timing difference
-    // would leak how many leading bytes a guess got right.
-    let candidate_plaintext = keys::decrypt_with_epoch(&candidate.into_vec(), config.epoch).await?;
-
-    Ok(bool::from(
-        record
-            .plaintext
-            .as_slice()
-            .ct_eq(candidate_plaintext.as_slice()),
-    ))
-}
-
-/// Lists stored secrets.
-///
-/// Controller-gated, because it is more revealing than it looks: IBE overhead is
-/// a fixed 136 bytes, so `ciphertext_len` gives the exact plaintext length, and
-/// the names alone (`billing_live_key`, …) are useful reconnaissance.
-///
-/// Nothing here is derived from a plaintext. A digest of the plaintext would be
-/// an offline guessing oracle for low-entropy secrets; a digest of a randomised
-/// ciphertext reveals nothing, while still letting a client confirm its upload
-/// landed.
-#[query]
-fn icp_sealed_secret_list() -> Result<Vec<SealedSecretEntry>, SealedSecretsError> {
-    require_controller()?;
-    Ok(store::all_records()
-        .into_iter()
-        .map(|(name, r)| SealedSecretEntry {
-            name,
-            epoch: r.epoch,
-            revision: r.revision,
-            ciphertext_len: r.ciphertext_len,
-            ciphertext_sha256: ByteBuf::from(r.ciphertext_sha256),
-            created_at_ns: r.created_at_ns,
-            updated_at_ns: r.updated_at_ns,
-        })
-        .collect())
-}
-
-/// Exercises the full decryption path and reports what actually happened.
-///
-/// Run this right after deploying and after every upgrade. It is the difference
-/// between finding out at deploy time that this subnet does not hold the vetKD
-/// key, and finding out during a customer request.
-///
-/// Pass `expected_source` to also audit the subnet's `vetkd_public_key` against a
-/// master key compiled into this Wasm — the one check in the whole design that is
-/// not the subnet vouching for itself. Do this once per deployment with the
-/// network you believe you are on.
-#[update]
-async fn icp_sealed_secret_self_test(
-    expected_source: Option<KeySource>,
-) -> Result<SelfTestReport, SealedSecretsError> {
-    require_controller()?;
-
-    let config = store::config();
-    let context = keys::context()?;
-    let records = store::all_records();
-
-    let reported = keys::reported_public_key().await.ok();
-
-    // The audit: does the subnet's own answer match a master key compiled into
-    // this Wasm, for the network the caller believes they are on? `None` means
-    // the caller did not ask, or we hold no master key for this name.
-    let public_key_matches_master = match (expected_source, &reported) {
-        (Some(source), Some(remote)) => {
-            keys::expected_public_key(source.into()).map(|expected| &expected == remote)
-        }
-        _ => None,
-    };
-
-    let vetkd_derive_ok = keys::vetkey(config.epoch).await.is_ok();
-
-    Ok(SelfTestReport {
-        vetkd_public_key_ok: reported.is_some(),
-        vetkd_derive_ok,
-        public_key_matches_master,
-        effective_key_name: config.key_name,
-        effective_context: ByteBuf::from(context),
-        epoch: config.epoch,
-        num_secrets: records.len() as u64,
+    // 3. Unwrap it, and check that what fell out really is our key.
+    //
+    //    `decrypt_and_verify` does three things: rejects a malformed reply whose
+    //    two halves disagree, strips the transport blinding, and then verifies
+    //    the result is a valid BLS signature over KEY_LABEL under `dpk`. That
+    //    last step is what makes a forged reply useless.
+    //
+    //    It needs the matching public key, and asking the same place we just
+    //    asked for the private one is admittedly circular — a subnet that would
+    //    lie here already holds the master key. The non-circular check is on the
+    //    client, which derives the key offline and refuses to encrypt on a
+    //    mismatch.
+    let dpk_bytes = vetkd_public_key(&VetKDPublicKeyArgs {
+        canister_id: None,
+        context: CONTEXT.to_vec(),
+        key_id: key_id(),
     })
+    .await
+    .map_err(|e| format!("vetkd_public_key: {e}"))?
+    .public_key;
+
+    let dpk = DerivedPublicKey::deserialize(&dpk_bytes)
+        .map_err(|e| format!("subnet returned a malformed public key: {e:?}"))?;
+
+    let vetkey = EncryptedVetKey::deserialize(&reply.encrypted_key)
+        .map_err(|e| format!("malformed encrypted key: {e}"))?
+        .decrypt_and_verify(&tsk, &dpk, KEY_LABEL)
+        .map_err(|e| format!("the subnet returned a key we cannot verify: {e}"))?;
+
+    VETKEY.with_borrow_mut(|v| *v = Some(vetkey.clone()));
+    Ok(vetkey)
 }
 
-/// The actual use case: authenticate an outbound HTTPS request with a sealed
-/// secret, without the secret ever leaving the canister.
+/// Stores a secret that was encrypted to this canister's public key.
 ///
-/// This is what the whole exercise is for, so read it as the template.
+/// Decrypting here rather than storing the blob is deliberate: a ciphertext
+/// sealed under the wrong context, label or key fails now, in front of whoever
+/// is seeding it, instead of being accepted and found unreadable later.
 ///
-/// The sealed secret is the **complete `Authorization` header value**, not just a
-/// token, so it works for any scheme — `Bearer ghp_…`, `Basic dXNlcjpwYXNz`, or
-/// whatever an API expects — without this code baking one in.
-///
-/// Seal the correct credential and this returns `200`; seal a wrong one and it
-/// returns `401`. That both branches are observable is the point: it proves the
-/// secret's *value* reached the API and was evaluated, not merely that a request
-/// went out.
-///
-/// **The endpoint is a constant, not a parameter.** A `call_api(url, ...)` taking
-/// the URL from the caller would be an exfiltration primitive: point it at a
-/// server you control and the secret is yours. A controller could achieve that
-/// anyway by installing code, but shipping the capability as an endpoint is
-/// gratuitous, and real canisters call a known API rather than an arbitrary one.
-///
-/// **Only the status code comes back.** Returning the body would be a mistake
-/// waiting to happen: plenty of endpoints echo request headers (`/headers`,
-/// `/anything`, most debug routes), and echoing our own `Authorization` header
-/// back through the reply would undo the sealing entirely.
-///
-/// **The transform is mandatory, not decoration.** Every node performs this call
-/// independently and consensus requires byte-identical responses, so anything
-/// varying per node — `Date`, request ids, cookies — must be stripped or the call
-/// fails.
-///
-/// Note the exposure, which the README covers in full: the request context,
-/// headers included, enters replicated state on **every** node of the subnet
-/// before any of them executes the call. On a SEV-SNP subnet that memory and the
-/// checkpoints behind it are encrypted; on any other subnet the secret is
-/// readable by every node operator the moment this runs.
+/// Storing several secrets costs one derivation in total, not one each — they
+/// all share `KEY_LABEL`, so the cached key opens every one of them.
 #[update]
-async fn call_api_with_secret(
-    name: String,
-    idempotency_key: String,
-) -> Result<u16, SealedSecretsError> {
-    require_controller()?;
+async fn set_dummy_secret(name: String, ciphertext: Vec<u8>) -> Result<(), String> {
+    // Whoever seeds a secret should be whoever controls the canister.
+    // Ungated, anyone could overwrite one with a value of their choosing.
+    if !ic_cdk::api::is_controller(&ic_cdk::api::msg_caller()) {
+        return Err("only a controller may set a secret".to_string());
+    }
 
-    let record = store::get_record(&name).ok_or(SealedSecretsError::NotFound)?;
-    let token = core::str::from_utf8(&record.plaintext)
-        .map_err(|_| SealedSecretsError::Internal("secret is not valid UTF-8".to_string()))?;
+    let vetkey = vetkey().await?;
 
-    let request = HttpRequestArgs {
-        url: DEMO_API_ENDPOINT.to_string(),
-        method: HttpMethod::GET,
-        headers: vec![
-            // The secret is the whole header value. See above.
-            HttpHeader {
-                name: "Authorization".to_string(),
-                value: token.to_string(),
-            },
-            // Not optional for anything that mutates — see the doc comment.
-            HttpHeader {
-                name: "Idempotency-Key".to_string(),
-                value: idempotency_key,
-            },
-            HttpHeader {
-                name: "User-Agent".to_string(),
-                value: "icp-sealed-secrets-poc".to_string(),
-            },
-        ],
-        body: None,
-        // Keep this tight: the call is priced on it.
-        max_response_bytes: Some(2_048),
-        transform: Some(ic_cdk_management_canister::transform_context_from_query(
-            "strip_response".to_string(),
-            vec![],
-        )),
-        ..Default::default()
-    };
+    let plaintext = IbeCiphertext::deserialize(&ciphertext)
+        .map_err(|e| format!("not an IBE ciphertext: {e}"))?
+        .decrypt(&vetkey)
+        .map_err(|_| "ciphertext was not sealed to this canister's key".to_string())?;
 
-    let response = ic_cdk_management_canister::http_request(&request)
-        .await
-        .map_err(|e| SealedSecretsError::Internal(format!("http_request failed: {e}")))?;
-
-    // Only the status. See above.
-    u16::try_from(response.status.0)
-        .map_err(|_| SealedSecretsError::Internal("implausible status code".to_string()))
+    let text = String::from_utf8(plaintext).map_err(|_| "secret is not UTF-8".to_string())?;
+    SECRETS.with_borrow_mut(|s| s.insert(name, text));
+    Ok(())
 }
 
-/// Makes an HTTP response deterministic across the nodes that fetched it.
+/// Returns a decrypted secret **in the clear**.
 ///
-/// Drops every response header — they carry `Date`, request ids and cookies that
-/// differ per node, which would break consensus — and, incidentally, stops an
-/// endpoint that echoes our `Authorization` header from smuggling the secret into
-/// replicated state.
+/// # This exists only so you can see that decryption worked
 ///
-/// **This passes the body through unchanged, which is only safe because the demo
-/// endpoint returns a constant.** If yours returns a timestamp, a request id or
-/// anything else that differs between fetches, normalise it here too — parse out
-/// the fields you need and drop the rest. Local testing will not catch this:
-/// PocketIC issues exactly one request, so a varying body agrees with itself,
-/// while on mainnet every node fetches independently and the call fails.
+/// A real canister must not have this. The reply is not encrypted end-to-end:
+/// the boundary node terminates TLS and is outside the subnet's trust boundary,
+/// so this hands the secret straight back out — undoing, on the way out, exactly
+/// what sealing achieved on the way in.
+///
+/// Controller-gated, which is not much of a defence (a controller can install
+/// code that reads the secret anyway) but keeps the PoC from being an open
+/// oracle while it is deployed.
 #[query]
-fn strip_response(args: TransformArgs) -> HttpRequestResult {
-    HttpRequestResult {
-        status: args.response.status,
-        headers: vec![],
-        body: args.response.body,
+fn get_dummy_secret(name: String) -> Result<Option<String>, String> {
+    if !ic_cdk::api::is_controller(&ic_cdk::api::msg_caller()) {
+        return Err("only a controller may read a secret".to_string());
     }
-}
-
-/// Measures what an IBE decryption costs in this canister, in instructions.
-/// **Requires the `test-hooks` feature.**
-///
-/// Exists so the Rust and Motoko implementations can be compared on the same
-/// footing. Native benchmarks are not comparable — what matters is the
-/// instruction count the replica charges, and that is wasm-specific.
-///
-/// Takes the vetKey and ciphertext as arguments so both implementations can be
-/// pointed at the identical vector from `motoko/vectors.json`.
-///
-/// **The first call costs about three times the rest.** `ic-vetkeys` holds a
-/// `lazy_static` precomputed multiplication table for the `G2` generator
-/// (`utils/mod.rs:219`), built on first use and reused thereafter. Quote the
-/// steady-state figure when comparing, and remember the Motoko port has no such
-/// table — a plain double-and-add ladder — so the gap is partly a missing
-/// optimisation rather than a property of the language.
-#[cfg(feature = "test-hooks")]
-#[update]
-fn bench_ibe_decrypt(vetkey: ByteBuf, ciphertext: ByteBuf) -> Result<u64, SealedSecretsError> {
-    require_controller()?;
-
-    let key = ic_vetkeys::VetKey::deserialize(&vetkey)
-        .map_err(|e| SealedSecretsError::Internal(format!("bad vetkey: {e}")))?;
-    let ct = ic_vetkeys::IbeCiphertext::deserialize(&ciphertext)
-        .map_err(|e| SealedSecretsError::InvalidCiphertext(e))?;
-
-    let before = ic_cdk::api::performance_counter(0);
-    let plaintext = ct
-        .decrypt(&key)
-        .map_err(|_| SealedSecretsError::InvalidCiphertext("decrypt failed".to_string()))?;
-    let after = ic_cdk::api::performance_counter(0);
-
-    // Touch the result so the optimiser cannot elide the work being measured.
-    if plaintext.is_empty() {
-        return Err(SealedSecretsError::Internal("empty plaintext".to_string()));
-    }
-
-    Ok(after - before)
-}
-
-/// Returns a decrypted secret **in the clear**. Requires the `test-hooks` feature.
-///
-/// It exists so you can see with your own eyes that decryption worked. It must
-/// never be in a real deployment, and the reason is not that a controller could
-/// not obtain the secret anyway — they can, by installing code that decrypts, or
-/// by reading the heap out of a snapshot.
-///
-/// The reason is that this endpoint:
-///
-/// 1. **sends the plaintext to a boundary node.** The reply is not encrypted
-///    end-to-end; the boundary node terminates TLS and is outside the subnet's
-///    SEV-SNP trust boundary entirely. That undoes, in the outbound direction,
-///    exactly what sealing achieved on the way in.
-/// 2. **destroys the property that makes the code auditable.** "The published
-///    code never returns the plaintext" is a claim a reader can verify by
-///    reading it. Replace it with "…unless the caller is a controller" and the
-///    guarantee now rests on the controller set being, and remaining, what you
-///    think it is.
-/// 3. **leaves no trace.** Installing code that leaks changes the module hash,
-///    which is visible in the state tree. A call to this leaves nothing behind.
-///
-/// If you want to confirm the right secret is deployed, use
-/// `icp_sealed_secret_matches` instead — it answers the same question with one
-/// bit and is safe to keep in a production build.
-#[cfg(feature = "test-hooks")]
-#[update]
-fn secret_reveal(name: String) -> Result<String, SealedSecretsError> {
-    require_controller()?;
-    let record = store::get_record(&name).ok_or(SealedSecretsError::NotFound)?;
-    String::from_utf8(record.plaintext)
-        .map_err(|_| SealedSecretsError::Internal("secret is not valid UTF-8".to_string()))
+    Ok(SECRETS.with_borrow(|s| s.get(&name).cloned()))
 }
 
 ic_cdk::export_candid!();

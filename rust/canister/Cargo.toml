@@ -1,24 +1,11 @@
 [package]
-name = "sealed-secrets-canister"
-description = "PoC canister that receives vetKD-sealed secrets and decrypts them in enclave memory"
+name = "dummy-secret-canister"
+description = "PoC canister that receives one vetKD-sealed secret and decrypts it"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 repository.workspace = true
-
-[features]
-# Adds `secret_reveal`, which returns a decrypted secret in the clear so a human
-# can see the round trip worked. That is its only purpose.
-#
-# OFF by default, so a plain `cargo build` produces a canister with no way to
-# disclose a secret at all — asserted against the wasm bytes by
-# `scripts/local-test.sh` and CI. Nothing automated needs it: a successful `set`
-# already proves the canister can decrypt, and `icp_sealed_secret_matches`
-# answers "is the right value set?" without disclosing anything.
-#
-# Never enable this for a real deployment; see README "Can I just add a getter?".
-test-hooks = []
 
 [lib]
 path = "src/lib.rs"
@@ -28,12 +15,7 @@ crate-type = ["cdylib"]
 candid = { workspace = true }
 ic-cdk = { workspace = true }
 ic-cdk-management-canister = { workspace = true }
-ic-dummy-getrandom-for-wasm = "0.1.0"
-ic-stable-structures = { workspace = true }
 ic-vetkeys = { workspace = true }
-sealed-secrets-core = { path = "../core" }
-serde = { workspace = true }
-serde_bytes = { workspace = true }
-sha2 = { workspace = true }
-subtle = { workspace = true }
-zeroize = { workspace = true }
+# ic-vetkeys pulls in `rand`, which will not build for wasm32 without a
+# getrandom backend. This crate supplies a stub one; nothing here uses it.
+ic-dummy-getrandom-for-wasm = "0.1.0"

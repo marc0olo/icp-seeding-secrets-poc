@@ -1,31 +1,31 @@
 {
   "version": 3,
-  "mopsTomlDepsHash": "75dd13ac45f07776aa7f58f8c2eacbb2e0d41b3d6dabb61b6c7016f81dd4cd27",
+  "mopsTomlDepsHash": "10e4055943ed1c719b51b696cbd9c9c40eb4455dd9c36ffc51ad42100fb8571a",
   "localDepsHash": "4b5b02fc2ee6fe222a5fadbb5ea10f0d2756d56a41f12692e12e77a56457d4d7",
   "deps": {
     "base": "0.14.5",
     "core": "2.6.1",
+    "ic": "4.2.0",
     "iterext": "https://github.com/timohanke/motoko-iterext#v2.0.0",
     "sealed-secrets-bls": "../bls12-381",
     "sealed-secrets-vetkeys": "../vetkeys",
     "sha2": "0.2.5",
-    "sha3": "0.1.1",
-    "test": "2.1.1"
+    "sha3": "0.1.1"
   },
   "graph": {
     "base@0.14.5": {},
     "base@0.8.2": {},
     "core@2.5.0": {},
     "core@2.6.1": {},
+    "ic@4.2.0": {
+      "core": "2.5.0"
+    },
     "sha2@0.2.5": {
       "core": "2.5.0"
     },
     "sha3@0.1.1": {
       "base": "0.8.2",
       "iterext": "https://github.com/timohanke/motoko-iterext#v2.0.0"
-    },
-    "test@2.1.1": {
-      "base": "0.14.5"
     }
   },
   "github": {
@@ -149,6 +149,14 @@
       "core@2.6.1/src/pure/RealTimeQueue.mo": "60e1f118e1fd728c64ac769396b2441a3e9be5208051139b3dd652125a81a0cb",
       "core@2.6.1/src/pure/Set.mo": "c8f6f193a4b42b2df65ce8c05d610ccbcdc8befddc72acd44445e7290224373e"
     },
+    "ic@4.2.0": {
+      "ic@4.2.0/LICENSE": "ec415b57f8143746b567c94bfad243f5342f3edf110c94641a1a60e02722db55",
+      "ic@4.2.0/README.md": "4aacc06321244e54f741e9d826f3d374144a4b32372cb58dddaedcaad2e12bc3",
+      "ic@4.2.0/mops.toml": "90a4087e4c1fb5ca9b976d824370bca632d860191eedd0461ac85bdbc4169f55",
+      "ic@4.2.0/src/Call.mo": "b4a3572e5617d0b1eb696450344b65e99504f844794e7ddf1cff664fcfeb2994",
+      "ic@4.2.0/src/Types.mo": "3d145437f9b8c6a661266ec659c9522c4b9001b50954945816e746f48028c9fc",
+      "ic@4.2.0/src/lib.mo": "9d9ec84a85eb25d191c1cae99cb841d9b6e0cf0f9bc27c3f3805ac9673d7bef1"
+    },
     "sha2@0.2.5": {
       "sha2@0.2.5/LICENSE": "ab81130a0a5f64eb71f0c0f84ff643fdd13b0d3d24c5e741b73768760d9f62dc",
       "sha2@0.2.5/NOTICE": "263c783b30440460b9a046b117b686dcc24e6fe912d8f78013ab00836de79b69",
@@ -199,36 +207,6 @@
       "sha3@0.1.1/README.md": "80674416dba195c8838a08dc92c0d6f5d03f650fb8be946341acc2b78a5ff058",
       "sha3@0.1.1/mops.toml": "4428621816bdfc3439fba82a9fac23fd306ec13b0473b050d8db46b1fefe9595",
       "sha3@0.1.1/src/lib.mo": "2d5c2314b44572b52efaf68d2d9867e5aae3482c9be4c82001821f6472757243"
-    },
-    "test@2.1.1": {
-      "test@2.1.1/LICENSE": "9323eded2cdf2129732f5b7cd812f350eba0cf68451bb2e1726eaa749b9b1885",
-      "test@2.1.1/README.md": "76a5d6bf7756397519adeda163683aa63eb74cc2f2aeb65d383d57edae385af4",
-      "test@2.1.1/mops.toml": "9fc0e943832a78a99cfbccd1eea5c2665e93436004384f0903c3caf8b6e5984a",
-      "test@2.1.1/src/async.mo": "364d33b3ea035d5b20b14a6df9d2645d45a3dfbcf755a59e1236ecd03c0e6913",
-      "test@2.1.1/src/expect/async.mo": "c1518bd82ef8c2def86bc6b5fc1df1691eab9935adacc413cab4fe9f1eda6f4a",
-      "test@2.1.1/src/expect/expect-array.mo": "5b640887c2a033c2a2584d4e2a630ac73070fad4eea91ca818f4b077f658e1de",
-      "test@2.1.1/src/expect/expect-blob.mo": "0f6d3cb037ac637c8f9e688bf2b22f99104273bcc25ecdd85669505b407f9d85",
-      "test@2.1.1/src/expect/expect-bool.mo": "aac09fb62e3e51184233f909ff12275a7a9996d5cb0354b23b644d5ba20b99e0",
-      "test@2.1.1/src/expect/expect-call.mo": "8e0b46e6fa1e5b9ccaa04585759c5091a4311a756dd4dbc7d2ffd3f8c4ad7a01",
-      "test@2.1.1/src/expect/expect-char.mo": "2d572db5b2b59a3d81bdbcf0e9bb2d0fa6779aaae18c7dcf8f4efbf2fde1d5b1",
-      "test@2.1.1/src/expect/expect-int.mo": "b7d775b6b22007978b6e40e37e66f648a356a3dc8b603e3a1db98a3884647c8f",
-      "test@2.1.1/src/expect/expect-int16.mo": "41bbbcf2feb6771d1a5cb511dc6036f1e00b4408b4b524d420a13120aea20401",
-      "test@2.1.1/src/expect/expect-int32.mo": "bef183e0ce272082d619872a60c75a30567b26db2afd1ca4e56cf6534ef4479f",
-      "test@2.1.1/src/expect/expect-int64.mo": "6dc9351d9ce534b16816f51d4e9ddfd0940dbaa1d76fe4e4625260805efdf38a",
-      "test@2.1.1/src/expect/expect-int8.mo": "eefce98e69be550fc7edda76d5e3b661fa66e73f88414ec5d7bc66d84fbfe977",
-      "test@2.1.1/src/expect/expect-nat.mo": "224f85e3e96eb84d4d7f9828e220816d4792fb1910931b00ecd0699710224a02",
-      "test@2.1.1/src/expect/expect-nat16.mo": "3dbf17e08fecd34cab13ebfee97a886173480fdd7a9e1c0ab17bbb2cac67354c",
-      "test@2.1.1/src/expect/expect-nat32.mo": "81c025c8d32590c14f6aa454653971cdd75033faa9365a804a91cd13623745ae",
-      "test@2.1.1/src/expect/expect-nat64.mo": "9889cabe96ede8b76d61b9a2e625872043d334d4d5d807b389cbdf2d9373d39a",
-      "test@2.1.1/src/expect/expect-nat8.mo": "dab31f87a724c88216aa3d2d6b061510cfc56437a906069f3cde707015d73bf1",
-      "test@2.1.1/src/expect/expect-option.mo": "b87749f2aea8603ff42b5c2c77c1358c36953f657bfedaee080f2141535480e6",
-      "test@2.1.1/src/expect/expect-principal.mo": "298a02574700b7fb507d40b373579ebbfa0eee8c5ec8577a5794ddf3ece687dc",
-      "test@2.1.1/src/expect/expect-result.mo": "e88ffb67d5fe0b969e3de4dbdb0129a6441d5431ab76d6493557ef7b724112ef",
-      "test@2.1.1/src/expect/expect-text.mo": "b9ec4564c0c0c2254584956107b8ce01e20ed9bdd5ff7c56b7cabaffd1057e9c",
-      "test@2.1.1/src/expect/lib.mo": "b74da3928ed8c23c31b5979059f0ac549cd7f09e7a29af9b105d8f9e32e192ed",
-      "test@2.1.1/src/expect/utils.mo": "d7e3b792b4ab12455f6ba285f747de1c53d73649105633c5477985a2064894b5",
-      "test@2.1.1/src/lib.mo": "f86a9f8a50221e17f6b695ce9d077221b21700e5ebedab51c4d43801adf39026",
-      "test@2.1.1/src/utils.mo": "6d197e934f6b57f582d56745b2534e6df97f945fdab484c79b2b43d44c561804"
     }
   }
 }
