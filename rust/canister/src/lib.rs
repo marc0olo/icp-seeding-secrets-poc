@@ -25,19 +25,19 @@ use std::cell::RefCell;
 /// and neither can open the other's ciphertext.
 const CONTEXT: &[u8] = b"dummy-secret-poc";
 
-/// The IBE **identity**: what selects a key *within* that keypair.
+/// Which secret this is: a label, not a key and not the value.
 ///
-/// Also the `input` to `vetkd_derive_key`. The context fixes a keypair; the
-/// identity picks one of the infinitely many keys under it, and the client seals
-/// to the same value. One fixed identity here, because there is one secret.
+/// In vetKD terms it is the **IBE identity**, and it goes out as the `input` to
+/// `vetkd_derive_key`. The context fixes a keypair; this picks one of the
+/// infinitely many keys under it. The client seals to the same label, and a
+/// different one would derive a different key that cannot open the ciphertext.
 ///
-/// Holding several secrets, you could give each its own identity — but inside a
-/// single canister that buys nothing and costs real money. Each distinct
-/// identity is a separate `vetkd_derive_key` call at 26 billion cycles, and
-/// there is no privilege boundary to enforce: this canister's code can derive
-/// the key for any identity it likes, whenever it likes. One identity, one
-/// derive, every secret.
-const IDENTITY: &[u8] = b"dummy-secret";
+/// One label here, because there is one secret. Holding several, you could give
+/// each its own — but inside a single canister that buys nothing and costs real
+/// money: each distinct label is a separate `vetkd_derive_key` at 26 billion
+/// cycles, and there is no privilege boundary to enforce, since this canister's
+/// code can derive any label's key whenever it likes.
+const SECRET_NAME: &[u8] = b"dummy-secret";
 
 /// The vetKD key to use. `key_1` exists on mainnet and on a local network, so
 /// one constant covers both. A canister that needed another would
@@ -82,13 +82,13 @@ async fn set_dummy_secret(ciphertext: Vec<u8>) -> Result<(), String> {
     let seed = raw_rand().await.map_err(|e| format!("raw_rand: {e}"))?;
     let tsk = TransportSecretKey::from_seed(seed).map_err(|e| format!("transport key: {e}"))?;
 
-    // 2. Ask for the private key belonging to (this canister, CONTEXT, IDENTITY).
+    // 2. Ask for the private key belonging to (this canister, CONTEXT, SECRET_NAME).
     //    The management canister routes this to a subnet holding the key — not
     //    necessarily our own — where each node contributes a share and none ever
     //    holds the whole key. What binds the result to us is the caller's
     //    canister id being an input to the derivation.
     let reply = vetkd_derive_key(&VetKDDeriveKeyArgs {
-        input: IDENTITY.to_vec(),
+        input: SECRET_NAME.to_vec(),
         context: CONTEXT.to_vec(),
         key_id: key_id(),
         transport_public_key: tsk.public_key(),
@@ -100,7 +100,7 @@ async fn set_dummy_secret(ciphertext: Vec<u8>) -> Result<(), String> {
     //
     //    `decrypt_and_verify` does three things: rejects a malformed reply whose
     //    two halves disagree, strips the transport blinding, and then verifies
-    //    the result is a valid BLS signature over IDENTITY under `dpk`. That
+    //    the result is a valid BLS signature over SECRET_NAME under `dpk`. That
     //    last step is what makes a forged reply useless.
     //
     //    It needs the matching public key, and asking the same place we just
@@ -121,7 +121,7 @@ async fn set_dummy_secret(ciphertext: Vec<u8>) -> Result<(), String> {
 
     let vetkey = EncryptedVetKey::deserialize(&reply.encrypted_key)
         .map_err(|e| format!("bad encrypted key: {e}"))?
-        .decrypt_and_verify(&tsk, &dpk, IDENTITY)
+        .decrypt_and_verify(&tsk, &dpk, SECRET_NAME)
         .map_err(|e| format!("the subnet returned a key we cannot verify: {e}"))?;
 
     // 4. Decrypt. Failing here means the ciphertext was sealed to a different

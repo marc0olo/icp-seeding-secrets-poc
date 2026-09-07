@@ -39,14 +39,14 @@ persistent actor DummySecret {
   /// context per purpose. Must match the client exactly.
   transient let CONTEXT : Blob = Text.encodeUtf8("dummy-secret-poc");
 
-  /// The IBE **identity**: what selects a key *within* that keypair.
+  /// Which secret this is: a label, not a key and not the value.
   ///
-  /// Also the `input` to `vetkd_derive_key`. One fixed identity here, because
-  /// there is one secret. Several secrets could each have their own — but inside
-  /// one canister that costs a separate 26-billion-cycle derive per identity and
-  /// buys nothing, since this canister's code can derive any identity's key
-  /// whenever it likes.
-  transient let IDENTITY : Blob = Text.encodeUtf8("dummy-secret");
+  /// In vetKD terms the **IBE identity**, and the `input` to `vetkd_derive_key`.
+  /// One label here, because there is one secret. Several could each have their
+  /// own — but inside one canister that costs a separate 26-billion-cycle derive
+  /// per label and buys nothing, since this canister's code can derive any
+  /// label's key whenever it likes.
+  transient let SECRET_NAME : Blob = Text.encodeUtf8("dummy-secret");
 
   /// Turns 32 random bytes into a transport scalar. Nothing interoperates with
   /// this value — the subnet only ever sees the matching public key.
@@ -86,14 +86,14 @@ persistent actor DummySecret {
     };
     let tsk = Scalar.hashToScalar(seed.toArray(), DS_TRANSPORT);
 
-    // 2. Ask for the private key belonging to (this canister, CONTEXT, IDENTITY).
+    // 2. Ask for the private key belonging to (this canister, CONTEXT, SECRET_NAME).
     //    The management canister routes this to a subnet holding the key — not
     //    necessarily our own — where each node contributes a share. What binds
     //    the result to us is the caller's canister id being a derivation input.
     let reply = try {
       await (with cycles = VETKD_FEE) ic.vetkd_derive_key({
         context = CONTEXT;
-        input = IDENTITY;
+        input = SECRET_NAME;
         key_id = keyId;
         transport_public_key = VetKey.transportPublicKey(tsk);
       });
@@ -105,7 +105,7 @@ persistent actor DummySecret {
     //
     //    decryptAndVerify rejects a malformed reply whose two halves disagree,
     //    strips the transport blinding, then verifies the result is a valid BLS
-    //    signature over IDENTITY under dpk. That last step is what makes a forged
+    //    signature over SECRET_NAME under dpk. That last step is what makes a
     //    reply useless.
     //
     //    Asking the same place for the public key is circular — a subnet that
@@ -127,7 +127,7 @@ persistent actor DummySecret {
       case null { return #Err("malformed encrypted key") };
     };
     let vetkey : G1.Affine = switch (
-      VetKey.decryptAndVerify(encrypted, tsk, dpk, IDENTITY.toArray())
+      VetKey.decryptAndVerify(encrypted, tsk, dpk, SECRET_NAME.toArray())
     ) {
       case (?k) k;
       case null { return #Err("the subnet returned a key we cannot verify") };

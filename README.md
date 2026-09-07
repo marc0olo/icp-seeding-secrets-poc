@@ -130,8 +130,8 @@ c3 = vetKey + tpk·r   the key, blinded      (tpk = g1·tsk)
                    = (vetKey + g1·tsk·r) − g1·r·tsk
                    = vetKey                     the blinding cancels exactly
 
-3. verify        e(k, -g2) · e(H(dpk ‖ IDENTITY), dpk) == 1
-                 k really is a BLS signature over IDENTITY under dpk
+3. verify        e(k, -g2) · e(H(dpk ‖ SECRET_NAME), dpk) == 1
+                 k really is a BLS signature over SECRET_NAME under dpk
 ```
 
 Step 3 is the one that matters. Without it the canister accepts whatever the

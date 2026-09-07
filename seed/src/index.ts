@@ -37,9 +37,10 @@ import { writeFileSync } from "node:fs";
  * -> context, so a different context is a different keypair entirely. One per
  * purpose: a canister using vetKD for two unrelated things gives each its own.
  *
- * `IDENTITY` selects a key **within** that keypair — it is the IBE identity the
- * secret is sealed to, and the `input` the canister passes to
- * `vetkd_derive_key`. One fixed value here, because there is one secret.
+ * `SECRET_NAME` names which secret this is — a label, not a key and not the
+ * value. In vetKD terms it is the IBE identity the secret is sealed to, and the
+ * `input` the canister passes to `vetkd_derive_key`. One label here, because
+ * there is one secret.
  *
  * Get either wrong and encryption still succeeds. You find out when the canister
  * cannot decrypt, which is why `set_dummy_secret` decrypts immediately rather
@@ -48,7 +49,7 @@ import { writeFileSync } from "node:fs";
  * See rust/canister/src/lib.rs.
  */
 const CONTEXT = new TextEncoder().encode("dummy-secret-poc");
-const IDENTITY = new TextEncoder().encode("dummy-secret");
+const SECRET_NAME = new TextEncoder().encode("dummy-secret");
 
 const USAGE = `
 Encrypt a secret for a canister, and print the call argument.
@@ -139,7 +140,7 @@ function main() {
   // 2. encrypt
   const ciphertext = IbeCiphertext.encrypt(
     publicKey,
-    IbeIdentity.fromBytes(IDENTITY),
+    IbeIdentity.fromBytes(SECRET_NAME),
     new TextEncoder().encode(secret),
     IbeSeed.random(),
   ).serialize();
