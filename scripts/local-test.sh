@@ -76,13 +76,13 @@ authorise_e2e() {
 # Pass "verify" as $5 to ask matches() instead of storing.
 #   $1 canister name  $2 canister id  $3 secret name  $4 value  [$5 "verify"]
 seal() {
-  local flags=(--canister "$2" --name "$3" --source pocketic --out "$ARGS_FILE")
+  # set and matches take the identical (text, blob) argument, so the same sealed
+  # file drives either — only the method name differs.
   local method=icp_sealed_secret_set
-  if [ "${5:-}" = verify ]; then
-    flags+=(--verify)
-    method=icp_sealed_secret_matches
-  fi
-  env "$3=$4" npm --prefix seed run --silent seal -- "${flags[@]}" >/dev/null 2>&1 \
+  [ "${5:-}" = verify ] && method=icp_sealed_secret_matches
+
+  env "$3=$4" npm --prefix seed run --silent seal -- \
+    --canister "$2" --name "$3" --source pocketic --out "$ARGS_FILE" >/dev/null 2>&1 \
     || fail "could not encrypt $3 for $1"
   icp canister call "$1" "$method" --args-file "$ARGS_FILE" -e "$ENV"
 }
@@ -259,7 +259,7 @@ mo_seal() {
   seal "$MO_CANISTER" "$MO_CID" "$OUTCALL_SECRET_NAME" "$1" >/dev/null
 }
 mo_seal "$OUTCALL_GOOD"
-echo "  ok — the unmodified seeder sealed to it, and it trial-decrypted before storing"
+echo "  ok — the unmodified seeder sealed to it, and it decrypted before storing"
 
 # No secret_reveal here. Motoko has no feature flags, and it turns out not to
 # need any: matches() answers "is the right value set?" from a build that ships,

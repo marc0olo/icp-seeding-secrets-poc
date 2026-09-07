@@ -43,7 +43,7 @@ import {
 const USAGE = `
 Seal a secret for a sealed-secrets canister, and write the call argument.
 
-  <NAME>=<value> seal --canister <id> --name <NAME> [options]
+  <NAME>=<value> npm run seal -- --canister <id> --name <NAME> [options]
 
 Required
   --canister <id>   Target canister id.
@@ -65,9 +65,6 @@ Derivation
 
 Output
   --out <path>      Write the Candid argument here instead of stdout.
-  --verify          Produce the argument for icp_sealed_secret_matches instead
-                    of icp_sealed_secret_set — "do you already hold this
-                    value?", answered without either side disclosing it.
 
 Then send it as a controller of the canister. scripts/seal.sh does both steps:
 
@@ -76,6 +73,13 @@ Then send it as a controller of the canister. scripts/seal.sh does both steps:
 Or by hand:
 
   icp canister call <id> icp_sealed_secret_set --args-file <path> -e local
+
+The same argument also drives icp_sealed_secret_matches, which asks "do you
+already hold this value?" without either side disclosing it. Both take
+(text, blob), so there is no separate flag here — send the same file to the
+other method:
+
+  icp canister call <id> icp_sealed_secret_matches --args-file <path> -e local
 
 To see what a canister holds, call it directly — no client needed:
 
@@ -112,7 +116,6 @@ function main() {
   const keyName = arg("--key-name", "key_1");
   const source = arg("--source", "pocketic") as MasterKeySource;
   const out = arg("--out", "");
-  const verify = process.argv.includes("--verify");
 
   if (source !== "mainnet" && source !== "pocketic") {
     fail(`--source must be "mainnet" or "pocketic", got ${JSON.stringify(source)}`);
@@ -140,9 +143,10 @@ function main() {
     IbeSeed.random(),
   ).serialize();
 
-  const method = verify ? "icp_sealed_secret_matches" : "icp_sealed_secret_set";
   const candid = candidArgs(name, ciphertext);
 
+  // Progress goes to stderr so that stdout is only ever the Candid argument,
+  // which is what makes `npm run seal ... > args` work without `--out`.
   console.error(
     `derived ${source}:${keyName} key ${toHex(publicKey.publicKeyBytes()).slice(0, 32)}… ` +
       `for ${canisterId.toText()} offline\n` +
@@ -151,10 +155,10 @@ function main() {
 
   if (out) {
     writeFileSync(out, candid);
-    console.error(
-      `wrote ${out}\nsend it as a controller:\n` +
-        `  icp canister call ${canisterId.toText()} ${method} --args-file ${out}`,
-    );
+    // Deliberately no "now run icp canister call …" hint: scripts/seal.sh does
+    // that step itself, where the hint would read as an instruction to repeat it.
+    // USAGE above has the command for anyone running this on its own.
+    console.error(`wrote ${out}`);
   } else {
     console.log(candid);
   }
