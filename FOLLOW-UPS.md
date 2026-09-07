@@ -11,7 +11,7 @@ before the interface in the README has been argued over.
 ## Contents
 
 - [1. Productize into `ic-vetkeys`](#1-productize-into-ic-vetkeys)
-  - [Revisit `info` as a query](#revisit-info-as-a-query)
+  - [Offline derivation inside the canister](#offline-derivation-inside-the-canister)
   - [Macros, so adoption is three lines](#macros-so-adoption-is-three-lines)
   - [Guidance for *using* a secret, not just storing one](#guidance-for-using-a-secret-not-just-storing-one)
   - [Pluggable access control](#pluggable-access-control)
@@ -26,7 +26,7 @@ before the interface in the README has been argued over.
   - [The asymmetry that shapes the UX](#the-asymmetry-that-shapes-the-ux)
   - [Command surface](#command-surface)
   - [Manifest: names and env vars only](#manifest-names-and-env-vars-only)
-  - [Enforce the subnet properties](#enforce-the-subnet-properties)
+  - [Enforce the SEV-SNP property](#enforce-the-sev-snp-property)
   - [Deploy integration](#deploy-integration)
   - [Two mechanical gotchas](#two-mechanical-gotchas)
 - [3. A Motoko library](#3-a-motoko-library)
@@ -42,19 +42,22 @@ Target: a `sealed_secrets` module in
 `backend/rs/ic_vetkeys/src/`, with the PoC canister becoming the reference
 implementation. `rust/core` here is already shaped to be that module's format layer.
 
-### Revisit `info` as a query
+### Offline derivation inside the canister
 
-The PoC makes `icp_sealed_secret_info` an update, because the canister asks
-`vetkd_public_key` for its own key rather than deriving it from a compiled-in constant.
-That was a deliberate trade: an install-time `key_source` argument would let `info` be a
-query, but getting it wrong silently orphans every sealed ciphertext, and it forces a
-per-network build configuration for no security gain (the client-side comparison is
-where the value is).
+The canister gets its own public key from `vetkd_public_key` rather than deriving it from
+a master key compiled into the Wasm. That is what lets one build run against a local
+network and mainnet with no configuration saying which — the alternative is an
+install-time `key_source` argument that silently orphans every ciphertext if set wrong.
+
+The cost is that verification is circular: the canister checks the subnet's derived key
+against the subnet's own reported public key. It is cheaply circular — a subnet that would
+lie already holds the master key and could decrypt everything anyway — and the check that
+matters is on the client, which derives offline from a constant it ships.
 
 A library could have both: derive offline *when* a master key is compiled in for the
-configured name, fall back to `vetkd_public_key` otherwise, and expose whichever it used
-in `info` so a client knows what it is comparing against. Worth doing only if a query
-turns out to matter to somebody — for a seeding flow, one update call is free.
+configured name, and fall back to `vetkd_public_key` otherwise. That would make the
+canister's verification non-circular wherever the key name is a known one, at no cost to
+portability. Worth doing; not worth an interface for.
 
 ### Macros, so adoption is three lines
 
@@ -160,7 +163,7 @@ the right value is deployed. What is *not* implemented is using it to make `icp 
 idempotent.
 
 IBE is randomised, so a client can never compare its ciphertext to the stored one, and
-re-sealing on every deploy is not free: every `set` trial-decrypts, which needs the vetKey
+re-sealing on every deploy is not free: every `set` decrypts, which needs the vetKey
 and so a `vetkd_derive_key` whenever the cache is cold.
 
 ```candid
@@ -185,22 +188,29 @@ Rejected alternatives, and why:
 
 ### Rotation
 
-The PoC carries `epoch` in the identity and per record, but never bumps it. A `rotate`
-endpoint would mean "new writes use the new identity" — non-destructive, because vetKD
-derives a key for any identity, so the canister just derives one extra vetKey per epoch
+An earlier draft carried an `epoch` in the key label and in every record, so a future
+`rotate` could mean "new writes use the new label" — non-destructive, because vetKD
+derives a key for any label, so the canister would derive one extra vetKey per epoch
 still in use.
 
-Be honest about the value: the derived key cannot be compromised independently of the
-subnet master key, so if a secret leaks you rotate the *secret*, not the key. The real
-uses are crypto-agility for a future ciphertext format, and forcing a re-seal sweep.
-The field is in the wire format from day one only because retrofitting one is far more
-painful than carrying four unused bytes.
+It was **removed**, and the reasoning is worth keeping. The derived key cannot be
+compromised independently of the subnet master key, so if a secret leaks you rotate the
+*secret*, not the key — which is just `set` again. That leaves crypto-agility for a
+future ciphertext format, and forcing a re-seal sweep. Neither justified an integer
+threaded through the wire format, both canisters, every stored record and every golden
+vector, permanently pinned at zero.
+
+If rotation is ever wanted, the suite string is the version: `icp-sealed-secrets-v2`
+derives a different keypair and a different label, which is what a format break should
+look like. A library adopting this should reach the same conclusion before adding a
+field back.
 
 ### Also worth carrying over
 
 - **`StableCell::init` keeps an existing value.** Editing a config constant in source
-  and upgrading is a silent no-op. `self_test` must therefore report the *effective*
-  config read back from stable memory, not the compiled-in one. The PoC already does.
+  and upgrading is a silent no-op — deliberately, so an upgrade cannot change the
+  derivation under stored secrets. With `key_name` the only configuration left, that is
+  a one-field concern rather than a general hazard.
 - **Concurrency.** Two cold callers both derive. Accept it: derivation is deterministic
   in `(canister_id, context, input, key_id)`, so both get the identical key and the only
   cost is a duplicate fee. Rejecting the second caller is bad UX in a business path, and
@@ -268,23 +278,26 @@ preflight and derivation logic is exactly what the CLI would absorb.
 
 ### What a canister must implement, and how the CLI finds out
 
-Only **two** methods are load-bearing for a tool that seals:
+Exactly **one** method is load-bearing for a tool that seals:
 
 ```candid
-icp_sealed_secret_info : () -> (variant { Ok : SealedSecretInfo; Err : … });
-icp_sealed_secret_set  : (text, blob) -> (variant { Ok : nat64; Err : … });
+icp_sealed_secret_set : (text, blob) -> (variant { Ok : nat64; Err : … });
 ```
 
-`info` tells the client what to encrypt to and lets it cross-check its own offline
-derivation; `set` receives the ciphertext. With those two a tool can seal.
+Everything the client needs in order to encrypt is a constant of the standard or something
+the deployer already knows: the context and key label are fixed, the public key is derived
+offline from the canister id, and the vetKD key name was chosen at install. So there is
+nothing to ask the canister, and no `info` endpoint — the CLI derives, encrypts, and lets
+`set` be the judge, since it decrypts before storing.
 
-The rest is graded rather than required. `matches` is the one worth pressing for — it is
-what lets an operator confirm the right value is deployed, and what would let `icp deploy`
-re-seal only what changed; a canister without it forces the CLI to re-seal blindly.
-`unset` is housekeeping, `list` helps diffing, and `self_test` is a deploy-time health
-check. A standard that demands two methods and recommends a third is a far easier sell
-than one that demands six, and the CLI should degrade rather than refuse when the
-optional ones are absent.
+`unset` and `list` come next: revoking a leaked credential should not require an upgrade,
+and the CLI needs an inventory to diff against.
+
+`matches` is the one genuinely optional method, and the one worth pressing for anyway —
+it is what would let `icp deploy` re-seal only what changed, where a canister without it
+forces the CLI to re-seal blindly. A standard that demands three methods and recommends a
+fourth is an easy sell, and the CLI should degrade rather than refuse when the optional one
+is absent.
 
 **Discovery is already solved and needs no new mechanism.** `icp canister metadata
 <canister> candid:service` returns the canister's full interface without a single update
@@ -360,13 +373,19 @@ written through an application endpoint.
 therefore carry the *source*, never the resolved value; resolution happens inside the
 operation, at seal time.
 
-### Enforce the subnet properties
+### Enforce the SEV-SNP property
 
-The CLI should hard-fail on mainnet when the subnet is not SEV-SNP or does not hold the
-vetKD key, with an explicit override flag. It already resolves canister → subnet via
+The CLI should hard-fail on mainnet when the canister's subnet is not SEV-SNP, with an
+explicit override flag. It already resolves canister → subnet via
 `get_subnet_for_canister` (`rust/icp/src/operations/canister_migration.rs:113`), so
-this is one extra registry query — the same two checks
+this is one extra registry query — the same check
 [`seed/src/preflight.ts`](./seed/src/preflight.ts) makes.
+
+It should **not** additionally require the subnet to hold the vetKD key.
+`vetkd_derive_key` is routed to a subnet enabled for the key
+(`system_api/routing.rs`, `route_chain_key_message`), so the caller's own subnet need
+not hold it, and gating on that would refuse deployments that work. Key availability is
+established by the seal call itself, which decrypts before storing.
 
 ### Deploy integration
 
@@ -386,7 +405,7 @@ Not a `SyncStep`: those only run during `icp deploy`, so one could never back
 Values should be updatable rather than write-once — seal only what is missing by
 default, `--reseal-secrets` to force, moving to `matches`-based diffing once available.
 
-**The CLI needs no read-back endpoint to know it worked.** `set` trial-decrypts before
+**The CLI needs no read-back endpoint to know it worked.** `set` decrypts before
 storing, so a successful `set` *is* the proof that the canister can read the secret. That
 is worth stating explicitly, because the obvious alternative — a getter the tool calls to
 confirm — is exactly the endpoint that must not exist (see the README on why). The
@@ -590,7 +609,7 @@ on both sides and implemented in Rust and TypeScript already.
 **The cost argument that motivated it does not hold.** One `vetkd_derive_key` with `key_1`
 costs 26_153_846_153 cycles (`test_key_1`: 10_000_000_000), and both canisters here pay it
 only on `set` and `matches` — never on the path that spends the secret, because the
-decrypted value is what is stored. One identity serves every secret, so it does not scale
+decrypted value is what is stored. One key label serves every secret, so it does not scale
 with how many you hold.
 
 **The reason it was tempting is gone.** The pull was that Motoko had no pairings. It does

@@ -5,11 +5,11 @@
 /// against the same golden vectors the Rust and TypeScript sides assert.
 ///
 /// Those vectors are the contract. If any byte here diverges, this canister
-/// derives a different keypair and every ciphertext sealed by the existing
-/// TypeScript seeder becomes undecryptable — silently, since a wrong context
-/// produces a perfectly well-formed ciphertext that simply never opens.
+/// derives a different keypair and no ciphertext the TypeScript seeder produces
+/// will open. Encryption gives no hint — a wrong context yields a perfectly
+/// well-formed ciphertext — so the failure surfaces at `set`, which decrypts
+/// before storing, as an `InvalidCiphertext` that says nothing about the cause.
 
-import Array "mo:core/Array";
 import Nat "mo:core/Nat";
 import Nat8 "mo:core/Nat8";
 import Nat32 "mo:core/Nat32";
@@ -19,84 +19,59 @@ import Blob "mo:core/Blob";
 import Iter "mo:core/Iter";
 
 module {
-  /// Ciphersuite label.
+  /// Ciphersuite label, and the version of this protocol.
   ///
-  /// Bumping this is a hard protocol break: it changes both the vetKD context
-  /// (and so the keypair) and the IBE identity, orphaning every sealed
-  /// ciphertext.
+  /// Bumping it is a hard break: it changes both the vetKD context (and so the
+  /// keypair) and the key label, orphaning every sealed ciphertext.
   public let SUITE_TEXT : Text = "icp-sealed-secrets-v1";
 
-  /// `SUITE_TEXT` as bytes.
+  /// The vetKD `context`: which keypair this canister derives under.
   ///
-  /// Spelled out rather than computed because Motoko requires module-level
-  /// values to be static expressions, and `Text.encodeUtf8` is not one.
-  /// `test/Format.test.mo` asserts the two agree, so a transcription slip here
-  /// fails a test rather than silently changing the protocol.
-  public let SUITE : [Nat8] = [
-    0x69, 0x63, 0x70, 0x2d, // icp-
-    0x73, 0x65, 0x61, 0x6c, 0x65, 0x64, 0x2d, // sealed-
-    0x73, 0x65, 0x63, 0x72, 0x65, 0x74, 0x73, 0x2d, // secrets-
-    0x76, 0x31 // v1
+  /// A constant of the standard, not configuration. The derivation is master key
+  /// -> canister id -> context, so the canister id already separates canisters
+  /// and the suite already separates sealed secrets from any other use of vetKD
+  /// in the same canister. There is nothing left for a client to be told.
+  ///
+  /// Spelled out as bytes rather than computed because Motoko requires
+  /// module-level values to be static expressions and `Text.encodeUtf8` is not
+  /// one. `test/Format.test.mo` asserts these agree with the text, so a
+  /// transcription slip fails a test rather than silently changing the protocol.
+  public let CONTEXT : [Nat8] = [
+    0x69, 0x63, 0x70, 0x2d, 0x73, 0x65, 0x61, 0x6c, // icp-seal
+    0x65, 0x64, 0x2d, 0x73, 0x65, 0x63, 0x72, 0x65, // ed-secre
+    0x74, 0x73, 0x2d, 0x76, 0x31 // ts-v1
   ];
 
-  public let CONTEXT_FORMAT_VERSION : Nat8 = 0x01;
-  public let IDENTITY_FORMAT_VERSION : Nat8 = 0x01;
+  /// The `input` to `vetkd_derive_key`: which key to derive under that keypair.
+  ///
+  /// In vetKD terms the IBE identity. Called a *label* because on ICP "identity"
+  /// means a caller's principal, and this is neither that nor a key.
+  ///
+  /// Distinct from `CONTEXT` so the two cannot be confused at a call site, and
+  /// deliberately independent of the secret's name: one label serves every
+  /// secret, so a single `vetkd_derive_key` unlocks all of them. Per-secret
+  /// labels would multiply the cost by N and buy nothing — there is no privilege
+  /// boundary inside a canister, since its code can derive the key for any label
+  /// whenever it likes.
+  public let KEY_LABEL_TEXT : Text = "icp-sealed-secrets-v1.keys";
+
+  public let KEY_LABEL : [Nat8] = [
+    0x69, 0x63, 0x70, 0x2d, 0x73, 0x65, 0x61, 0x6c, // icp-seal
+    0x65, 0x64, 0x2d, 0x73, 0x65, 0x63, 0x72, 0x65, // ed-secre
+    0x74, 0x73, 0x2d, 0x76, 0x31, 0x2e, 0x6b, 0x65, // ts-v1.ke
+    0x79, 0x73 // ys
+  ];
 
   /// Fixed overhead `IbeCiphertext` adds: 8-byte header, 32-byte seed, 96-byte
   /// `G2` element.
   public let IBE_OVERHEAD : Nat = 136;
 
   public let MAX_NAME_LEN : Nat = 64;
-  public let MAX_APP_SEPARATOR_LEN : Nat = 255;
 
   public type FormatError = {
-    #AppSeparatorTooLong : Nat;
     #EmptyName;
     #NameTooLong : Nat;
     #InvalidNameChar : Char;
-  };
-
-  /// The vetKD `context`:
-  ///
-  /// ```text
-  /// context := 0x01 || u8(len(SUITE)) || SUITE || u8(len(app_separator)) || app_separator
-  /// ```
-  ///
-  /// Both variable-length fields are length-prefixed, so no two distinct
-  /// `(SUITE, app_separator)` pairs encode to the same bytes.
-  public func context(appSeparator : Text) : { #ok : [Nat8]; #err : FormatError } {
-    let sep = appSeparator.encodeUtf8().toArray();
-    if (sep.size() > MAX_APP_SEPARATOR_LEN) {
-      return #err(#AppSeparatorTooLong(sep.size()));
-    };
-    #ok(
-      Array.flatten([
-        [CONTEXT_FORMAT_VERSION, SUITE.size().toNat8()],
-        SUITE,
-        [sep.size().toNat8()],
-        sep,
-      ])
-    );
-  };
-
-  /// The IBE identity, which is also the `input` to `vetkd_derive_key`:
-  ///
-  /// ```text
-  /// identity := 0x01 || u8(len(SUITE)) || SUITE || be_u32(epoch)
-  /// ```
-  ///
-  /// Note what is *absent*: the secret's name. One identity serves every secret
-  /// in the canister, so a single `vetkd_derive_key` call unlocks all of them.
-  /// Per-secret identities would multiply that cost by N and buy nothing —
-  /// there is no privilege boundary inside a canister, since its code can derive
-  /// the key for any identity whenever it likes.
-  public func identity(epoch : Nat32) : [Nat8] {
-    let e = epoch.toNat();
-    Array.flatten([
-      [IDENTITY_FORMAT_VERSION, SUITE.size().toNat8()],
-      SUITE,
-      Array.tabulate(4, func i = Nat.toNat8((e / (256 ** (3 - i : Nat))) % 256)),
-    ]);
   };
 
   /// Accepts `[A-Za-z0-9_.-]{1,64}`.
@@ -128,7 +103,6 @@ module {
   /// Renders a `FormatError` for a Candid `text` field.
   public func errorText(e : FormatError) : Text {
     switch (e) {
-      case (#AppSeparatorTooLong(n)) "application domain separator is " # n.toText() # " bytes, maximum is " # MAX_APP_SEPARATOR_LEN.toText();
       case (#EmptyName) "secret name must not be empty";
       case (#NameTooLong(n)) "secret name is " # n.toText() # " bytes, maximum is " # MAX_NAME_LEN.toText();
       case (#InvalidNameChar(c)) "secret name contains '" # c.toText() # "'; only A-Z a-z 0-9 _ . - are allowed";

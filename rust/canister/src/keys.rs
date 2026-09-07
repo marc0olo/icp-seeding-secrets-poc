@@ -3,7 +3,7 @@
 //! There is no plaintext cache. Records hold the decrypted secret (see
 //! `store::SealedRecord`), so reading one is a map lookup and decryption happens
 //! only on the two paths that receive a ciphertext from a caller: `set`, which
-//! trial-decrypts before storing, and `matches`, which decrypts the candidate it
+//! decrypts before storing, and `matches`, which decrypts the candidate it
 //! is asked to compare.
 //!
 //! Two rules govern everything here.
@@ -16,9 +16,7 @@
 //! authoritative for the subnet it is actually running on. Verifying the derived
 //! key against it is admittedly circular — a subnet that would lie about its
 //! public key already holds the master key and could decrypt everything anyway,
-//! so the circularity costs little. The non-circular check lives in `self_test`,
-//! which compares the subnet's answer against a master key compiled into this
-//! Wasm for a source the *caller* nominates.
+//! so the circularity costs little.
 //!
 //! The check that actually matters is on the client, which derives the key
 //! offline and refuses to encrypt if the canister disagrees — because that
@@ -27,11 +25,8 @@
 
 use ic_cdk_management_canister::{VetKDDeriveKeyArgs, VetKDPublicKeyArgs};
 use ic_vetkeys::{DerivedPublicKey, EncryptedVetKey, TransportSecretKey, VetKey};
-use sealed_secrets_core::{
-    derive_public_key, key_id, sealed_secrets_context, sealed_secrets_identity, MasterKeySource,
-};
+use sealed_secrets_core::{key_id, CONTEXT, KEY_LABEL};
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 use zeroize::Zeroizing;
 
@@ -39,74 +34,18 @@ use crate::store;
 use crate::types::SealedSecretsError;
 
 thread_local! {
-    /// Derived public keys, keyed by context. Each miss costs one
-    /// `vetkd_public_key` call, which is why `info` is an update; caching means
-    /// only the first call after a cold start pays for it.
-    static DPK_CACHE: RefCell<HashMap<Vec<u8>, DerivedPublicKey>> = RefCell::new(HashMap::new());
-
-    /// vetKeys by epoch. Each entry costs one `vetkd_derive_key`:
-    /// 26_153_846_153 cycles for `key_1`, 10_000_000_000 for `test_key_1`, the
-    /// same locally and on mainnet. Hence the cache.
-    static VETKEY_CACHE: RefCell<HashMap<u32, Rc<VetKey>>> = RefCell::new(HashMap::new());
-
+    /// The vetKey. One of them, because one label serves every secret — which is
+    /// the point of the label being a constant. Filling it costs one
+    /// `vetkd_derive_key`: 26_153_846_153 cycles for `key_1`, 10_000_000_000 for
+    /// `test_key_1`, the same locally and on mainnet. Hence the cache.
+    ///
+    /// The public key is deliberately *not* cached alongside it. It is needed
+    /// only to verify a freshly derived vetKey, so it is fetched on exactly the
+    /// path that fills this cache and never read again once that path succeeds.
+    static VETKEY_CACHE: RefCell<Option<Rc<VetKey>>> = const { RefCell::new(None) };
 }
 
-/// The vetKD context.
-///
-/// The application domain separator is always empty here. It stays in the wire
-/// format (as a length-prefixed field) so a canister that later needs to use
-/// vetKD for several purposes can adopt one without a format break, but this PoC
-/// has no use for it and does not expose it as configuration.
-pub fn context() -> Result<Vec<u8>, SealedSecretsError> {
-    sealed_secrets_context("").map_err(|e| SealedSecretsError::Internal(e.to_string()))
-}
-
-/// The IBE identity for a given epoch.
-pub fn identity(epoch: u32) -> Vec<u8> {
-    sealed_secrets_identity(epoch)
-}
-
-/// This canister's public key, as reported by the subnet, cached after the first
-/// call.
-///
-/// Asking the subnet rather than deriving from a compiled-in constant is what
-/// lets one build run against both a local network and mainnet with no
-/// configuration saying which. The trade is that answering costs an
-/// inter-canister call, so `info` is an update rather than a query.
-pub async fn public_key() -> Result<DerivedPublicKey, SealedSecretsError> {
-    let context = context()?;
-
-    if let Some(cached) = DPK_CACHE.with_borrow(|c| c.get(&context).cloned()) {
-        return Ok(cached);
-    }
-
-    let bytes = reported_public_key().await?;
-    let dpk = DerivedPublicKey::deserialize(&bytes)
-        .map_err(|e| SealedSecretsError::Internal(format!("malformed public key: {e:?}")))?;
-
-    DPK_CACHE.with_borrow_mut(|c| c.insert(context, dpk.clone()));
-    Ok(dpk)
-}
-
-/// Derives the public key offline from a master key compiled into this Wasm.
-///
-/// Only `self_test` uses this, to audit the subnet's answer against an
-/// expectation the caller supplies. Returns `None` when no master key is
-/// compiled in for this key name under that source.
-pub fn expected_public_key(source: MasterKeySource) -> Option<Vec<u8>> {
-    let context = context().ok()?;
-    let config = store::config();
-    derive_public_key(
-        source,
-        &key_id(&config.key_name),
-        &ic_cdk::api::canister_self(),
-        &context,
-    )
-    .ok()
-    .map(|k| k.serialize())
-}
-
-/// Obtains the vetKey for `epoch`, deriving it if it is not cached.
+/// Obtains this canister's vetKey, deriving it if it is not cached.
 ///
 /// Two concurrent cold callers will both derive. That is accepted rather than
 /// prevented: vetKD derivation is deterministic in
@@ -115,17 +54,21 @@ pub fn expected_public_key(source: MasterKeySource) -> Option<Vec<u8>> {
 /// second caller is bad UX in a business path, and making it wait is not
 /// implementable, since the two are separate message executions and neither can
 /// await the other's future.
-pub async fn vetkey(epoch: u32) -> Result<Rc<VetKey>, SealedSecretsError> {
-    if let Some(cached) = VETKEY_CACHE.with_borrow(|c| c.get(&epoch).cloned()) {
+pub async fn vetkey() -> Result<Rc<VetKey>, SealedSecretsError> {
+    if let Some(cached) = VETKEY_CACHE.with_borrow(|c| c.clone()) {
         return Ok(cached);
     }
 
     // Everything synchronous happens before the first await, and no borrow is
     // held into it.
     let config = store::config();
-    let context = context()?;
-    let identity = identity(epoch);
-    let dpk = public_key().await?;
+
+    // The public key `decrypt_and_verify` checks the reply against. Asking the
+    // subnet rather than deriving from a compiled-in constant is what lets one
+    // build run against both a local network and mainnet with no configuration
+    // saying which; see `reported_public_key` on why the circularity is cheap.
+    let dpk = DerivedPublicKey::deserialize(&reported_public_key().await?)
+        .map_err(|e| SealedSecretsError::Internal(format!("malformed public key: {e:?}")))?;
 
     let seed = ic_cdk_management_canister::raw_rand()
         .await
@@ -139,8 +82,8 @@ pub async fn vetkey(epoch: u32) -> Result<Rc<VetKey>, SealedSecretsError> {
         .map_err(|e| SealedSecretsError::Internal(format!("bad transport seed: {e}")))?;
 
     let reply = ic_cdk_management_canister::vetkd_derive_key(&VetKDDeriveKeyArgs {
-        input: identity.clone(),
-        context,
+        input: KEY_LABEL.to_vec(),
+        context: CONTEXT.to_vec(),
         key_id: key_id(&config.key_name),
         transport_public_key: tsk.public_key(),
     })
@@ -149,7 +92,7 @@ pub async fn vetkey(epoch: u32) -> Result<Rc<VetKey>, SealedSecretsError> {
 
     let vetkey = EncryptedVetKey::deserialize(&reply.encrypted_key)
         .map_err(|e| SealedSecretsError::Internal(format!("malformed encrypted vetkey: {e}")))?
-        .decrypt_and_verify(&tsk, &dpk, &identity)
+        .decrypt_and_verify(&tsk, &dpk, KEY_LABEL)
         .map_err(|e| {
             SealedSecretsError::Internal(format!(
                 "the subnet returned a key that does not match our derived public key: {e}"
@@ -157,20 +100,17 @@ pub async fn vetkey(epoch: u32) -> Result<Rc<VetKey>, SealedSecretsError> {
         })?;
 
     let vetkey = Rc::new(vetkey);
-    VETKEY_CACHE.with_borrow_mut(|c| c.insert(epoch, vetkey.clone()));
+    VETKEY_CACHE.with_borrow_mut(|c| *c = Some(vetkey.clone()));
     Ok(vetkey)
 }
 
-/// Decrypts a ciphertext under a given epoch's key, without touching any cache.
+/// Decrypts a ciphertext with this canister's vetKey.
 ///
-/// This is what `set` uses to trial-decrypt before storing — the check that turns
-/// a wrong context, epoch or key id into an error in front of the operator rather
-/// than an accepted blob that nobody can decrypt months later.
-pub async fn decrypt_with_epoch(
-    ciphertext: &[u8],
-    epoch: u32,
-) -> Result<Zeroizing<Vec<u8>>, SealedSecretsError> {
-    let vetkey = vetkey(epoch).await?;
+/// This is what `set` uses before storing — the check that turns a wrong key
+/// name or master key table into an error in front of the operator, rather than
+/// an accepted blob that nobody can decrypt months later.
+pub async fn decrypt(ciphertext: &[u8]) -> Result<Zeroizing<Vec<u8>>, SealedSecretsError> {
+    let vetkey = vetkey().await?;
 
     let parsed = ic_vetkeys::IbeCiphertext::deserialize(ciphertext).map_err(|e| {
         SealedSecretsError::InvalidCiphertext(format!("not an IBE ciphertext: {e}"))
@@ -178,8 +118,9 @@ pub async fn decrypt_with_epoch(
 
     parsed.decrypt(&vetkey).map(Zeroizing::new).map_err(|_| {
         SealedSecretsError::InvalidCiphertext(
-            "ciphertext was not encrypted to this canister's key for this epoch \
-                 (check the context, epoch and key name reported by info)"
+            "ciphertext was not encrypted to this canister's key: check that the \
+                 client used this canister's id, the same vetKD key name, and the \
+                 master key table for this network"
                 .to_string(),
         )
     })
@@ -187,15 +128,16 @@ pub async fn decrypt_with_epoch(
 
 /// Asks the subnet for this canister's public key.
 ///
-/// This is authoritative — it is what [`public_key`] caches and what
-/// `decrypt_and_verify` checks against. `self_test` also calls it directly, to
-/// compare against a master key compiled into this Wasm.
+/// This is what `decrypt_and_verify` checks a derived vetKey against, which
+/// makes the check circular — the subnet vouching for itself. Cheaply so: a
+/// subnet that would lie here already holds the master key and could decrypt
+/// everything anyway. The non-circular check is the client's, which derives the
+/// key offline from a master key it ships.
 pub async fn reported_public_key() -> Result<Vec<u8>, SealedSecretsError> {
     let config = store::config();
-    let context = context()?;
     ic_cdk_management_canister::vetkd_public_key(&VetKDPublicKeyArgs {
         canister_id: None,
-        context,
+        context: CONTEXT.to_vec(),
         key_id: key_id(&config.key_name),
     })
     .await

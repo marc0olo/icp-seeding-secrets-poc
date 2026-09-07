@@ -3,9 +3,10 @@
 /// These are the same values `rust/core/tests/golden.rs` and
 /// `seed/src/format.test.ts` assert. Three implementations, identical bytes —
 /// which is the only thing that makes them interoperable. A divergence here
-/// means this canister derives a different keypair, and every ciphertext the
-/// existing seeder produces becomes undecryptable without any error at seal
-/// time.
+/// means this canister derives a different keypair, so every ciphertext the
+/// seeder produces is one it cannot open. `set` would catch that — it decrypts
+/// before storing — but as an opaque `InvalidCiphertext` on every seal, with
+/// nothing pointing at the byte that moved. These vectors are what name it.
 
 import { test } "mo:test";
 import Format "../src/lib/Format";
@@ -15,55 +16,22 @@ import Nat8 "mo:core/Nat8";
 import Nat "mo:core/Nat";
 
 test(
-  "the suite label is pinned",
+  "context and key label golden vectors",
   func() {
-    assert Format.toHex(Format.SUITE) == "6963702d7365616c65642d736563726574732d7631";
-    assert Format.SUITE.size() == 21;
-    // The literal must match the text it claims to encode.
-    assert Format.SUITE == Blob.toArray(Text.encodeUtf8(Format.SUITE_TEXT));
-  },
-);
-
-func ctx(sep : Text) : [Nat8] = switch (Format.context(sep)) {
-  case (#ok(b)) b;
-  case (#err(_)) { assert false; [] };
-};
-
-test(
-  "context golden vectors",
-  func() {
-    assert Format.toHex(ctx("")) == "01156963702d7365616c65642d736563726574732d763100";
-    assert Format.toHex(ctx("demo")) == "01156963702d7365616c65642d736563726574732d76310464656d6f";
+    assert Format.toHex(Format.CONTEXT) == "6963702d7365616c65642d736563726574732d7631";
+    assert Format.toHex(Format.KEY_LABEL) == "6963702d7365616c65642d736563726574732d76312e6b657973";
+    // The literals must match the text they claim to encode.
+    assert Format.CONTEXT == Blob.toArray(Text.encodeUtf8(Format.SUITE_TEXT));
+    assert Format.KEY_LABEL == Blob.toArray(Text.encodeUtf8(Format.KEY_LABEL_TEXT));
   },
 );
 
 test(
-  "identity golden vectors",
+  "the context and the key label are different bytes",
   func() {
-    assert Format.toHex(Format.identity(0)) == "01156963702d7365616c65642d736563726574732d763100000000";
-    assert Format.toHex(Format.identity(1)) == "01156963702d7365616c65642d736563726574732d763100000001";
-    assert Format.toHex(Format.identity(4294967295)) == "01156963702d7365616c65642d736563726574732d7631ffffffff";
-  },
-);
-
-test(
-  "the context encoding is unambiguous",
-  func() {
-    // Length prefixes exist so no two distinct inputs collide.
-    let a = ctx("x");
-    let b = ctx("");
-    assert a != b;
-    assert a.size() == b.size() + 1;
-  },
-);
-
-test(
-  "the app separator length is bounded",
-  func() {
-    var ok = "";
-    for (_ in Nat.range(0, 255)) { ok #= "a" };
-    assert (switch (Format.context(ok)) { case (#ok(_)) true; case (#err(_)) false });
-    assert (switch (Format.context(ok # "a")) { case (#err(#AppSeparatorTooLong(256))) true; case (_) false });
+    // They select different things — the context selects the keypair, the label
+    // selects a key within it — so they must never be the same.
+    assert Format.CONTEXT != Format.KEY_LABEL;
   },
 );
 

@@ -9,39 +9,30 @@
 import Map "mo:core/Map";
 
 module {
-  /// 4 KiB, i.e. roughly 3.9 KiB of plaintext once IBE's fixed 136-byte overhead
-  /// is deducted — comfortably covering API keys, tokens and small PEMs.
-  public let DEFAULT_MAX_CIPHERTEXT_LEN : Nat64 = 4096;
-
-  /// Bounds the cost of `selfTest` and the size of a `list` response.
-  public let DEFAULT_MAX_SECRETS : Nat64 = 256;
-
-  /// Configuration pinned at first init.
+  /// Configuration pinned at first init: the vetKD key name, and nothing else.
+  ///
+  /// Everything else about the derivation is a constant of the standard — see
+  /// `lib/Format.mo`. The key name cannot be, since mainnet and a local network
+  /// both have a `key_1` backed by different master keys, and only the deployer
+  /// knows which network this is.
   ///
   /// Kept across upgrades rather than re-read from the install argument, which
-  /// matches the Rust canister's `StableCell::init`. The consequence is the same
-  /// in both: editing a constant in source and upgrading is a silent no-op,
-  /// which is why `selfTest` reports the *effective* config read back from here
-  /// rather than whatever the source says.
+  /// matches the Rust canister's `StableCell::init`: editing the constant in
+  /// source and upgrading is a silent no-op, deliberately, so that an upgrade
+  /// cannot change the derivation under stored secrets.
   public type Config = {
     keyName : Text;
-    epoch : Nat32;
-    maxCiphertextLen : Nat64;
-    maxSecrets : Nat64;
   };
 
   public func defaultConfig(keyName : Text) : Config = {
     keyName = if (keyName == "") { "key_1" } else { keyName };
-    epoch = 0;
-    maxCiphertextLen = DEFAULT_MAX_CIPHERTEXT_LEN;
-    maxSecrets = DEFAULT_MAX_SECRETS;
   };
 
   /// One secret at rest.
   ///
   /// **Holds the plaintext, not the ciphertext.** The secret arrives sealed and
   /// is decrypted once, at `set`, after which the ciphertext is discarded and
-  /// only its digest and length are kept.
+  /// only its digest is kept.
   ///
   /// Sealing protects the secret *in transit* — it never appears in an ingress
   /// message, a Candid argument, shell history or a CI log. It was never what
@@ -54,8 +45,6 @@ module {
   /// forever. And it removes the plaintext cache along with every staleness
   /// question that came with it.
   public type SealedRecord = {
-    /// Epoch the secret was sealed under, recorded for `list`.
-    epoch : Nat32;
     /// Increments on overwrite.
     revision : Nat64;
     createdAtNs : Nat64;
@@ -67,8 +56,6 @@ module {
     /// plaintext, which is why it stays safe to expose where a digest of the
     /// plaintext would be an offline guessing oracle for a low-entropy secret.
     ciphertextSha256 : Blob;
-    /// Length of the submitted ciphertext, for `list`.
-    ciphertextLen : Nat64;
     /// The decrypted secret.
     plaintext : Blob;
   };

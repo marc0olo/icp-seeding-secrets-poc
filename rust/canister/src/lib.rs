@@ -11,7 +11,7 @@
 //!
 //! - **The proposed standard.** `icp_sealed_secret_{info,set}` are what any tool
 //!   needs to seal; `matches` is what an operator needs to confirm the right
-//!   value is deployed; `list`, `unset` and `self_test` are convenience.
+//!   value is deployed; `list` and `unset` are convenience.
 //! - **The worked example**, and the reason any of this exists:
 //!   `call_api_with_secret` authenticates an outbound HTTPS request with a sealed
 //!   secret, and `strip_response` makes its reply deterministic enough for
@@ -43,10 +43,7 @@ use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
 use store::{Config, SealedRecord};
-use types::{KeySource, SealedSecretEntry, SealedSecretInfo, SealedSecretsError, SelfTestReport};
-
-/// Version of the wire interface this canister speaks.
-const STANDARD_VERSION: u32 = 1;
+use types::{SealedSecretEntry, SealedSecretsError};
 
 /// Where `call_api_with_secret` sends its authenticated request.
 ///
@@ -82,7 +79,6 @@ pub struct InitArgs {
 fn init(args: InitArgs) {
     store::set_config(Config {
         key_name: args.key_name,
-        ..Config::default()
     });
 }
 
@@ -102,40 +98,14 @@ fn require_controller() -> Result<(), SealedSecretsError> {
     }
 }
 
-/// Everything a client needs to seal for this canister.
-///
-/// An update rather than a query, because `public_key` comes from
-/// `vetkd_public_key` — authoritative for whichever subnet this canister is
-/// actually on. It is cached, so only the first call pays for the round trip.
-///
-/// A client must treat `public_key` as a cross-check against its **own** offline
-/// derivation, never as the key to encrypt to. That comparison is the real
-/// defence: this response crosses boundary nodes, and a client that trusted it
-/// could be handed a key an attacker controls.
-#[update]
-async fn icp_sealed_secret_info() -> Result<SealedSecretInfo, SealedSecretsError> {
-    let config = store::config();
-    let context = keys::context()?;
-    let public_key = keys::public_key().await?;
-
-    Ok(SealedSecretInfo {
-        standard_version: STANDARD_VERSION,
-        context: ByteBuf::from(context),
-        identity: ByteBuf::from(keys::identity(config.epoch)),
-        epoch: config.epoch,
-        key_name: config.key_name,
-        public_key: ByteBuf::from(public_key.serialize()),
-        max_ciphertext_len: config.max_ciphertext_len,
-        max_secrets: config.max_secrets,
-    })
-}
-
 /// Stores a sealed secret, after proving it can actually be decrypted.
 ///
-/// The trial decryption is the whole point of making this `async` rather than a
-/// cheap synchronous write. Without it, a ciphertext sealed under the wrong
-/// context, epoch or key id is accepted happily and only discovered to be
-/// unreadable at the first production use, potentially months later.
+/// The decryption is the whole point of making this `async` rather than a cheap
+/// synchronous write. Without it, a ciphertext sealed to the wrong canister id,
+/// key name or master key table is accepted happily and only discovered to be
+/// unreadable at the first production use, potentially months later. It is also
+/// the only health check this interface needs: it exercises `vetkd_public_key`,
+/// `vetkd_derive_key`, verification and decryption, on real data.
 ///
 /// Returns the new revision.
 #[update]
@@ -146,25 +116,12 @@ async fn icp_sealed_secret_set(
     require_controller()?;
     validate_secret_name(&name).map_err(|e| SealedSecretsError::InvalidName(e.to_string()))?;
 
-    let config = store::config();
     let ciphertext = ciphertext.into_vec();
-
-    if ciphertext.len() as u64 > config.max_ciphertext_len {
-        return Err(SealedSecretsError::TooLarge {
-            max: config.max_ciphertext_len,
-        });
-    }
-
     let existing = store::get_record(&name);
-    if existing.is_none() && store::len() >= config.max_secrets {
-        return Err(SealedSecretsError::TooMany {
-            max: config.max_secrets,
-        });
-    }
 
     // Fails here, in front of the deployer, rather than in production — and its
     // output is what gets stored, so the decryption is not merely a check.
-    let plaintext = keys::decrypt_with_epoch(&ciphertext, config.epoch).await?;
+    let plaintext = keys::decrypt(&ciphertext).await?;
 
     let now = ic_cdk::api::time();
     let revision = existing.as_ref().map(|r| r.revision + 1).unwrap_or(0);
@@ -173,14 +130,12 @@ async fn icp_sealed_secret_set(
     store::put_record(
         &name,
         SealedRecord {
-            epoch: config.epoch,
             revision,
             created_at_ns,
             updated_at_ns: now,
             ciphertext_sha256: Sha256::digest(&ciphertext).to_vec(),
-            ciphertext_len: ciphertext.len() as u64,
-            // The trial decryption above produced this. Storing it is what lets
-            // every later read be a map lookup instead of a vetKD round trip.
+            // The decryption above produced this. Storing it is what lets every
+            // later read be a map lookup instead of a vetKD round trip.
             plaintext: plaintext.to_vec(),
         },
     );
@@ -230,12 +185,11 @@ async fn icp_sealed_secret_matches(
     require_controller()?;
 
     let record = store::get_record(&name).ok_or(SealedSecretsError::NotFound)?;
-    let config = store::config();
 
     // Only the candidate is sealed; the stored side is already plaintext. The
     // comparison stays constant-time regardless, because a timing difference
     // would leak how many leading bytes a guess got right.
-    let candidate_plaintext = keys::decrypt_with_epoch(&candidate.into_vec(), config.epoch).await?;
+    let candidate_plaintext = keys::decrypt(&candidate.into_vec()).await?;
 
     Ok(bool::from(
         record
@@ -245,16 +199,16 @@ async fn icp_sealed_secret_matches(
     ))
 }
 
-/// Lists stored secrets.
+/// Lists stored secrets: the inventory, and how a client confirms its write
+/// landed.
 ///
-/// Controller-gated, because it is more revealing than it looks: IBE overhead is
-/// a fixed 136 bytes, so `ciphertext_len` gives the exact plaintext length, and
-/// the names alone (`billing_live_key`, …) are useful reconnaissance.
+/// Controller-gated, because names alone (`billing_live_key`, …) are useful
+/// reconnaissance.
 ///
 /// Nothing here is derived from a plaintext. A digest of the plaintext would be
 /// an offline guessing oracle for low-entropy secrets; a digest of a randomised
-/// ciphertext reveals nothing, while still letting a client confirm its upload
-/// landed.
+/// ciphertext reveals nothing, while still letting the client that produced it
+/// recognise its own upload.
 #[query]
 fn icp_sealed_secret_list() -> Result<Vec<SealedSecretEntry>, SealedSecretsError> {
     require_controller()?;
@@ -262,59 +216,12 @@ fn icp_sealed_secret_list() -> Result<Vec<SealedSecretEntry>, SealedSecretsError
         .into_iter()
         .map(|(name, r)| SealedSecretEntry {
             name,
-            epoch: r.epoch,
             revision: r.revision,
-            ciphertext_len: r.ciphertext_len,
             ciphertext_sha256: ByteBuf::from(r.ciphertext_sha256),
             created_at_ns: r.created_at_ns,
             updated_at_ns: r.updated_at_ns,
         })
         .collect())
-}
-
-/// Exercises the full decryption path and reports what actually happened.
-///
-/// Run this right after deploying and after every upgrade. It is the difference
-/// between finding out at deploy time that this subnet does not hold the vetKD
-/// key, and finding out during a customer request.
-///
-/// Pass `expected_source` to also audit the subnet's `vetkd_public_key` against a
-/// master key compiled into this Wasm — the one check in the whole design that is
-/// not the subnet vouching for itself. Do this once per deployment with the
-/// network you believe you are on.
-#[update]
-async fn icp_sealed_secret_self_test(
-    expected_source: Option<KeySource>,
-) -> Result<SelfTestReport, SealedSecretsError> {
-    require_controller()?;
-
-    let config = store::config();
-    let context = keys::context()?;
-    let records = store::all_records();
-
-    let reported = keys::reported_public_key().await.ok();
-
-    // The audit: does the subnet's own answer match a master key compiled into
-    // this Wasm, for the network the caller believes they are on? `None` means
-    // the caller did not ask, or we hold no master key for this name.
-    let public_key_matches_master = match (expected_source, &reported) {
-        (Some(source), Some(remote)) => {
-            keys::expected_public_key(source.into()).map(|expected| &expected == remote)
-        }
-        _ => None,
-    };
-
-    let vetkd_derive_ok = keys::vetkey(config.epoch).await.is_ok();
-
-    Ok(SelfTestReport {
-        vetkd_public_key_ok: reported.is_some(),
-        vetkd_derive_ok,
-        public_key_matches_master,
-        effective_key_name: config.key_name,
-        effective_context: ByteBuf::from(context),
-        epoch: config.epoch,
-        num_secrets: records.len() as u64,
-    })
 }
 
 /// The actual use case: authenticate an outbound HTTPS request with a sealed

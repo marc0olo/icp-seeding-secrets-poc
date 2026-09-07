@@ -12,70 +12,48 @@ import { MasterPublicKey, MasterPublicKeyId, PocketIcMasterPublicKeyId } from "@
 import type { DerivedPublicKey } from "@icp-sdk/vetkeys";
 import type { Principal } from "@icp-sdk/core/principal";
 
-/** Ciphersuite label. Changing it is a hard protocol break. */
-export const SUITE = new TextEncoder().encode("icp-sealed-secrets-v1");
+/**
+ * Ciphersuite label, and the version of this protocol. Changing it is a hard
+ * break: every previously sealed ciphertext becomes undecryptable.
+ */
+export const SUITE_TEXT = "icp-sealed-secrets-v1";
 
-export const CONTEXT_FORMAT_VERSION = 0x01;
-export const IDENTITY_FORMAT_VERSION = 0x01;
+/**
+ * The vetKD `context`: which keypair the canister derives under.
+ *
+ * A constant of the standard, not configuration. The derivation is master key ->
+ * canister id -> context, so the canister id already separates canisters and the
+ * suite already separates sealed secrets from any other use of vetKD in the same
+ * canister.
+ */
+export const CONTEXT = new TextEncoder().encode(SUITE_TEXT);
+
+/**
+ * The `input` to `vetkd_derive_key`: which key to derive under that keypair.
+ *
+ * In vetKD terms the IBE identity. Called a *label* because on ICP "identity"
+ * means a caller's principal, and this is neither that nor a key.
+ *
+ * Distinct from `CONTEXT` so the two cannot be confused at a call site, and
+ * deliberately independent of the secret's name: one label serves every secret,
+ * so a single `vetkd_derive_key` unlocks all of them.
+ */
+export const KEY_LABEL = new TextEncoder().encode("icp-sealed-secrets-v1.keys");
 
 /** Fixed IBE overhead: 8-byte header + 32-byte seed + 96-byte G2 element. */
 export const IBE_OVERHEAD = 136;
 
 export const MAX_NAME_LEN = 64;
-export const MAX_APP_SEPARATOR_LEN = 255;
 
 /**
  * Which table of hardcoded master public keys to derive from.
  *
  * Deliberately explicit rather than inferred from the key name: mainnet and
  * PocketIC both have a `key_1`, and their master public keys differ. Guessing
- * wrong produces a ciphertext nobody can ever decrypt, with no error at seal time.
+ * wrong produces a ciphertext the canister cannot decrypt — which `set` catches,
+ * because it decrypts before storing.
  */
 export type MasterKeySource = "mainnet" | "pocketic";
-
-/**
- * context := 0x01 || u8(len(SUITE)) || SUITE || u8(len(app_separator)) || app_separator
- *
- * Both variable-length fields are length-prefixed so no two distinct
- * (suite, separator) pairs can encode identically.
- */
-export function sealedSecretsContext(appSeparator: string): Uint8Array {
-  const sep = new TextEncoder().encode(appSeparator);
-  if (sep.length > MAX_APP_SEPARATOR_LEN) {
-    throw new Error(
-      `application domain separator is ${sep.length} bytes, maximum is ${MAX_APP_SEPARATOR_LEN}`,
-    );
-  }
-  const out = new Uint8Array(3 + SUITE.length + sep.length);
-  let i = 0;
-  out[i++] = CONTEXT_FORMAT_VERSION;
-  out[i++] = SUITE.length;
-  out.set(SUITE, i);
-  i += SUITE.length;
-  out[i++] = sep.length;
-  out.set(sep, i);
-  return out;
-}
-
-/**
- * identity := 0x01 || u8(len(SUITE)) || SUITE || be_u32(epoch)
- *
- * Note the absence of the secret's name: one identity serves every secret in a
- * canister, so a single `vetkd_derive_key` unlocks all of them.
- */
-export function sealedSecretsIdentity(epoch: number): Uint8Array {
-  if (!Number.isInteger(epoch) || epoch < 0 || epoch > 0xffffffff) {
-    throw new Error(`epoch must be a uint32, got ${epoch}`);
-  }
-  const out = new Uint8Array(2 + SUITE.length + 4);
-  let i = 0;
-  out[i++] = IDENTITY_FORMAT_VERSION;
-  out[i++] = SUITE.length;
-  out.set(SUITE, i);
-  i += SUITE.length;
-  new DataView(out.buffer).setUint32(i, epoch, false);
-  return out;
-}
 
 /** Accepts `[A-Za-z0-9_.-]{1,64}`. */
 export function validateSecretName(name: string): void {
@@ -94,21 +72,20 @@ export function validateSecretName(name: string): void {
 /**
  * Derives the canister's sealed-secrets public key offline.
  *
- * No network call. This is the value actually encrypted to; anything the canister
- * reports is only ever a cross-check against this.
+ * No network call, and nothing to trust: a master public key shipped in the
+ * vetKeys library, plus the canister id, plus the context.
  */
 export function derivePublicKey(
   source: MasterKeySource,
   keyName: string,
   canisterId: Principal,
-  context: Uint8Array,
 ): DerivedPublicKey {
   const master =
     source === "mainnet"
       ? MasterPublicKey.productionKey(masterKeyId(keyName))
       : MasterPublicKey.pocketicKey(pocketIcKeyId(keyName));
 
-  return master.deriveCanisterKey(canisterId.toUint8Array()).deriveSubKey(context);
+  return master.deriveCanisterKey(canisterId.toUint8Array()).deriveSubKey(CONTEXT);
 }
 
 function masterKeyId(keyName: string): MasterPublicKeyId {
