@@ -471,8 +471,8 @@ discloses nothing in either direction:
 
 ```bash
 DUMMY_API_KEY='sk-example-not-a-real-key' npm run seal -- \
-  --canister "$CID" --name DUMMY_API_KEY --host http://127.0.0.1:8010 \
-  --source pocketic --local --verify --out /tmp/check.args
+  --canister "$CID" --name DUMMY_API_KEY --source pocketic \
+  --verify --out /tmp/check.args
 icp canister call "$CID" icp_sealed_secret_matches --args-file /tmp/check.args -e local
 # (true)
 ```
@@ -489,16 +489,19 @@ or a mis-derived key all fail there, at deploy time, with a typed error.
 
 ### On mainnet
 
-Drop `--local` and switch the master-key table:
+Switch the master-key table, and run the preflight for real:
 
 ```bash
+npm run preflight -- --canister <id> --host https://icp-api.io
+
 npm run seal -- --canister <id> --name DUMMY_API_KEY \
-  --host https://icp-api.io --source mainnet --out sealed.args
+  --source mainnet --out sealed.args
 icp canister call <id> icp_sealed_secret_set --args-file sealed.args --network ic
 ```
 
-The preflight then hard-fails unless the subnet reports `sev_enabled`. That is a real
-check on mainnet, and it is the one thing a local run cannot rehearse at all.
+Without `--local` the preflight hard-fails unless the subnet reports `sev_enabled`. That
+is a real check on mainnet, and it is the one thing a local run cannot rehearse at all.
+Note that sealing itself takes no `--host`: it never talks to the network.
 
 > `--source` is not inferable from the key name. Mainnet and PocketIC each have a key
 > called `key_1`, backed by **different** master public keys — necessarily so, since a
