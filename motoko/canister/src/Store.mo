@@ -13,7 +13,7 @@ module {
   /// is deducted — comfortably covering API keys, tokens and small PEMs.
   public let DEFAULT_MAX_CIPHERTEXT_LEN : Nat64 = 4096;
 
-  /// Bounds the cost of `selfTest` and the size of a `list` response.
+  /// Bounds the size of a `list` response.
   public let DEFAULT_MAX_SECRETS : Nat64 = 256;
 
   /// Configuration pinned at first init.
@@ -21,7 +21,7 @@ module {
   /// Kept across upgrades rather than re-read from the install argument, which
   /// matches the Rust canister's `StableCell::init`. The consequence is the same
   /// in both: editing a constant in source and upgrading is a silent no-op,
-  /// which is why `selfTest` reports the *effective* config read back from here
+  /// which is why `info` reports the *effective* config read back from here
   /// rather than whatever the source says.
   public type Config = {
     keyName : Text;

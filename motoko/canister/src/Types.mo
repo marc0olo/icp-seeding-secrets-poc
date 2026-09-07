@@ -5,15 +5,6 @@
 /// frozen standard.
 
 module {
-  /// Which table of hardcoded master public keys to check the subnet's answer
-  /// against.
-  ///
-  /// A `selfTest` *argument*, not configuration. The canister obtains its public
-  /// key from `vetkd_public_key`, which is authoritative; comparing that against
-  /// a constant compiled into this Wasm is an on-demand audit, and the caller is
-  /// the one who knows which network they believe they are on.
-  public type KeySource = { #Mainnet; #PocketIc };
-
   /// Everything a client needs to seal a secret for this canister, and to check
   /// it is sealing to the right key.
   public type SealedSecretInfo = {
@@ -57,26 +48,6 @@ module {
     ciphertext_sha256 : Blob;
     created_at_ns : Nat64;
     updated_at_ns : Nat64;
-  };
-
-  /// The result of `selfTest`: a deploy-time health check that exercises the
-  /// whole decryption path, so failures surface here rather than in production.
-  public type SelfTestReport = {
-    vetkd_public_key_ok : Bool;
-    vetkd_derive_ok : Bool;
-    /// Whether the subnet's public key matched the master key compiled into this
-    /// Wasm, for the `expected_source` the caller supplied. `null` when none was
-    /// supplied, or when no master key is compiled in for this key name under
-    /// that source.
-    ///
-    /// This is the one check in the design that is not the subnet vouching for
-    /// itself, so a deployment should run it once with the source it expects.
-    public_key_matches_master : ?Bool;
-    /// The key name actually in use, read from stable state rather than source.
-    effective_key_name : Text;
-    effective_context : Blob;
-    epoch : Nat32;
-    num_secrets : Nat64;
   };
 
   /// Typed errors, so tooling can branch on the cause rather than parse prose.

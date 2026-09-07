@@ -138,9 +138,19 @@ it is the whole answer to "what does the canister know that nobody else does".
 1. **consistency** — a pairing check that the three points were produced together, so a
    malformed reply is rejected rather than silently unwrapped;
 2. **unwrap** — subtract the transport secret key's contribution and the vetKey falls out;
-3. **verify** — the vetKey *is* a BLS signature over the key label, so it is checked against
-   the public key the canister derived from a master key **compiled into its own Wasm**.
-   Without step 3 the canister would be taking the subnet's word for the key it was handed.
+3. **verify** — the vetKey *is* a BLS signature over the key label, so it is checked
+   against the canister's derived public key before anything is decrypted with it. That
+   rejects a malformed or substituted reply.
+
+On the last point, note what this canister verifies *against*: the key `vetkd_public_key`
+reported, not one derived from a master key compiled into the Wasm. That is circular —
+the subnet vouching for itself — and it is a deliberate trade, so that one build runs
+against a local network and mainnet with no configuration saying which. It costs little:
+a subnet that would lie about its public key already holds the master key and could
+decrypt everything anyway. **The non-circular check is on the client**, which derives the
+key offline from a master key it ships and refuses to encrypt if the canister disagrees —
+and that is the check that matters, because the client's request crosses boundary nodes
+where the canister's inter-canister call does not.
 
 That vetKey is simultaneously the IBE decryption key for anything sealed to the same
 label, which is why one derivation opens every secret in the canister.
@@ -394,7 +404,8 @@ client derives the key from a master-key constant it ships with, uses
 The canister takes its own key from `vetkd_public_key`, which is authoritative for the
 subnet it is on. Verifying against that is circular, but cheaply so: a subnet that would
 lie about its public key already holds the master key and could decrypt everything
-anyway. The non-circular audit lives in `self_test`, on demand.
+anyway. The non-circular check is the client's, in the paragraph above — and it is the
+one that matters, because that is the response which crosses boundary nodes.
 
 **`set` is async and trial-decrypts before storing.** A wrong context, epoch or key
 name otherwise produces a perfectly-accepted ciphertext that nobody discovers is
@@ -482,19 +493,15 @@ icp canister call "$CID" icp_sealed_secret_matches --args-file /tmp/check.args -
 # (true)
 ```
 
-Then, if you want to watch the round trip rather than trust it, and check the whole
-derivation path is healthy:
+Or, if you want to watch the round trip rather than trust it:
 
 ```bash
 icp canister call sealed-secrets-rust secret_reveal '("DUMMY_API_KEY")' -e local
-icp canister call sealed-secrets-rust icp_sealed_secret_self_test '(opt variant { PocketIc })' -e local
 ```
 
-`self_test` takes the network you *believe* you are on and reports
-`public_key_matches_master = opt true` when the subnet's own `vetkd_public_key` agrees
-with the master key compiled into the Wasm. That is the one check in the design that is
-not the subnet vouching for itself — pass `variant { Mainnet }` there and it correctly
-returns `opt false`. Pass `null` to skip the audit.
+There is no separate health-check endpoint. `set` is the health check: it derives the
+vetKey, verifies it and decrypts, so a subnet that cannot serve vetKD, a wrong key name
+or a mis-derived key all fail there, at deploy time, with a typed error.
 
 ### On mainnet
 
@@ -695,12 +702,14 @@ and sidestepping the Unicode confusables an arbitrary Candid `text` would admit.
 ## Interface
 
 ```candid
+// required
 icp_sealed_secret_info      : ()               -> (variant { Ok : SealedSecretInfo; Err : SealedSecretsError });
 icp_sealed_secret_set       : (text, blob)     -> (variant { Ok : nat64; Err : SealedSecretsError });
-icp_sealed_secret_matches   : (text, blob)     -> (variant { Ok : bool;  Err : SealedSecretsError });
 icp_sealed_secret_unset     : (text)           -> (variant { Ok; Err : SealedSecretsError });
 icp_sealed_secret_list      : ()               -> (variant { Ok : vec SealedSecretEntry; Err : … }) query;
-icp_sealed_secret_self_test : (opt KeySource)  -> (variant { Ok : SelfTestReport; Err : … });
+
+// optional
+icp_sealed_secret_matches   : (text, blob)     -> (variant { Ok : bool;  Err : SealedSecretsError });
 
 // not part of the proposed standard — the worked example of USING a secret
 call_api_with_secret        : (text, text)     -> (variant { Ok : nat16; Err : SealedSecretsError });
@@ -709,10 +718,16 @@ strip_response              : (TransformArgs)  -> (HttpRequestResult) query;
 
 Install args are just `(record { key_name : text })`.
 
-Only the first two are load-bearing for a tool that seals: `info` says what to encrypt to,
-`set` receives it. `matches` is what an operator uses to confirm the right value is
-deployed. `list`, `unset` and `self_test` are convenience, and a generalized version should
-treat them as optional — see [FOLLOW-UPS.md](./FOLLOW-UPS.md).
+`info` and `set` are the mechanism: `info` says what to encrypt to, `set` receives it.
+`unset` matters because revoking a leaked credential should not require an upgrade, and
+`list` is the operational inventory — how you answer "did my upload land" and "what does
+this canister hold".
+
+**`matches` is optional.** It answers *"is the value I hold the one you have stored?"*
+without either side disclosing it — but an operator who wants to guarantee the deployed
+value can simply `set` again: same cost, same outcome, one extra revision. It earns its
+place only where writing is not permitted, such as a monitoring probe or an auditor who is
+a controller but should not mutate. Worth having; not worth requiring.
 
 - **`info` is an update**, because `public_key` comes from `vetkd_public_key` —
   authoritative for whichever subnet the canister is actually on. It is cached, so only
@@ -724,10 +739,6 @@ treat them as optional — see [FOLLOW-UPS.md](./FOLLOW-UPS.md).
   rather than the two agreeing because they share one.
 - **Errors are a typed variant**, so tooling can branch on `VetKdUnavailable` versus
   `InvalidCiphertext` rather than parsing prose.
-- **`self_test` proves the key works, not that each secret does.** It derives the vetKey
-  and verifies it against the master key compiled into the Wasm; there is nothing stored
-  that could fail to decrypt, because a record holds the decrypted secret. Decryption
-  itself is exercised by `set` and `matches`.
 - **`list` is controller-gated.** It looks harmless but is not: IBE overhead is a fixed
   136 bytes, so `ciphertext_len` reveals the exact plaintext length, and names alone
   are useful reconnaissance.
@@ -934,11 +945,12 @@ ingress history.
 
 **So the mainnet checklist is not optional and cannot be rehearsed locally:**
 
-1. Place the canister on a subnet that actually holds `key_1` — on mainnet, a fiduciary
-   subnet. Confirm from the registry *before* deploying.
-2. Confirm that subnet reports `sev_enabled = true`.
-3. Run `icp_sealed_secret_self_test(opt variant { Mainnet })` immediately after install
-   and check `public_key_matches_master = opt true`.
+1. Confirm the canister's subnet reports `sev_enabled = true`. The seeder's preflight
+   does this, and it is the check the whole security argument rests on.
+2. Seal one secret immediately after install, with `--source mainnet`. That exercises
+   the full derive-and-decrypt path, and the client's offline derivation is compared
+   against what the canister reports before anything is encrypted — so a wrong master
+   key table, a wrong key name, or a subnet that cannot serve vetKD all fail here.
 
 ## A Motoko canister could do this too
 

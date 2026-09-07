@@ -36,7 +36,6 @@
 import G1 "mo:sealed-secrets-bls/G1";
 import G2 "mo:sealed-secrets-bls/G2";
 import Ibe "mo:sealed-secrets-vetkeys/Ibe";
-import PublicKey "mo:sealed-secrets-vetkeys/PublicKey";
 import Scalar "mo:sealed-secrets-bls/Scalar";
 import VetKey "mo:sealed-secrets-vetkeys/VetKey";
 
@@ -143,11 +142,9 @@ module {
   /// why `info` is an update rather than a query.
   ///
   /// Verifying against this is admittedly circular — a subnet that would lie
-  /// about its public key already holds the master key. The non-circular check
-  /// is `selfTest`, which compares it against a constant compiled into this
-  /// Wasm for a source the *caller* nominates, and the check that matters most
-  /// is on the client, which derives offline and refuses to encrypt on a
-  /// mismatch.
+  /// about its public key already holds the master key. The check that matters
+  /// is on the client, which derives the key offline and refuses to encrypt if
+  /// the canister disagrees.
   public func publicKey(ctx : Context) : async* Types.Result<G2.Affine> {
     switch (ctx.caches.dpk) { case (?k) { return #Ok(k) }; case null {} };
 
@@ -167,31 +164,11 @@ module {
     };
   };
 
-  /// The subnet's reported public key, compressed — what `info` returns and
-  /// `selfTest` compares against.
+  /// The subnet's reported public key, compressed — what `info` returns.
   public func publicKeyBytes(ctx : Context) : async* Types.Result<Blob> {
     switch (await* publicKey(ctx)) {
       case (#Ok(k)) #Ok(G2.toCompressed(k));
       case (#Err(e)) #Err(e);
-    };
-  };
-
-  /// Derives the public key offline from a master key compiled into this Wasm.
-  ///
-  /// Only `selfTest` uses it, to audit the subnet's answer against an
-  /// expectation the caller supplies. `null` when no master key is compiled in
-  /// for this key name under that source.
-  public func expectedPublicKey(ctx : Context, source : Types.KeySource, self : Principal) : ?Blob {
-    let s : PublicKey.KeySource = switch (source) {
-      case (#Mainnet) #Mainnet;
-      case (#PocketIc) #PocketIc;
-    };
-    switch (PublicKey.masterPublicKey(s, ctx.keyName)) {
-      case null null;
-      case (?mpk) {
-        let canisterKey = PublicKey.deriveCanisterKey(mpk, self.toBlob().toArray());
-        ?G2.toCompressed(PublicKey.deriveSubKey(canisterKey, context()));
-      };
     };
   };
 

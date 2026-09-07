@@ -16,9 +16,7 @@
 //! authoritative for the subnet it is actually running on. Verifying the derived
 //! key against it is admittedly circular — a subnet that would lie about its
 //! public key already holds the master key and could decrypt everything anyway,
-//! so the circularity costs little. The non-circular check lives in `self_test`,
-//! which compares the subnet's answer against a master key compiled into this
-//! Wasm for a source the *caller* nominates.
+//! so the circularity costs little.
 //!
 //! The check that actually matters is on the client, which derives the key
 //! offline and refuses to encrypt if the canister disagrees — because that
@@ -27,9 +25,7 @@
 
 use ic_cdk_management_canister::{VetKDDeriveKeyArgs, VetKDPublicKeyArgs};
 use ic_vetkeys::{DerivedPublicKey, EncryptedVetKey, TransportSecretKey, VetKey};
-use sealed_secrets_core::{
-    derive_public_key, key_id, sealed_secrets_context, sealed_secrets_key_label, MasterKeySource,
-};
+use sealed_secrets_core::{key_id, sealed_secrets_context, sealed_secrets_key_label};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -87,24 +83,6 @@ pub async fn public_key() -> Result<DerivedPublicKey, SealedSecretsError> {
 
     DPK_CACHE.with_borrow_mut(|c| c.insert(context, dpk.clone()));
     Ok(dpk)
-}
-
-/// Derives the public key offline from a master key compiled into this Wasm.
-///
-/// Only `self_test` uses this, to audit the subnet's answer against an
-/// expectation the caller supplies. Returns `None` when no master key is
-/// compiled in for this key name under that source.
-pub fn expected_public_key(source: MasterKeySource) -> Option<Vec<u8>> {
-    let context = context().ok()?;
-    let config = store::config();
-    derive_public_key(
-        source,
-        &key_id(&config.key_name),
-        &ic_cdk::api::canister_self(),
-        &context,
-    )
-    .ok()
-    .map(|k| k.serialize())
 }
 
 /// Obtains the vetKey for `epoch`, deriving it if it is not cached.
@@ -189,8 +167,7 @@ pub async fn decrypt_with_epoch(
 /// Asks the subnet for this canister's public key.
 ///
 /// This is authoritative — it is what [`public_key`] caches and what
-/// `decrypt_and_verify` checks against. `self_test` also calls it directly, to
-/// compare against a master key compiled into this Wasm.
+/// `decrypt_and_verify` checks against.
 pub async fn reported_public_key() -> Result<Vec<u8>, SealedSecretsError> {
     let config = store::config();
     let context = context()?;

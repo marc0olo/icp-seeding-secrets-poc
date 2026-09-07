@@ -199,8 +199,8 @@ painful than carrying four unused bytes.
 ### Also worth carrying over
 
 - **`StableCell::init` keeps an existing value.** Editing a config constant in source
-  and upgrading is a silent no-op. `self_test` must therefore report the *effective*
-  config read back from stable memory, not the compiled-in one. The PoC already does.
+  and upgrading is a silent no-op. `info` must therefore report the *effective* config
+  read back from stable memory, not the compiled-in one. The PoC already does.
 - **Concurrency.** Two cold callers both derive. Accept it: derivation is deterministic
   in `(canister_id, context, input, key_id)`, so both get the identical key and the only
   cost is a duplicate fee. Rejecting the second caller is bad UX in a business path, and
@@ -278,13 +278,14 @@ icp_sealed_secret_set  : (text, blob) -> (variant { Ok : nat64; Err : … });
 `info` tells the client what to encrypt to and lets it cross-check its own offline
 derivation; `set` receives the ciphertext. With those two a tool can seal.
 
-The rest is graded rather than required. `matches` is the one worth pressing for — it is
-what lets an operator confirm the right value is deployed, and what would let `icp deploy`
-re-seal only what changed; a canister without it forces the CLI to re-seal blindly.
-`unset` is housekeeping, `list` helps diffing, and `self_test` is a deploy-time health
-check. A standard that demands two methods and recommends a third is a far easier sell
-than one that demands six, and the CLI should degrade rather than refuse when the
-optional ones are absent.
+`unset` and `list` come next: revoking a leaked credential should not require an
+upgrade, and the CLI needs an inventory to diff against.
+
+`matches` is the one genuinely optional method, and the one worth pressing for anyway —
+it is what would let `icp deploy` re-seal only what changed, where a canister without it
+forces the CLI to re-seal blindly. A standard that demands four methods and recommends a
+fifth is an easier sell than one that demands six, and the CLI should degrade rather than
+refuse when the optional one is absent.
 
 **Discovery is already solved and needs no new mechanism.** `icp canister metadata
 <canister> candid:service` returns the canister's full interface without a single update

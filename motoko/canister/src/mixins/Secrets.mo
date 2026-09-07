@@ -181,46 +181,4 @@ mixin (
     );
   };
 
-  /// Exercises the full decryption path and reports what actually happened.
-  ///
-  /// Run this after deploying and after every upgrade. It is the difference
-  /// between "the canister installed" and "the canister can read its secrets".
-  ///
-  /// Pass `expected_source` to also check the subnet's public key against the
-  /// master key compiled into this Wasm — the one check in the design that is
-  /// not the subnet vouching for itself. Do it once per deployment, with the
-  /// network you believe you are on.
-  public shared ({ caller }) func icp_sealed_secret_self_test(
-    expectedSource : ?Types.KeySource
-  ) : async Types.Result<Types.SelfTestReport> {
-    switch (Guard.requireController(caller)) { case (?e) { return #Err(e) }; case null {} };
-
-    let reported = await* Keys.publicKeyBytes(keyCtx);
-    let publicKeyOk = switch (reported) { case (#Ok(_)) true; case (#Err(_)) false };
-
-    let matchesMaster : ?Bool = switch (expectedSource, reported) {
-      case (?source, #Ok(actual)) {
-        switch (Keys.expectedPublicKey(keyCtx, source, selfPrincipal)) {
-          case (?expected) ?(expected == actual);
-          case null null;
-        };
-      };
-      case _ null;
-    };
-
-    let deriveOk = switch (await* Keys.vetkey(keyCtx, config.epoch)) {
-      case (#Ok(_)) true;
-      case (#Err(_)) false;
-    };
-
-    #Ok({
-      vetkd_public_key_ok = publicKeyOk;
-      vetkd_derive_ok = deriveOk;
-      public_key_matches_master = matchesMaster;
-      effective_key_name = config.keyName;
-      effective_context = Keys.context().toBlob();
-      epoch = config.epoch;
-      num_secrets = secrets.size().toNat64();
-    });
-  };
 };

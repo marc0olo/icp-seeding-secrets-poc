@@ -58,27 +58,6 @@ export interface InitArgs {
    */
   'key_name' : string,
 }
-/**
- * Which table of hardcoded master public keys to check the subnet's answer
- * against.
- * 
- * This is a `self_test` *argument*, not configuration. The canister obtains its
- * public key from `vetkd_public_key`, which is authoritative; comparing that
- * against a constant compiled into this Wasm is an on-demand audit, and the
- * caller is the one who knows which network they believe they are on.
- */
-export type KeySource = {
-    /**
-     * IC mainnet master keys.
-     */
-    'Mainnet' : null
-  } |
-  {
-    /**
-     * PocketIC master keys, which local `icp network` also uses.
-     */
-    'PocketIc' : null
-  };
 export type Result = { 'Ok' : bigint } |
   { 'Err' : SealedSecretsError };
 export type Result_1 = { 'Ok' : number } |
@@ -89,11 +68,9 @@ export type Result_3 = { 'Ok' : Array<SealedSecretEntry> } |
   { 'Err' : SealedSecretsError };
 export type Result_4 = { 'Ok' : boolean } |
   { 'Err' : SealedSecretsError };
-export type Result_5 = { 'Ok' : SelfTestReport } |
+export type Result_5 = { 'Ok' : null } |
   { 'Err' : SealedSecretsError };
-export type Result_6 = { 'Ok' : null } |
-  { 'Err' : SealedSecretsError };
-export type Result_7 = { 'Ok' : string } |
+export type Result_6 = { 'Ok' : string } |
   { 'Err' : SealedSecretsError };
 /**
  * One stored secret, as reported by `list`. Carries nothing derived from the
@@ -230,51 +207,6 @@ export type SealedSecretsError = {
     'VetKdUnavailable' : { 'detail' : string, 'key_name' : string }
   };
 /**
- * The result of `self_test`: a deploy-time health check that exercises the
- * whole decryption path so that failures surface here rather than during a
- * production call.
- */
-export interface SelfTestReport {
-  /**
-   * The context actually in use.
-   */
-  'effective_context' : Uint8Array,
-  /**
-   * Whether the subnet's public key matched the master key compiled into this
-   * Wasm, for the `expected_source` the caller supplied. `None` when the
-   * caller supplied none, or when no master key is compiled in for this key
-   * name under that source.
-   * 
-   * This is the one check in the design that is not the subnet vouching for
-   * itself, so a deployment should run it once with the source it expects.
-   */
-  'public_key_matches_master' : [] | [boolean],
-  /**
-   * The current epoch.
-   */
-  'epoch' : number,
-  /**
-   * The key name actually in use, read from stable state rather than source.
-   * 
-   * `StableCell::init` keeps an existing value, so editing a constant and
-   * upgrading is a silent no-op. Reporting the effective value is what makes
-   * that visible.
-   */
-  'effective_key_name' : string,
-  /**
-   * How many secrets are stored.
-   */
-  'num_secrets' : bigint,
-  /**
-   * Whether `vetkd_derive_key` answered and verified.
-   */
-  'vetkd_derive_ok' : boolean,
-  /**
-   * Whether `vetkd_public_key` answered.
-   */
-  'vetkd_public_key_ok' : boolean,
-}
-/**
  * # Transform Args.
  * 
  * ```text
@@ -406,19 +338,6 @@ export interface _SERVICE {
    */
   'icp_sealed_secret_matches' : ActorMethod<[string, Uint8Array], Result_4>,
   /**
-   * Exercises the full decryption path and reports what actually happened.
-   * 
-   * Run this right after deploying and after every upgrade. It is the difference
-   * between finding out at deploy time that this subnet does not hold the vetKD
-   * key, and finding out during a customer request.
-   * 
-   * Pass `expected_source` to also audit the subnet's `vetkd_public_key` against a
-   * master key compiled into this Wasm — the one check in the whole design that is
-   * not the subnet vouching for itself. Do this once per deployment with the
-   * network you believe you are on.
-   */
-  'icp_sealed_secret_self_test' : ActorMethod<[[] | [KeySource]], Result_5>,
-  /**
    * Stores a sealed secret, after proving it can actually be decrypted.
    * 
    * The trial decryption is the whole point of making this `async` rather than a
@@ -432,7 +351,7 @@ export interface _SERVICE {
   /**
    * Removes a secret.
    */
-  'icp_sealed_secret_unset' : ActorMethod<[string], Result_6>,
+  'icp_sealed_secret_unset' : ActorMethod<[string], Result_5>,
   /**
    * Returns a decrypted secret **in the clear**. Requires the `test-hooks` feature.
    * 
@@ -459,7 +378,7 @@ export interface _SERVICE {
    * `icp_sealed_secret_matches` instead — it answers the same question with one
    * bit and is safe to keep in a production build.
    */
-  'secret_reveal' : ActorMethod<[string], Result_7>,
+  'secret_reveal' : ActorMethod<[string], Result_6>,
   /**
    * Makes an HTTP response deterministic across the nodes that fetched it.
    * 
@@ -525,25 +444,8 @@ export const idlFactory: IDL.InterfaceFactory = ({ IDL }) => {
     'Err' : SealedSecretsError,
   });
   const Result_4 = IDL.Variant({ 'Ok' : IDL.Bool, 'Err' : SealedSecretsError });
-  const KeySource = IDL.Variant({
-    'Mainnet' : IDL.Null,
-    'PocketIc' : IDL.Null,
-  });
-  const SelfTestReport = IDL.Record({
-    'effective_context' : IDL.Vec(IDL.Nat8),
-    'public_key_matches_master' : IDL.Opt(IDL.Bool),
-    'epoch' : IDL.Nat32,
-    'effective_key_name' : IDL.Text,
-    'num_secrets' : IDL.Nat64,
-    'vetkd_derive_ok' : IDL.Bool,
-    'vetkd_public_key_ok' : IDL.Bool,
-  });
-  const Result_5 = IDL.Variant({
-    'Ok' : SelfTestReport,
-    'Err' : SealedSecretsError,
-  });
-  const Result_6 = IDL.Variant({ 'Ok' : IDL.Null, 'Err' : SealedSecretsError });
-  const Result_7 = IDL.Variant({ 'Ok' : IDL.Text, 'Err' : SealedSecretsError });
+  const Result_5 = IDL.Variant({ 'Ok' : IDL.Null, 'Err' : SealedSecretsError });
+  const Result_6 = IDL.Variant({ 'Ok' : IDL.Text, 'Err' : SealedSecretsError });
   const HttpHeader = IDL.Record({ 'value' : IDL.Text, 'name' : IDL.Text });
   const HttpRequestResult = IDL.Record({
     'status' : IDL.Nat,
@@ -569,18 +471,13 @@ export const idlFactory: IDL.InterfaceFactory = ({ IDL }) => {
         [Result_4],
         [],
       ),
-    'icp_sealed_secret_self_test' : IDL.Func(
-        [IDL.Opt(KeySource)],
-        [Result_5],
-        [],
-      ),
     'icp_sealed_secret_set' : IDL.Func(
         [IDL.Text, IDL.Vec(IDL.Nat8)],
         [Result],
         [],
       ),
-    'icp_sealed_secret_unset' : IDL.Func([IDL.Text], [Result_6], []),
-    'secret_reveal' : IDL.Func([IDL.Text], [Result_7], []),
+    'icp_sealed_secret_unset' : IDL.Func([IDL.Text], [Result_5], []),
+    'secret_reveal' : IDL.Func([IDL.Text], [Result_6], []),
     'strip_response' : IDL.Func(
         [TransformArgs],
         [HttpRequestResult],

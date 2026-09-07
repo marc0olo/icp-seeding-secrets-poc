@@ -22,16 +22,15 @@ const SECRETS_MEMORY: MemoryId = MemoryId::new(1);
 /// comfortably covers API keys, tokens and small PEMs.
 pub const DEFAULT_MAX_CIPHERTEXT_LEN: u64 = 4096;
 
-/// Default cap on stored secrets. Bounds the cost of `self_test` and the size of
-/// a `list` response.
+/// Default cap on stored secrets. Bounds the size of a `list` response.
 pub const DEFAULT_MAX_SECRETS: u64 = 256;
 
 /// Configuration pinned at first init.
 ///
 /// Note this is written through `StableCell::init`, which *keeps* an existing
 /// value. Editing a constant in source and upgrading is therefore a silent
-/// no-op — which is exactly why `self_test` reports the effective config read
-/// back from here rather than the compiled-in one.
+/// no-op — which is why `info` reports the effective config read back from here
+/// rather than the compiled-in one.
 #[derive(CandidType, Deserialize, Debug, Clone)]
 pub struct Config {
     pub key_name: String,
