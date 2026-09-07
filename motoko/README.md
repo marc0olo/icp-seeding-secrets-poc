@@ -28,9 +28,9 @@ implementations — so what these packages assert against is not their own
 arithmetic restated, but values a reviewed implementation produced.
 
 The generator is **not** in this branch. It is a 400-line dev tool that nobody
-reading the PoC needs, and it lives on
-[`standardization-proposal`](../../../tree/standardization-proposal) as
-`rust/vectorgen`. The consequence is worth knowing: these vectors are now fixed
+reading the PoC needs, and it lives on the
+[`standardization-proposal`](../../../tree/standardization-proposal) branch,
+under rust/vectorgen there. The consequence is worth knowing: these vectors are now fixed
 constants. Upgrading `ic_bls12_381` will not re-derive them, so if you change
 anything about the reference, regenerate them from that branch.
 
