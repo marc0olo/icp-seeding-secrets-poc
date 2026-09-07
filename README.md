@@ -62,6 +62,35 @@ requirement, and
 [why this design needs a confidential subnet](#why-this-design-needs-a-confidential-subnet)
 is about exactly that.
 
+### Could the canister just generate a keypair?
+
+On a confidential subnet, very nearly — and it is worth being straight about
+that. `raw_rand` is not retrievable from outside the subnet: the random tape is
+a consensus artifact, it is not in the certified state tree, and peer-to-peer
+transport authenticates both ends as registered nodes. A key generated from it
+would be protected by exactly what protects a vetKey: SEV-SNP. **Confidentiality
+is not the reason to choose vetKD.**
+
+Four things are, and only the first is specific to seeding:
+
+- **The public key is derivable offline.** A client computes it from a published
+  master key and the canister id. With a self-generated key it has to _fetch_
+  one, over a path that boundary nodes terminate — so it must either trust that
+  reply or verify a certificate. Recoverable with certified data, at the cost of
+  building and reviewing that.
+- **You can seal before the canister has ever run.** The id is enough. A
+  self-generated key needs deploy, execute, and fetch first.
+- **The key outlives the canister's memory.** Reinstall and vetKD returns the
+  same key; a self-generated one is gone, and every ciphertext with it.
+- **Key quality does not depend on the canister's code.** A weak seed or a key
+  that leaks into a log is invisible to the client. With vetKD the key comes
+  from the protocol, and the client checks the canister's answer against a
+  constant it ships itself.
+
+For one credential in a canister you control, this is a close call. It stops
+being one as soon as clients should not have to trust the canister's code, or
+ciphertext has to survive a reinstall, or different readers need different keys.
+
 ## The flow
 
 ```mermaid
