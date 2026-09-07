@@ -98,10 +98,15 @@ persistent actor DummySecret {
 
     // 1. A single-use transport keypair. The private half never leaves here.
     //
-    //    This is what keeps the vetKey off the wire and out of replicated state:
-    //    the nodes do not reconstruct it and then encrypt it, they compute their
-    //    shares ALREADY encrypted under the public half. The plaintext key
-    //    exists nowhere until step 3 unwraps it, here.
+    //    The public half goes into the share computation itself, so no node ever
+    //    assembles the plaintext key: each produces a share already encrypted
+    //    under it, and combining encrypted shares yields an encrypted key.
+    //
+    //    Step 3 does decrypt it, and the result then lives in this canister's
+    //    memory — replicated and checkpointed like any other canister state, and
+    //    protected there by SEV-SNP alone. What the transport key buys is that
+    //    the plaintext never leaves here: not in a message, not in a
+    //    cross-subnet stream, and not known to the subnet that derived it.
     let seed = try { await ic.raw_rand() } catch (e) {
       return #Err("raw_rand: " # e.message());
     };

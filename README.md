@@ -17,8 +17,8 @@ path is meant to be read start to finish:
 
 | file | size |
 | --- | --- |
-| [`rust/canister/src/lib.rs`](./rust/canister/src/lib.rs) | 194 lines |
-| [`motoko/canister/src/Main.mo`](./motoko/canister/src/Main.mo) | 202 lines |
+| [`rust/canister/src/lib.rs`](./rust/canister/src/lib.rs) | 201 lines |
+| [`motoko/canister/src/Main.mo`](./motoko/canister/src/Main.mo) | 212 lines |
 | [`seed/src/index.ts`](./seed/src/index.ts)                     | 164 lines |
 
 > A fuller version of this — a proposed standard interface, subnet preflight
@@ -103,13 +103,23 @@ public key is an IBE *master* public key, and the private key for a label is the
 **signature over that label** under the matching secret. "Derive the key for this
 label" and "sign this label" are the same operation.
 
-**It arrives encrypted because it can never exist in the clear.** A reply travels
-through replicated state — every node of the canister's subnet sees it, and it is
-checkpointed to disk — and a plaintext key there is a key everybody has. So the
-canister sends a single-use *transport public key* with the request, and the
-nodes compute their shares **already encrypted under it**. The plaintext vetKey
-is never assembled anywhere: not on a node, not on the wire, not in replicated
-state. It first exists inside the canister, after unwrapping.
+**It arrives encrypted, and no node ever assembles it.** The canister sends a
+single-use *transport public key* with the request, and that key goes into the
+share computation itself: each node produces a share **already encrypted under
+it** (`create_encrypted_key_share`), and combining encrypted shares yields an
+encrypted key (`combine_encrypted_key_shares`). At no point does any replica hold
+the plaintext vetKey — not the ones that computed it, and not whatever subnet
+served the request, which may not be this canister's own.
+
+**The canister does decrypt it**, with the transport secret key it generated and
+never sent. So the plaintext does exist, in the canister's memory — which is
+replicated to every node of its subnet and checkpointed to disk like any other
+canister state, and protected there by SEV-SNP and nothing else.
+
+What the transport key buys, then, is not that the key is never in the clear
+anywhere. It is that the plaintext never leaves the requesting canister's own
+state: never in a message, never in a cross-subnet stream, never known to the
+subnet that derived it.
 
 **Unwrapping is also a verification**, and that is what stops a forged reply.
 `decrypt_and_verify` does three things, in order:
