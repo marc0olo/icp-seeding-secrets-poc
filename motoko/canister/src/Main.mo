@@ -27,8 +27,8 @@ import Text "mo:core/Text";
 
 persistent actor DummySecret {
 
-  /// The vetKD key this subnet serves. `key_1` exists on mainnet and on a local
-  /// network, so one constant covers both. Deliberately not an install
+  /// The vetKD key to use. `key_1` exists on mainnet and on a local network, so
+  /// one constant covers both. Deliberately not an install
   /// argument: a constant cannot be lost on upgrade.
   transient let KEY_NAME = "key_1";
 
@@ -82,8 +82,10 @@ persistent actor DummySecret {
     };
     let tsk = Scalar.hashToScalar(seed.toArray(), DS_TRANSPORT);
 
-    // 2. Ask the subnet for the private key belonging to
-    //    (this canister, CONTEXT, IDENTITY). Each node contributes a share.
+    // 2. Ask for the private key belonging to (this canister, CONTEXT, IDENTITY).
+    //    The management canister routes this to a subnet holding the key — not
+    //    necessarily our own — where each node contributes a share. What binds
+    //    the result to us is the caller's canister id being a derivation input.
     let reply = try {
       await (with cycles = VETKD_FEE) ic.vetkd_derive_key({
         context = CONTEXT;
@@ -92,7 +94,7 @@ persistent actor DummySecret {
         transport_public_key = VetKey.transportPublicKey(tsk);
       });
     } catch (e) {
-      return #Err("vetkd_derive_key: " # e.message() # " — does this subnet hold the key?");
+      return #Err("vetkd_derive_key: " # e.message() # " — is " # KEY_NAME # " available here?");
     };
 
     // 3. Unwrap it and check it really is our key. Verifying against a public

@@ -59,11 +59,10 @@ before.
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Dev as You
+    actor Dev as You (a controller)
     participant Script as seed/src/index.ts
-    participant Cli as any controller
     participant Can as the canister
-    participant Subnet as the subnet
+    participant Mgmt as management canister
 
     Note over Script: 1. derive the public key OFFLINE
     Script->>Script: master key (shipped) + canister id + context
@@ -72,17 +71,17 @@ sequenceDiagram
     Script->>Script: 2. encrypt the secret to it
     Script-->>Dev: the ciphertext, as a call argument
 
-    Dev->>Cli: 3. icp canister call set_dummy_secret
-    Cli->>Can: an ordinary update call, signed
-    Note over Cli,Can: opaque to boundary nodes,<br/>and bound to THIS canister id
+    Dev->>Can: 3. set_dummy_secret(ciphertext)
+    Note over Dev,Can: an ordinary update call — opaque to<br/>boundary nodes, and bound to THIS canister id
     Can->>Can: is_controller(caller)?
 
-    Can->>Subnet: raw_rand, then vetkd_derive_key
-    Note over Can,Subnet: each node contributes a share —<br/>the reply is encrypted to a<br/>single-use transport key
-    Subnet-->>Can: EncryptedVetKey
+    Can->>Mgmt: raw_rand, then vetkd_derive_key
+    Note over Can,Mgmt: routed to a subnet holding that key, which<br/>need not be this canister's own. Each node<br/>there contributes a share, and the reply comes<br/>back encrypted to a single-use transport key.
+    Mgmt-->>Can: EncryptedVetKey
     Can->>Can: unwrap, verify, decrypt
     Can-->>Dev: Ok
 ```
+
 
 Two things worth noticing. The client derives the key **itself**, from a master
 public key shipped in the vetKeys library — it never asks the canister what to
@@ -94,9 +93,9 @@ encrypting to it are pure computation — the ciphertext is the same whoever
 produces it.
 
 Only the call needs a signature, and what it needs is a **controller of the
-canister**. Any identity that controls it, from any client. This PoC happens to
-use `icp canister call` because you already have icp-cli and it already holds an
-identity — which is why nothing here asks you to export a private key to a file.
+canister** — any identity that controls it, from any client. This PoC uses
+`icp canister call` because you already have icp-cli and it already holds an
+identity, which is why nothing here asks you to export a private key to a file.
 
 
 ## Try it

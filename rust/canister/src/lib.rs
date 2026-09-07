@@ -6,8 +6,8 @@
 //!   get_dummy_secret()            hand the plaintext back so you can see it worked
 //!
 //! The client encrypts to a public key it derives **offline** — no network call,
-//! nothing to trust — and only this canister, on this subnet, can derive the
-//! matching private key. See ../../README.md.
+//! nothing to trust — and only this canister can have the matching private key
+//! derived for it. See ../../README.md.
 
 use ic_cdk::{query, update};
 use ic_cdk_management_canister::{
@@ -39,8 +39,8 @@ const CONTEXT: &[u8] = b"dummy-secret-poc";
 /// derive, every secret.
 const IDENTITY: &[u8] = b"dummy-secret";
 
-/// The vetKD key this subnet serves. `key_1` exists on mainnet and on a local
-/// network, so one constant covers both. A canister that needed another would
+/// The vetKD key to use. `key_1` exists on mainnet and on a local network, so
+/// one constant covers both. A canister that needed another would
 /// change this line — deliberately not an install argument, because `#[init]`
 /// does not re-run on upgrade and an empty key name fails with a message that
 /// does not point at the cause.
@@ -77,8 +77,11 @@ async fn set_dummy_secret(ciphertext: Vec<u8>) -> Result<(), String> {
     let seed = raw_rand().await.map_err(|e| format!("raw_rand: {e}"))?;
     let tsk = TransportSecretKey::from_seed(seed).map_err(|e| format!("transport key: {e}"))?;
 
-    // 2. Ask the subnet for the private key belonging to (this canister, CONTEXT,
-    //    IDENTITY). Each node contributes a share; none of them ever holds it.
+    // 2. Ask for the private key belonging to (this canister, CONTEXT, IDENTITY).
+    //    The management canister routes this to a subnet holding the key — not
+    //    necessarily our own — where each node contributes a share and none ever
+    //    holds the whole key. What binds the result to us is the caller's
+    //    canister id being an input to the derivation.
     let reply = vetkd_derive_key(&VetKDDeriveKeyArgs {
         input: IDENTITY.to_vec(),
         context: CONTEXT.to_vec(),
@@ -86,7 +89,7 @@ async fn set_dummy_secret(ciphertext: Vec<u8>) -> Result<(), String> {
         transport_public_key: tsk.public_key(),
     })
     .await
-    .map_err(|e| format!("vetkd_derive_key: {e} — does this subnet hold the key?"))?;
+    .map_err(|e| format!("vetkd_derive_key: {e} — is {KEY_NAME} available here?"))?;
 
     // 3. Unwrap it and check it really is our key. `decrypt_and_verify` needs the
     //    matching public key; we ask the subnet for that too, which is admittedly
