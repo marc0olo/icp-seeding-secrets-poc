@@ -4,7 +4,7 @@
  *   1. Derive the canister's public key OFFLINE — a master public key shipped in
  *      the vetKeys library, plus the canister id, plus the context. Pure
  *      arithmetic: no network call, nothing to trust.
- *   2. Encrypt the secret to it.
+ *   2. Encrypt the secret to it, under the name it will be stored as.
  *
  * Then it stops, because sending is a separate concern with a separate
  * requirement. Nothing here needs your identity: no key of yours goes into a

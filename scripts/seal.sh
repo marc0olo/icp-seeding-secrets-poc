@@ -9,9 +9,10 @@
 #
 #   1. seed/src/index.ts encrypts. It needs no identity — deriving this
 #      canister's public key and encrypting to it is pure computation.
-#   2. `icp canister call` sends it, signed. That step needs a controller
-#      of the canister, which is why nothing has to be exported: icp-cli
-#      already holds an identity.
+#   2. `icp canister call` sends it, signed. That step needs a controller of
+#      the canister — any identity that controls it, from any client. This
+#      uses icp-cli because it already holds one, which is why nothing has
+#      to be exported.
 #
 # Run them by hand if you would rather watch each one; the README shows how.
 

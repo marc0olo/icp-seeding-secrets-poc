@@ -88,7 +88,15 @@ persistent actor DummySecret {
   /// canisters have the identical Candid shape and one client can call either.
   public type Result<T> = { #Ok : T; #Err : Text };
 
-  /// This canister's private key for `KEY_LABEL`, deriving it once.
+  /// Fetches the vetKey for `KEY_LABEL`, once, and caches it.
+  ///
+  /// "Private key" would be loose shorthand. What comes back is one G1 point
+  /// that is two things at once: a BLS **signature** over `KEY_LABEL`, which
+  /// makes it verifiable against the derived public key, and the IBE
+  /// **decryption key** for that label, which opens the ciphertexts.
+  ///
+  /// The canister does not derive it either — the subnet does. This asks for a
+  /// derivation and unwraps the reply.
   ///
   /// Two concurrent callers on a cold cache will both derive. Accepted rather
   /// than prevented: derivation is deterministic, so both get the identical key

@@ -75,7 +75,15 @@ fn key_id() -> VetKDKeyId {
     }
 }
 
-/// This canister's private key for `KEY_LABEL`, deriving it once.
+/// Fetches the vetKey for `KEY_LABEL`, once, and caches it.
+///
+/// "Private key" is loose shorthand. What comes back is one G1 point that is two
+/// things at the same time: a BLS **signature** over `KEY_LABEL`, which is what
+/// makes it verifiable against the derived public key, and the IBE **decryption
+/// key** for that label, which is what opens the ciphertexts. See the README.
+///
+/// The canister does not derive it either — the subnet does. This asks for a
+/// derivation and unwraps the reply.
 ///
 /// Two concurrent callers on a cold cache will both derive. That is accepted
 /// rather than prevented: derivation is deterministic, so both get the identical

@@ -4,15 +4,16 @@
 #
 #   ./scripts/local-test.sh
 #
-# Starts a local network, deploys both canisters, encrypts a secret for each,
-# sends it, reads it back, and checks it came out identical to what went in.
+# Starts a local network, deploys both canisters, seals two secrets into each,
+# reads them back, and checks they came out identical to what went in. Two
+# rather than one because that is what shows the shared key label working: the
+# canister derives its vetKey once and it opens both.
 #
-# Note what this does NOT do: export your identity. Encrypting needs no identity
-# at all; only the call does, and what it needs is a controller of the canister.
-# Any identity that controls it, from any client — this just uses icp-cli,
-# because you already have it and it already holds one.
+# Note what this does NOT do: export your identity. Encrypting needs none at
+# all; only the call does, and what that needs is a controller of the canister —
+# any identity that controls it, from any client.
 #
-# Reading the secret back is only possible because these canisters ship a
+# Reading the secrets back is only possible because these canisters ship a
 # getter that exists purely so you can watch decryption work. A real canister
 # must not have one — see the README.
 

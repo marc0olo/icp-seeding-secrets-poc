@@ -1,4 +1,4 @@
-# Seeding a canister with a secret, via vetKeys
+# Seeding a canister with secrets, via vetKeys
 
 A minimal proof of concept: get secrets — an API key, a token, a private key,
 anything — into a **deployed** canister without the plaintext ever appearing in
@@ -15,10 +15,10 @@ DUMMY_SECRET=super-secret-value ./scripts/seal.sh dummy-secret-rust exchange-rat
 Two endpoints, two implementations of them, and one script. Everything on the
 path is meant to be read start to finish:
 
-| file | size |
-| --- | --- |
-| [`rust/canister/src/lib.rs`](./rust/canister/src/lib.rs) | 201 lines |
-| [`motoko/canister/src/Main.mo`](./motoko/canister/src/Main.mo) | 212 lines |
+| file                                                           | size      |
+| -------------------------------------------------------------- | --------- |
+| [`rust/canister/src/lib.rs`](./rust/canister/src/lib.rs)       | 209 lines |
+| [`motoko/canister/src/Main.mo`](./motoko/canister/src/Main.mo) | 220 lines |
 | [`seed/src/index.ts`](./seed/src/index.ts)                     | 164 lines |
 
 > A fuller version of this — a proposed standard interface, subnet preflight
@@ -51,8 +51,16 @@ secret, split across their nodes so no single node has it. From that:
 That is a real keypair for a canister, which is the thing that did not exist
 before. The call is routed like any other chain-key request, to a subnet enabled
 for that key — which need not be the calling canister's own. What binds the key
-to *your* canister is not which subnet serves it, but that the derivation takes
+to _your_ canister is not which subnet serves it, but that the derivation takes
 the **caller's** canister id as an input.
+
+Note what this does and does not solve. The private key is still not hidden from
+the subnet — it cannot be, for the reasons above. What changed is that a client
+can now encrypt to a canister offline, and only that canister can obtain the
+matching key. Trusting the subnet with the plaintext is the remaining
+requirement, and
+[why this design needs a confidential subnet](#why-this-design-needs-a-confidential-subnet)
+is about exactly that.
 
 ## The flow
 
@@ -76,12 +84,12 @@ sequenceDiagram
     Can->>Can: is_controller(caller)?
 
     Can->>Mgmt: raw_rand, then vetkd_derive_key
-    Note over Can,Mgmt: routed to a subnet holding that key, which need<br/>not be this canister's own. Each node computes its<br/>share ALREADY encrypted to the transport key, so the<br/>plaintext vetKey is never assembled anywhere.
+    Note over Can,Mgmt: routed to a subnet holding that key, which need not<br/>be this canister's own. Each node computes its share<br/>ALREADY encrypted to the transport key, so no node<br/>ever assembles the plaintext vetKey.
     Mgmt-->>Can: EncryptedVetKey
-    Can->>Can: unwrap, verify, decrypt
+    Can->>Can: unwrap, verify, then decrypt the secret
+    Note over Can: the vetKey is cached, so later secrets<br/>skip the two calls above entirely
     Can-->>Dev: Ok
 ```
-
 
 Two things worth noticing. The client derives the key **itself**, from a master
 public key shipped in the vetKeys library — it never asks the canister what to
@@ -89,9 +97,8 @@ encrypt to, because anyone able to tamper with that reply could hand it a key
 they control.
 
 And **only the sending step involves you.** Encrypting is pure computation with
-no key of yours in it, so anyone can seal a secret *to* this canister — and only
+no key of yours in it, so anyone can seal a secret _to_ this canister — and only
 the canister can open it. The call is what needs a signature, from a controller.
-
 
 ## What the canister actually receives
 
@@ -99,12 +106,12 @@ Not a key. An `EncryptedVetKey` — three curve points — which it unwraps itse
 Three things about that are not obvious from the call.
 
 **The vetKey is a BLS signature**, and the rest follows from that. The derived
-public key is an IBE *master* public key, and the private key for a label is the
+public key is an IBE _master_ public key, and the private key for a label is the
 **signature over that label** under the matching secret. "Derive the key for this
 label" and "sign this label" are the same operation.
 
 **It arrives encrypted, and no node ever assembles it.** The canister sends a
-single-use *transport public key* with the request, and that key goes into the
+single-use _transport public key_ with the request, and that key goes into the
 share computation itself: each node produces a share **already encrypted under
 it** (`create_encrypted_key_share`), and combining encrypted shares yields an
 encrypted key (`combine_encrypted_key_shares`). At no point does any replica hold
@@ -149,7 +156,7 @@ storage; they are not part of any derivation and never reach vetKD.
 ```text
 caller  = your canister id      the replica fills this in; cannot be forged
 context = "dummy-secret-poc"    your namespace
-label   = "dummy-secret"        one key, derived once and cached
+label   = "dummy-secrets"       one key, derived once and cached
 
    ├── secrets["exchange-rate-api-key"]   all sealed to that one key
    └── secrets["rpc-provider-key"]
@@ -158,13 +165,17 @@ label   = "dummy-secret"        one key, derived once and cached
 Giving each secret its own label would cost a separate `vetkd_derive_key` — 26
 billion cycles each — and buy nothing, because there is no privilege boundary
 inside a canister to enforce: the code can derive any label's key whenever it
-likes. Distinct labels earn their cost when the *recipients* differ, as in a
+likes. Distinct labels earn their cost when the _recipients_ differ, as in a
 per-user design where one user's key must not open another's data.
 
-The key is cached after first use. It is safe to hold: derivation is
-deterministic in `(caller, context, label, key_id)`, none of which depends on the
-secrets, so the cache can never go stale. Without it every write would pay a
-derivation and a round through consensus for a key that never changes.
+The key is cached after first use. Nothing at runtime can invalidate it:
+derivation is deterministic in `(caller, context, label, key_id)`, none of which
+depends on the secrets. Without the cache every write would pay a derivation and
+a round through consensus for a key that never changes.
+
+What _does_ invalidate it is editing `CONTEXT` or `KEY_LABEL`. The Rust cache is
+heap and is discarded on upgrade, so it re-derives; the Motoko one persists, and
+will keep serving the key for the old values until the canister is reinstalled.
 
 ## Try it
 
@@ -237,23 +248,23 @@ bit. The `standardization-proposal` branch does that.
 vetKeys is more often used the other way round, and the difference is what makes
 SEV-SNP load-bearing here rather than a bonus.
 
-| | transport key generated by | plaintext vetKey lives in |
-|---|---|---|
-| `KeyManager`, encrypted maps | the **client** | the user's browser |
-| this PoC | the **canister** | canister memory |
+|                              | transport key generated by | plaintext vetKey lives in |
+| ---------------------------- | -------------------------- | ------------------------- |
+| `KeyManager`, encrypted maps | the **client**             | the user's browser        |
+| this PoC                     | the **canister**           | canister memory           |
 
-In those patterns the canister is a *relay*: it hands the `EncryptedVetKey` to
+In those patterns the canister is a _relay_: it hands the `EncryptedVetKey` to
 the user and never holds a transport secret key, so the plaintext key never
 enters replicated state at all. Nothing needs a confidential subnet.
 
-Here the canister is the *reader* — it is the thing that needs the secret, to put
+Here the canister is the _reader_ — it is the thing that needs the secret, to put
 in an outcall header — so it generates the transport key and unwraps the reply
 itself. The plaintext key, and the plaintext secrets, therefore live in canister
 memory: replicated to every node, checkpointed to disk, and protected there by
 SEV-SNP and nothing else.
 
 So nothing here bends the protocol. No node ever assembles the key, exactly as
-designed; the canister holding it is the *point*, since the canister is the
+designed; the canister holding it is the _point_, since the canister is the
 intended recipient. What follows from choosing that topology is that the subnet
 has to be one you would trust with the plaintext.
 
@@ -276,7 +287,7 @@ This PoC does not check whether it is on such a subnet. A real deployment must.
 **Whoever deploys is the controller**, and both endpoints accept only the
 controller. Nothing here creates or exports an identity — any client holding a
 controller identity can make the call. On a machine with none configured that is
-the *anonymous* principal, which deploys fine but makes the check vacuous, since
+the _anonymous_ principal, which deploys fine but makes the check vacuous, since
 anyone can call as anonymous.
 
 **Also does not protect against the controller.** They can install code that
