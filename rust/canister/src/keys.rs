@@ -28,7 +28,7 @@
 use ic_cdk_management_canister::{VetKDDeriveKeyArgs, VetKDPublicKeyArgs};
 use ic_vetkeys::{DerivedPublicKey, EncryptedVetKey, TransportSecretKey, VetKey};
 use sealed_secrets_core::{
-    derive_public_key, key_id, sealed_secrets_context, sealed_secrets_identity, MasterKeySource,
+    derive_public_key, key_id, sealed_secrets_context, sealed_secrets_key_label, MasterKeySource,
 };
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -61,9 +61,10 @@ pub fn context() -> Result<Vec<u8>, SealedSecretsError> {
     sealed_secrets_context("").map_err(|e| SealedSecretsError::Internal(e.to_string()))
 }
 
-/// The IBE identity for a given epoch.
-pub fn identity(epoch: u32) -> Vec<u8> {
-    sealed_secrets_identity(epoch)
+/// The key label for a given epoch — in vetKD terms the IBE identity, and the
+/// `input` passed to `vetkd_derive_key`.
+pub fn key_label(epoch: u32) -> Vec<u8> {
+    sealed_secrets_key_label(epoch)
 }
 
 /// This canister's public key, as reported by the subnet, cached after the first
@@ -124,7 +125,7 @@ pub async fn vetkey(epoch: u32) -> Result<Rc<VetKey>, SealedSecretsError> {
     // held into it.
     let config = store::config();
     let context = context()?;
-    let identity = identity(epoch);
+    let label = key_label(epoch);
     let dpk = public_key().await?;
 
     let seed = ic_cdk_management_canister::raw_rand()
@@ -139,7 +140,7 @@ pub async fn vetkey(epoch: u32) -> Result<Rc<VetKey>, SealedSecretsError> {
         .map_err(|e| SealedSecretsError::Internal(format!("bad transport seed: {e}")))?;
 
     let reply = ic_cdk_management_canister::vetkd_derive_key(&VetKDDeriveKeyArgs {
-        input: identity.clone(),
+        input: label.clone(),
         context,
         key_id: key_id(&config.key_name),
         transport_public_key: tsk.public_key(),
@@ -149,7 +150,7 @@ pub async fn vetkey(epoch: u32) -> Result<Rc<VetKey>, SealedSecretsError> {
 
     let vetkey = EncryptedVetKey::deserialize(&reply.encrypted_key)
         .map_err(|e| SealedSecretsError::Internal(format!("malformed encrypted vetkey: {e}")))?
-        .decrypt_and_verify(&tsk, &dpk, &identity)
+        .decrypt_and_verify(&tsk, &dpk, &label)
         .map_err(|e| {
             SealedSecretsError::Internal(format!(
                 "the subnet returned a key that does not match our derived public key: {e}"

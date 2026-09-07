@@ -17,7 +17,7 @@ import {
   SUITE,
   derivePublicKey,
   sealedSecretsContext,
-  sealedSecretsIdentity,
+  sealedSecretsKeyLabel,
   toHex,
   validateSecretName,
 } from "./format.js";
@@ -40,17 +40,17 @@ test("context golden vectors", () => {
   );
 });
 
-test("identity golden vectors", () => {
+test("key label golden vectors", () => {
   assert.equal(
-    toHex(sealedSecretsIdentity(0)),
+    toHex(sealedSecretsKeyLabel(0)),
     "01156963702d7365616c65642d736563726574732d763100000000",
   );
   assert.equal(
-    toHex(sealedSecretsIdentity(1)),
+    toHex(sealedSecretsKeyLabel(1)),
     "01156963702d7365616c65642d736563726574732d763100000001",
   );
   assert.equal(
-    toHex(sealedSecretsIdentity(0xffffffff)),
+    toHex(sealedSecretsKeyLabel(0xffffffff)),
     "01156963702d7365616c65642d736563726574732d7631ffffffff",
   );
 });
@@ -68,9 +68,9 @@ test("app separator length is bounded", () => {
 });
 
 test("epoch must be a uint32", () => {
-  assert.throws(() => sealedSecretsIdentity(-1));
-  assert.throws(() => sealedSecretsIdentity(0x1_0000_0000));
-  assert.throws(() => sealedSecretsIdentity(1.5));
+  assert.throws(() => sealedSecretsKeyLabel(-1));
+  assert.throws(() => sealedSecretsKeyLabel(0x1_0000_0000));
+  assert.throws(() => sealedSecretsKeyLabel(1.5));
 });
 
 test("secret name validation", () => {

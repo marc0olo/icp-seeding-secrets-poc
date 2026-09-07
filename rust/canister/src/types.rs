@@ -38,8 +38,9 @@ pub struct SealedSecretInfo {
     pub standard_version: u32,
     /// The exact vetKD `context` bytes this canister derives under.
     pub context: ByteBuf,
-    /// The exact IBE identity bytes for the current epoch.
-    pub identity: ByteBuf,
+    /// The exact key-label bytes for the current epoch — the vetKD `input`,
+    /// i.e. the IBE identity every secret here is sealed to.
+    pub key_label: ByteBuf,
     /// The current epoch. New seals must target this value.
     pub epoch: u32,
     /// The vetKD key name, e.g. `key_1`.

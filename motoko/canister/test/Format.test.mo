@@ -38,11 +38,11 @@ test(
 );
 
 test(
-  "identity golden vectors",
+  "key label golden vectors",
   func() {
-    assert Format.toHex(Format.identity(0)) == "01156963702d7365616c65642d736563726574732d763100000000";
-    assert Format.toHex(Format.identity(1)) == "01156963702d7365616c65642d736563726574732d763100000001";
-    assert Format.toHex(Format.identity(4294967295)) == "01156963702d7365616c65642d736563726574732d7631ffffffff";
+    assert Format.toHex(Format.keyLabel(0)) == "01156963702d7365616c65642d736563726574732d763100000000";
+    assert Format.toHex(Format.keyLabel(1)) == "01156963702d7365616c65642d736563726574732d763100000001";
+    assert Format.toHex(Format.keyLabel(4294967295)) == "01156963702d7365616c65642d736563726574732d7631ffffffff";
   },
 );
 

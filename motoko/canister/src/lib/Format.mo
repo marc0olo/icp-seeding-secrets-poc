@@ -22,7 +22,7 @@ module {
   /// Ciphersuite label.
   ///
   /// Bumping this is a hard protocol break: it changes both the vetKD context
-  /// (and so the keypair) and the IBE identity, orphaning every sealed
+  /// (and so the keypair) and the key label, orphaning every sealed
   /// ciphertext.
   public let SUITE_TEXT : Text = "icp-sealed-secrets-v1";
 
@@ -40,7 +40,7 @@ module {
   ];
 
   public let CONTEXT_FORMAT_VERSION : Nat8 = 0x01;
-  public let IDENTITY_FORMAT_VERSION : Nat8 = 0x01;
+  public let KEY_LABEL_FORMAT_VERSION : Nat8 = 0x01;
 
   /// Fixed overhead `IbeCiphertext` adds: 8-byte header, 32-byte seed, 96-byte
   /// `G2` element.
@@ -79,21 +79,26 @@ module {
     );
   };
 
-  /// The IBE identity, which is also the `input` to `vetkd_derive_key`:
+  /// The key label: the `input` to `vetkd_derive_key`, and equivalently the IBE
+  /// identity every secret in this canister is sealed to.
+  ///
+  /// Called a *label* rather than an *identity* because on ICP "identity"
+  /// already means a caller's principal, and this is neither that nor a key. It
+  /// is a name selecting which key gets derived under the canister's keypair.
   ///
   /// ```text
-  /// identity := 0x01 || u8(len(SUITE)) || SUITE || be_u32(epoch)
+  /// key_label := 0x01 || u8(len(SUITE)) || SUITE || be_u32(epoch)
   /// ```
   ///
-  /// Note what is *absent*: the secret's name. One identity serves every secret
-  /// in the canister, so a single `vetkd_derive_key` call unlocks all of them.
-  /// Per-secret identities would multiply that cost by N and buy nothing —
-  /// there is no privilege boundary inside a canister, since its code can derive
-  /// the key for any identity whenever it likes.
-  public func identity(epoch : Nat32) : [Nat8] {
+  /// Note what is *absent*: the secret's name. One label serves every secret in
+  /// the canister, so a single `vetkd_derive_key` call unlocks all of them.
+  /// Per-secret labels would multiply that cost by N and buy nothing — there is
+  /// no privilege boundary inside a canister, since its code can derive the key
+  /// for any label whenever it likes.
+  public func keyLabel(epoch : Nat32) : [Nat8] {
     let e = epoch.toNat();
     Array.flatten([
-      [IDENTITY_FORMAT_VERSION, SUITE.size().toNat8()],
+      [KEY_LABEL_FORMAT_VERSION, SUITE.size().toNat8()],
       SUITE,
       Array.tabulate(4, func i = Nat.toNat8((e / (256 ** (3 - i : Nat))) % 256)),
     ]);

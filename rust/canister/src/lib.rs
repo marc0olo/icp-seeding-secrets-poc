@@ -121,7 +121,7 @@ async fn icp_sealed_secret_info() -> Result<SealedSecretInfo, SealedSecretsError
     Ok(SealedSecretInfo {
         standard_version: STANDARD_VERSION,
         context: ByteBuf::from(context),
-        identity: ByteBuf::from(keys::identity(config.epoch)),
+        key_label: ByteBuf::from(keys::key_label(config.epoch)),
         epoch: config.epoch,
         key_name: config.key_name,
         public_key: ByteBuf::from(public_key.serialize()),

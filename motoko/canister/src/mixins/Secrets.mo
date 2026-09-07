@@ -49,7 +49,7 @@ mixin (
         #Ok({
           standard_version = 1 : Nat32;
           context = Keys.context().toBlob();
-          identity = Keys.identity(config.epoch).toBlob();
+          key_label = Keys.keyLabel(config.epoch).toBlob();
           epoch = config.epoch;
           key_name = config.keyName;
           public_key = pk;

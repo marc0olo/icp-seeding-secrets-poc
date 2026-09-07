@@ -2,7 +2,7 @@
 //!
 //! Everything in this crate is pure computation: no canister APIs, no network.
 //! It is shared by the canister (which decrypts) and by any client (which seals),
-//! so that both sides derive byte-identical `context` and `identity` values.
+//! so that both sides derive byte-identical `context` and `key_label` values.
 //!
 //! See `README.md` for the protocol description and `tests/golden.rs` for the
 //! vectors that pin the encodings down.
@@ -26,14 +26,14 @@ pub fn key_id(name: impl Into<String>) -> VetKDKeyId {
 
 /// Ciphersuite label. Bumping this is a hard protocol break: every previously
 /// sealed ciphertext becomes undecryptable, because it changes both the vetKD
-/// context (and hence the keypair) and the IBE identity.
+/// context (and hence the keypair) and the key label.
 pub const SUITE: &[u8] = b"icp-sealed-secrets-v1";
 
 /// Version byte prefixing the vetKD `context` encoding.
 pub const CONTEXT_FORMAT_VERSION: u8 = 0x01;
 
-/// Version byte prefixing the IBE `identity` encoding.
-pub const IDENTITY_FORMAT_VERSION: u8 = 0x01;
+/// Version byte prefixing the `key_label` encoding.
+pub const KEY_LABEL_FORMAT_VERSION: u8 = 0x01;
 
 /// Fixed overhead `IbeCiphertext` adds to the plaintext: an 8-byte header,
 /// a 32-byte seed and a 96-byte G2 element.
@@ -166,20 +166,25 @@ pub fn sealed_secrets_context(app_separator: &str) -> Result<Vec<u8>, FormatErro
     Ok(out)
 }
 
-/// Encodes the IBE identity, which is also the `input` to `vetkd_derive_key`.
+/// Encodes the key label: the `input` to `vetkd_derive_key`, and equivalently
+/// the IBE identity every secret in this canister is sealed to.
+///
+/// Called a *label* rather than an *identity* because on ICP "identity" already
+/// means a caller's principal, and this is neither that nor a key. It is a name
+/// selecting which key gets derived under the canister's keypair.
 ///
 /// ```text
-/// identity := 0x01 || u8(len(SUITE)) || SUITE || be_u32(epoch)
+/// key_label := 0x01 || u8(len(SUITE)) || SUITE || be_u32(epoch)
 /// ```
 ///
-/// Note what is *absent*: the secret's name. One identity serves every secret in
-/// a canister, so a single `vetkd_derive_key` call unlocks all of them. Per-secret
-/// identities would multiply that cost by N and buy nothing — there is no
-/// privilege boundary inside a canister, since its code can derive the key for
-/// any identity at any time.
-pub fn sealed_secrets_identity(epoch: u32) -> Vec<u8> {
+/// Note what is *absent*: the secret's name. One label serves every secret in a
+/// canister, so a single `vetkd_derive_key` call unlocks all of them. Per-secret
+/// labels would multiply that cost by N and buy nothing — there is no privilege
+/// boundary inside a canister, since its code can derive the key for any label
+/// at any time.
+pub fn sealed_secrets_key_label(epoch: u32) -> Vec<u8> {
     let mut out = Vec::with_capacity(2 + SUITE.len() + 4);
-    out.push(IDENTITY_FORMAT_VERSION);
+    out.push(KEY_LABEL_FORMAT_VERSION);
     out.push(SUITE.len() as u8);
     out.extend_from_slice(SUITE);
     out.extend_from_slice(&epoch.to_be_bytes());

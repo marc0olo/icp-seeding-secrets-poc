@@ -193,9 +193,10 @@ export interface SealedSecretInfo {
      */
     key_name: string;
     /**
-     * The exact IBE identity bytes for the current epoch.
+     * The exact key-label bytes for the current epoch — the vetKD `input`,
+     * i.e. the IBE identity every secret here is sealed to.
      */
-    identity: Uint8Array;
+    key_label: Uint8Array;
     /**
      * Version of this interface. Currently 1.
      */

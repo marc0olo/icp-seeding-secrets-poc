@@ -1,16 +1,18 @@
 /**
  * Subnet preflight.
  *
- * Two properties must hold before it is worth sealing anything, and neither
- * implies the other:
+ * One property, checked before it is worth sealing anything: **the subnet's
+ * nodes are SEV-SNP**. Without that, the plaintext is readable by node operators
+ * out of a checkpoint once the canister decrypts it, which defeats the purpose
+ * of sealing it. Read from a single `get_subnet` query on the NNS registry.
  *
- *   1. The subnet holds the vetKD key. Without it, `vetkd_derive_key` is
- *      rejected and the canister can never read the secret back.
- *   2. The subnet's nodes are SEV-SNP. Without that, the plaintext is readable
- *      by node operators out of a checkpoint once the canister decrypts it —
- *      which defeats the entire purpose of sealing it in the first place.
- *
- * Both come from a single `get_subnet` query on the NNS registry.
+ * Deliberately **not** checked: whether this subnet holds the vetKD key.
+ * `vetkd_derive_key` is routed like any other chain-key request, to a subnet
+ * enabled for that key (`system_api/routing.rs`, `route_chain_key_message`), so
+ * the calling canister's subnet need not hold it. Key availability is settled
+ * authoritatively one step later anyway: `icp_sealed_secret_set` decrypts before
+ * storing, so an unavailable key fails there, immediately, with a typed error.
+ * The keys this subnet happens to hold are still printed, as information.
  */
 
 import { Actor, type HttpAgent } from "@icp-sdk/core/agent";
@@ -84,32 +86,21 @@ export interface PreflightOutcome {
 /**
  * Turns a subnet inspection into a pass/fail plus human-readable findings.
  *
- * The two checks fail for different reasons and must not be conflated:
- *
- * - **SEV-SNP cannot be verified on a local network at all.** PocketIC reports
- *   `sev_enabled = null` for every subnet, so locally this is a known blind spot
- *   rather than a finding. `allowUnverifiedSev` acknowledges that.
- *
- * - **The vetKD check *is* accurate locally.** The registry reports chain keys
- *   correctly — the fiduciary subnet shows `key_1`, the application subnet shows
- *   none. And a missing key here predicts a hard mainnet failure, because mainnet
- *   serves `vetkd_derive_key` from the calling canister's own subnet and rejects
- *   otherwise, while PocketIC does not enforce that. So locally this warning is
- *   the *only* signal that placement is wrong: the runtime will happily let you
- *   proceed. `allowMissingVetkdKey` is therefore a much sharper knife than it looks.
+ * **SEV-SNP cannot be verified on a local network at all.** PocketIC reports
+ * `sev_enabled = null` for every subnet, so locally this is a known blind spot
+ * rather than a finding. `allowUnverifiedSev` acknowledges that, and is why a
+ * local run needs it.
  */
 export function evaluatePreflight(
   check: SubnetCheck | null,
-  keyName: string,
-  opts: { allowUnverifiedSev: boolean; allowMissingVetkdKey: boolean },
+  opts: { allowUnverifiedSev: boolean },
 ): PreflightOutcome {
   const lines: string[] = [];
 
   if (check === null) {
     lines.push("subnet:   unknown (registry unreachable)");
     lines.push("sev-snp:  UNVERIFIED");
-    lines.push(`vetkd:    UNVERIFIED (assuming "${keyName}" is present)`);
-    return { ok: opts.allowUnverifiedSev && opts.allowMissingVetkdKey, lines };
+    return { ok: opts.allowUnverifiedSev, lines };
   }
 
   lines.push(`subnet:   ${check.subnetId.toText()}`);
@@ -128,25 +119,12 @@ export function evaluatePreflight(
     if (!opts.allowUnverifiedSev) ok = false;
   }
 
-  if (check.vetKdKeys.includes(keyName)) {
-    lines.push(`vetkd:    "${keyName}" present on this subnet`);
-  } else {
-    const held =
-      check.vetKdKeys.length > 0
-        ? `subnet holds [${check.vetKdKeys.join(", ")}]`
-        : "subnet holds no vetKD keys";
-    lines.push(`vetkd:    "${keyName}" NOT on this subnet — ${held}`);
-    lines.push(
-      "          On mainnet this is fatal: vetkd_derive_key is served by the",
-    );
-    lines.push(
-      "          calling canister's own subnet. PocketIC does not enforce that,",
-    );
-    lines.push(
-      "          so a local run will succeed anyway and hide the problem.",
-    );
-    if (!opts.allowMissingVetkdKey) ok = false;
-  }
+  // Informational only. Which keys THIS subnet holds does not decide whether
+  // `vetkd_derive_key` will work — the request is routed to a subnet enabled for
+  // the key, which need not be this one.
+  const held =
+    check.vetKdKeys.length > 0 ? `[${check.vetKdKeys.join(", ")}]` : "none";
+  lines.push(`vetkd:    keys on this subnet: ${held} (not a gate — see preflight.ts)`);
 
   return { ok, lines };
 }

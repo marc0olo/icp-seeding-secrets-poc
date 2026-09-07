@@ -26,7 +26,7 @@ before the interface in the README has been argued over.
   - [The asymmetry that shapes the UX](#the-asymmetry-that-shapes-the-ux)
   - [Command surface](#command-surface)
   - [Manifest: names and env vars only](#manifest-names-and-env-vars-only)
-  - [Enforce the subnet properties](#enforce-the-subnet-properties)
+  - [Enforce the SEV-SNP property](#enforce-the-sev-snp-property)
   - [Deploy integration](#deploy-integration)
   - [Two mechanical gotchas](#two-mechanical-gotchas)
 - [3. A Motoko library](#3-a-motoko-library)
@@ -185,9 +185,9 @@ Rejected alternatives, and why:
 
 ### Rotation
 
-The PoC carries `epoch` in the identity and per record, but never bumps it. A `rotate`
-endpoint would mean "new writes use the new identity" — non-destructive, because vetKD
-derives a key for any identity, so the canister just derives one extra vetKey per epoch
+The PoC carries `epoch` in the key label and per record, but never bumps it. A `rotate`
+endpoint would mean "new writes use the new label" — non-destructive, because vetKD
+derives a key for any label, so the canister just derives one extra vetKey per epoch
 still in use.
 
 Be honest about the value: the derived key cannot be compromised independently of the
@@ -360,13 +360,19 @@ written through an application endpoint.
 therefore carry the *source*, never the resolved value; resolution happens inside the
 operation, at seal time.
 
-### Enforce the subnet properties
+### Enforce the SEV-SNP property
 
-The CLI should hard-fail on mainnet when the subnet is not SEV-SNP or does not hold the
-vetKD key, with an explicit override flag. It already resolves canister → subnet via
+The CLI should hard-fail on mainnet when the canister's subnet is not SEV-SNP, with an
+explicit override flag. It already resolves canister → subnet via
 `get_subnet_for_canister` (`rust/icp/src/operations/canister_migration.rs:113`), so
-this is one extra registry query — the same two checks
+this is one extra registry query — the same check
 [`seed/src/preflight.ts`](./seed/src/preflight.ts) makes.
+
+It should **not** additionally require the subnet to hold the vetKD key.
+`vetkd_derive_key` is routed to a subnet enabled for the key
+(`system_api/routing.rs`, `route_chain_key_message`), so the caller's own subnet need
+not hold it, and gating on that would refuse deployments that work. Key availability is
+established by the seal call itself, which decrypts before storing.
 
 ### Deploy integration
 
@@ -590,7 +596,7 @@ on both sides and implemented in Rust and TypeScript already.
 **The cost argument that motivated it does not hold.** One `vetkd_derive_key` with `key_1`
 costs 26_153_846_153 cycles (`test_key_1`: 10_000_000_000), and both canisters here pay it
 only on `set` and `matches` — never on the path that spends the secret, because the
-decrypted value is what is stored. One identity serves every secret, so it does not scale
+decrypted value is what is stored. One key label serves every secret, so it does not scale
 with how many you hold.
 
 **The reason it was tempting is gone.** The pull was that Motoko had no pairings. It does

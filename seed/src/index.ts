@@ -1,39 +1,46 @@
 /**
- * Seals a secret with vetKD IBE and submits it to a canister.
+ * Seals a secret with vetKD IBE and writes the Candid argument that sends it.
  *
  * The flow, and why each step is in that order:
  *
  *   1. Ask the canister what it uses — key name, context, identity, epoch, and
- *      the public key it believes it has. First, so the preflight can check the
- *      key name the canister will actually request rather than one we assumed.
- *   2. Preflight the subnet: is it SEV-SNP, and does it hold that vetKD key?
+ *      the public key it believes it has.
+ *   2. Preflight the subnet: are its nodes SEV-SNP? That is what protects the
+ *      plaintext once the canister decrypts it.
  *   3. Derive the public key OFFLINE from a master key constant we ship, and
  *      abort unless it equals what the canister reported. The reported value is
  *      never used for encryption — only as a cross-check. Trusting it would let
  *      anyone able to tamper with that reply substitute a key they control.
- *   4. Encrypt to the key WE derived, and submit. The canister trial-decrypts
- *      before storing, so a wrong context or epoch fails here, not in production.
+ *   4. Encrypt to the key WE derived, and write the call argument.
  *
- * With `--verify`, step 4 asks `icp_sealed_secret_matches` instead of sealing,
- * which answers whether the canister already holds this value without either
- * side disclosing it.
+ * Then it stops, because **sending is a separate concern with a separate
+ * requirement**. Nothing up to here needs an identity of yours: no key of yours
+ * goes into the ciphertext, so anyone can produce one for this canister and only
+ * the canister can open it. The call that follows is what needs a signature,
+ * from a controller — and that is `icp canister call`'s job, using the identity
+ * you already have configured. So this script never asks you to export a private
+ * key. `scripts/seal.sh` runs both steps.
+ *
+ * With `--verify`, step 4 writes the argument for `icp_sealed_secret_matches`
+ * instead of `icp_sealed_secret_set`, which answers whether the canister already
+ * holds this value without either side disclosing it.
  *
  * The value is read from an environment variable and never from argv: argv is
  * world-readable via `ps`, lands in shell history, and is echoed into CI logs.
  */
 
-import { HttpAgent, Actor } from "@icp-sdk/core/agent";
+import { HttpAgent, Actor, AnonymousIdentity } from "@icp-sdk/core/agent";
 import { Principal } from "@icp-sdk/core/principal";
 import { IbeCiphertext, IbeIdentity, IbeSeed, DerivedPublicKey } from "@icp-sdk/vetkeys";
+import { writeFileSync } from "node:fs";
 
 import { idlFactory, type _SERVICE } from "./declarations/sealed_secrets_canister.did.js";
-import { identityFromPemFile } from "./identity.js";
 import { evaluatePreflight, inspectSubnet } from "./preflight.js";
 import {
   bytesEqual,
   derivePublicKey,
   sealedSecretsContext,
-  sealedSecretsIdentity,
+  sealedSecretsKeyLabel,
   toHex,
   validateSecretName,
   type MasterKeySource,
@@ -44,19 +51,16 @@ interface Options {
   name: string;
   envVar: string;
   host: string;
-  pem: string;
+  out: string;
   source: MasterKeySource;
   verify: boolean;
   allowUnverifiedSev: boolean;
-  allowMissingVetkdKey: boolean;
-  list: boolean;
 }
 
 const USAGE = `
-Seal a secret and submit it to a sealed-secrets canister.
+Seal a secret for a sealed-secrets canister, and write the call argument.
 
-  seal --canister <id> --name <NAME> [--from-env <VAR>] [options]
-  seal --canister <id> --list
+  <NAME>=<value> seal --canister <id> --name <NAME> [options]
 
 Required
   --canister <id>        Target canister id.
@@ -70,9 +74,12 @@ Value source
 
 Connection
   --host <url>           Replica URL. Default http://127.0.0.1:8000
-  --pem <path>           Controller identity PEM.
-                         Default $SEAL_IDENTITY_PEM.
-                         Produce one with: icp identity export <name> > id.pem
+                         Read-only: this script calls icp_sealed_secret_info,
+                         which is not controller-gated, so it connects
+                         anonymously and never needs an identity of yours.
+
+Output
+  --out <path>           Write the Candid argument here instead of stdout.
 
 Derivation
   --source <which>       mainnet | pocketic. Default pocketic.
@@ -84,17 +91,22 @@ Escape hatches
                          Required locally, where PocketIC reports sev_enabled
                          for no subnet. On mainnet this means node operators can
                          read the plaintext once the canister decrypts it.
-  --allow-missing-vetkd-key
-                         Proceed although this subnet does not hold the vetKD
-                         key. Sharper than it looks: on mainnet the derive is
-                         served by the canister's OWN subnet and will be
-                         rejected, whereas PocketIC does not enforce that, so a
-                         local run succeeds and hides the problem.
-  --local                Shorthand for both of the above.
-  --list                 List the secrets the canister already holds.
-  --verify               Ask whether the canister already holds the value in
-                         the environment, instead of sealing a new one. Answers
-                         yes/no; neither side discloses the secret.
+  --local                Alias for --allow-unverified-sev, for local runs.
+  --verify               Produce the argument for icp_sealed_secret_matches
+                         instead of icp_sealed_secret_set — "do you already hold
+                         this value?", answered without either side disclosing it.
+
+Then send it as a controller of the canister. scripts/seal.sh does both steps:
+
+  <NAME>=<value> ./scripts/seal.sh sealed-secrets-rust <NAME>
+
+Or by hand:
+
+  icp canister call <id> icp_sealed_secret_set --args-file <path> -e local
+
+To read what a canister holds, call it directly — no client needed:
+
+  icp canister call <id> icp_sealed_secret_list '()' -e local
 `.trim();
 
 function parseArgs(argv: string[]): Options {
@@ -112,9 +124,8 @@ function parseArgs(argv: string[]): Options {
   const canisterId = get("--canister");
   if (!canisterId) fail("--canister is required");
 
-  const list = has("--list");
-  const name = get("--name") ?? "";
-  if (!list && !name) fail("--name is required (or use --list)");
+  const name = get("--name");
+  if (!name) fail("--name is required");
 
   const source = (get("--source") ?? "pocketic") as MasterKeySource;
   if (source !== "mainnet" && source !== "pocketic") {
@@ -123,15 +134,13 @@ function parseArgs(argv: string[]): Options {
 
   return {
     canisterId: canisterId!,
-    name,
-    envVar: get("--from-env") ?? name,
+    name: name!,
+    envVar: get("--from-env") ?? name!,
     host: get("--host") ?? "http://127.0.0.1:8000",
-    pem: get("--pem") ?? process.env.SEAL_IDENTITY_PEM ?? "",
+    out: get("--out") ?? "",
     source,
     verify: has("--verify"),
     allowUnverifiedSev: has("--allow-unverified-sev") || has("--local"),
-    allowMissingVetkdKey: has("--allow-missing-vetkd-key") || has("--local"),
-    list,
   };
 }
 
@@ -150,40 +159,25 @@ function bigintReplacer(_key: string, value: unknown) {
   return typeof value === "bigint" ? value.toString() : value;
 }
 
+/** Candid text for (name, blob): every byte escaped, so quoting cannot surprise. */
+function candidArgs(name: string, bytes: Uint8Array): string {
+  const escaped = Array.from(bytes, (b) => `\\${b.toString(16).padStart(2, "0")}`).join("");
+  return `("${name}", blob "${escaped}")`;
+}
+
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
-
-  if (!opts.pem) {
-    fail("no identity: pass --pem <path> or set SEAL_IDENTITY_PEM");
-  }
-
   const canisterId = Principal.fromText(opts.canisterId);
-  const identity = identityFromPemFile(opts.pem);
 
-  const agent = await HttpAgent.create({ host: opts.host, identity });
+  // Anonymous on purpose. Everything this script reads is ungated, and nothing
+  // it writes is sent from here — see the module comment.
+  const agent = await HttpAgent.create({ host: opts.host, identity: new AnonymousIdentity() });
   if (!opts.host.includes("icp-api.io") && !opts.host.includes("ic0.app")) {
     // Local and test networks have their own root key.
     await agent.fetchRootKey();
   }
 
   const actor = Actor.createActor<_SERVICE>(idlFactory, { agent, canisterId });
-
-  // ---------------------------------------------------------------- list mode
-  if (opts.list) {
-    const entries = unwrap(await actor.icp_sealed_secret_list(), "list");
-    if (entries.length === 0) {
-      console.log("no secrets stored");
-      return;
-    }
-    for (const e of entries) {
-      console.log(
-        `${e.name}\n` +
-          `  revision ${e.revision}  epoch ${e.epoch}  ciphertext ${e.ciphertext_len} bytes\n` +
-          `  sha256 ${toHex(Uint8Array.from(e.ciphertext_sha256))}`,
-      );
-    }
-    return;
-  }
 
   validateSecretName(opts.name);
 
@@ -197,8 +191,6 @@ async function main() {
   }
 
   // ---------------------------------------------- 1. what does the canister use?
-  //     Read first, so the preflight can check the key name the canister will
-  //     actually ask for rather than one we assumed.
   const info = unwrap(await actor.icp_sealed_secret_info(), "icp_sealed_secret_info");
   // The application domain separator is always empty in this PoC; it stays in
   // the wire format only so it can be adopted later without a format break.
@@ -207,16 +199,15 @@ async function main() {
 
   // ------------------------------------------------------------- 2. preflight
   const check = await inspectSubnet(agent, canisterId);
-  const preflight = evaluatePreflight(check, info.key_name, {
+  const preflight = evaluatePreflight(check, {
     allowUnverifiedSev: opts.allowUnverifiedSev,
-    allowMissingVetkdKey: opts.allowMissingVetkdKey,
   });
-  console.log("preflight");
-  for (const line of preflight.lines) console.log(`  ${line}`);
+  console.error("preflight");
+  for (const line of preflight.lines) console.error(`  ${line}`);
   if (!preflight.ok) {
     fail(
       "subnet preflight failed; refusing to seal.\n" +
-        "       For a local network, pass --local (or the two --allow-* flags).",
+        "       For a local network, pass --local (or --allow-unverified-sev).",
     );
   }
 
@@ -225,11 +216,11 @@ async function main() {
   const derivedBytes = derived.publicKeyBytes();
   const reported = Uint8Array.from(info.public_key);
 
-  console.log("\nkey derivation");
-  console.log(`  source    ${opts.source}:${info.key_name}`);
-  console.log(`  context   ${toHex(context)}`);
-  console.log(`  identity  ${toHex(sealedSecretsIdentity(epoch))}  (epoch ${epoch})`);
-  console.log(`  derived   ${toHex(derivedBytes).slice(0, 32)}…`);
+  console.error("\nkey derivation");
+  console.error(`  source    ${opts.source}:${info.key_name}`);
+  console.error(`  context   ${toHex(context)}`);
+  console.error(`  identity  ${toHex(sealedSecretsKeyLabel(epoch))}  (epoch ${epoch})`);
+  console.error(`  derived   ${toHex(derivedBytes).slice(0, 32)}…`);
 
   if (!bytesEqual(context, Uint8Array.from(info.context))) {
     fail(
@@ -248,14 +239,14 @@ async function main() {
         "       Either --source is wrong for this network, or the response was tampered with.",
     );
   }
-  console.log("  verified  canister agrees with our offline derivation");
+  console.error("  verified  canister agrees with our offline derivation");
 
-  // ------------------------------------------------------- 4. encrypt and send
+  // ------------------------------------------------------------- 4. encrypt
   const plaintext = new TextEncoder().encode(value);
   const ciphertext = IbeCiphertext.encrypt(
     // Encrypt to the key WE derived, never to the one the canister reported.
     DerivedPublicKey.deserialize(derivedBytes),
-    IbeIdentity.fromBytes(sealedSecretsIdentity(epoch)),
+    IbeIdentity.fromBytes(sealedSecretsKeyLabel(epoch)),
     plaintext,
     IbeSeed.random(),
   ).serialize();
@@ -266,28 +257,20 @@ async function main() {
     );
   }
 
-  // ------------------------------------------------- verify instead of seal
-  if (opts.verify) {
-    const same = unwrap(
-      await actor.icp_sealed_secret_matches(opts.name, ciphertext),
-      "icp_sealed_secret_matches",
+  const method = opts.verify ? "icp_sealed_secret_matches" : "icp_sealed_secret_set";
+  const candid = candidArgs(opts.name, ciphertext);
+
+  if (opts.out) {
+    writeFileSync(opts.out, candid);
+    console.error(
+      `\nencrypted "${opts.name}" (${plaintext.length} bytes → ${ciphertext.length} bytes), wrote ${opts.out}\n` +
+        `send it as a controller:\n` +
+        `  icp canister call ${canisterId.toText()} ${method} --args-file ${opts.out}`,
     );
-    console.log(
-      same
-        ? `\n✓ the canister already holds this value for "${opts.name}"`
-        : `\n✗ the canister holds a DIFFERENT value for "${opts.name}"`,
-    );
-    process.exit(same ? 0 : 1);
+  } else {
+    console.error(`\nencrypted "${opts.name}" (${plaintext.length} bytes → ${ciphertext.length} bytes)`);
+    console.log(candid);
   }
-
-  console.log(`\nsealing "${opts.name}" (${plaintext.length} bytes → ${ciphertext.length} bytes)`);
-  const revision = unwrap(
-    await actor.icp_sealed_secret_set(opts.name, ciphertext),
-    "icp_sealed_secret_set",
-  );
-
-  console.log(`✓ sealed "${opts.name}" at revision ${revision}`);
-  console.log("  the canister trial-decrypted it before storing, so it is readable");
 }
 
 main().catch((e) => {

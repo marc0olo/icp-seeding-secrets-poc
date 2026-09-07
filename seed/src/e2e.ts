@@ -7,20 +7,36 @@
  * turns a misconfiguration into a deploy-time error instead of a production
  * outage months later.
  *
+ *   npx tsx src/e2e.ts --print-principal            # who to authorise
  *   npx tsx src/e2e.ts --canister <id> --host <url> --source pocketic
+ *
+ * The suite needs BOTH a controller and a non-controller, because one of the
+ * things it asserts is that the controller gate actually gates. It therefore
+ * cannot run as the anonymous principal — that would have to be a controller,
+ * and the gate test would pass vacuously.
+ *
+ * So it makes its own caller: an Ed25519 identity derived from the fixed seed
+ * below, which never leaves this process and is not a secret (it is published,
+ * right here, and only ever authorised on a throwaway local canister). Run
+ * `--print-principal`, add that principal as a controller, then run the suite:
+ *
+ *   icp canister settings update <canister> --add-controller <principal> -e local
+ *
+ * That is why nothing here asks you to export an identity. `scripts/local-test.sh`
+ * wires up both steps.
  */
 
 import { HttpAgent, Actor, AnonymousIdentity } from "@icp-sdk/core/agent";
+import { Ed25519KeyIdentity } from "@icp-sdk/core/identity";
 import { Principal } from "@icp-sdk/core/principal";
 import { IbeCiphertext, IbeIdentity, IbeSeed, DerivedPublicKey } from "@icp-sdk/vetkeys";
 
 import { idlFactory, type _SERVICE } from "./declarations/sealed_secrets_canister.did.js";
-import { identityFromPemFile } from "./identity.js";
 import {
   bytesEqual,
   derivePublicKey,
   sealedSecretsContext,
-  sealedSecretsIdentity,
+  sealedSecretsKeyLabel,
   toHex,
   type MasterKeySource,
 } from "./format.js";
@@ -54,13 +70,27 @@ function arg(flag: string, fallback?: string): string {
   return v;
 }
 
+/**
+ * The harness's own caller. Deterministic, so the principal can be authorised
+ * before the suite runs — see the module comment for why a fixed seed in a
+ * committed file is the right call here and not a leak.
+ */
+const TEST_IDENTITY_SEED = new Uint8Array(32).fill(7);
+
+function testIdentity(): Ed25519KeyIdentity {
+  return Ed25519KeyIdentity.generate(TEST_IDENTITY_SEED);
+}
+
 async function main() {
+  if (process.argv.includes("--print-principal")) {
+    console.log(testIdentity().getPrincipal().toText());
+    return;
+  }
+
   const canisterId = Principal.fromText(arg("--canister"));
   const host = arg("--host", "http://127.0.0.1:8010");
   const source = arg("--source", "pocketic") as MasterKeySource;
-  const pem = arg("--pem", process.env.SEAL_IDENTITY_PEM);
-
-  const agent = await HttpAgent.create({ host, identity: identityFromPemFile(pem) });
+  const agent = await HttpAgent.create({ host, identity: testIdentity() });
   await agent.fetchRootKey();
   const actor = Actor.createActor<_SERVICE>(idlFactory, { agent, canisterId });
 
@@ -88,8 +118,8 @@ async function main() {
     bytesEqual(context, Uint8Array.from(info.context)),
   );
   check(
-    "canister identity matches the golden encoding",
-    bytesEqual(sealedSecretsIdentity(info.epoch), Uint8Array.from(info.identity)),
+    "canister key label matches the golden encoding",
+    bytesEqual(sealedSecretsKeyLabel(info.epoch), Uint8Array.from(info.key_label)),
   );
 
   const seal = (value: string, identityBytes: Uint8Array) =>
@@ -104,7 +134,7 @@ async function main() {
   const value = `e2e-${Date.now()}-value`;
   const setRes = await actor.icp_sealed_secret_set(
     "e2e_probe",
-    seal(value, sealedSecretsIdentity(info.epoch)),
+    seal(value, sealedSecretsKeyLabel(info.epoch)),
   );
   check(
     "sealing a well-formed ciphertext succeeds",
@@ -117,13 +147,13 @@ async function main() {
   // needs no endpoint that discloses anything.
   const same = await actor.icp_sealed_secret_matches(
     "e2e_probe",
-    seal(value, sealedSecretsIdentity(info.epoch)),
+    seal(value, sealedSecretsKeyLabel(info.epoch)),
   );
   check("matches() is true for the value we sealed", "Ok" in same && same.Ok === true, show(same));
 
   const different = await actor.icp_sealed_secret_matches(
     "e2e_probe",
-    seal(`${value}-different`, sealedSecretsIdentity(info.epoch)),
+    seal(`${value}-different`, sealedSecretsKeyLabel(info.epoch)),
   );
   check(
     "matches() is false for a different value",
@@ -136,7 +166,7 @@ async function main() {
   //     without it, this blob would be stored happily and fail in production.
   const wrongEpoch = await actor.icp_sealed_secret_set(
     "e2e_wrong_epoch",
-    seal(value, sealedSecretsIdentity(info.epoch + 1)),
+    seal(value, sealedSecretsKeyLabel(info.epoch + 1)),
   );
   check(
     "ciphertext for the wrong epoch is rejected",
@@ -165,14 +195,14 @@ async function main() {
   // 6 ─ invalid name
   const badName = await actor.icp_sealed_secret_set(
     "not/a/valid/name",
-    seal(value, sealedSecretsIdentity(info.epoch)),
+    seal(value, sealedSecretsKeyLabel(info.epoch)),
   );
   check("invalid name is rejected", errName(badName) === "InvalidName", `got ${errName(badName)}`);
 
   // 7 ─ the controller gate
   const anonSet = await anon.icp_sealed_secret_set(
     "e2e_anon",
-    seal(value, sealedSecretsIdentity(info.epoch)),
+    seal(value, sealedSecretsKeyLabel(info.epoch)),
   );
   check(
     "anonymous caller cannot set a secret",
@@ -182,7 +212,7 @@ async function main() {
   check("anonymous caller cannot list secrets", errName(await anon.icp_sealed_secret_list()) === "Unauthorized");
   check(
     "anonymous caller cannot use matches as an oracle",
-    errName(await anon.icp_sealed_secret_matches("e2e_probe", seal(value, sealedSecretsIdentity(info.epoch)))) ===
+    errName(await anon.icp_sealed_secret_matches("e2e_probe", seal(value, sealedSecretsKeyLabel(info.epoch)))) ===
       "Unauthorized",
   );
 
@@ -199,16 +229,16 @@ async function main() {
   const newValue = `${value}-v2`;
   const again = await actor.icp_sealed_secret_set(
     "e2e_probe",
-    seal(newValue, sealedSecretsIdentity(info.epoch)),
+    seal(newValue, sealedSecretsKeyLabel(info.epoch)),
   );
   check("overwriting bumps the revision", "Ok" in again && again.Ok > 0n, show(again));
   const freshMatches = await actor.icp_sealed_secret_matches(
     "e2e_probe",
-    seal(newValue, sealedSecretsIdentity(info.epoch)),
+    seal(newValue, sealedSecretsKeyLabel(info.epoch)),
   );
   const staleMatches = await actor.icp_sealed_secret_matches(
     "e2e_probe",
-    seal(value, sealedSecretsIdentity(info.epoch)),
+    seal(value, sealedSecretsKeyLabel(info.epoch)),
   );
   check(
     "an overwrite replaces the stored value rather than shadowing it",
@@ -223,7 +253,7 @@ async function main() {
   check(
     "unset removes the secret",
     errName(
-      await actor.icp_sealed_secret_matches("e2e_probe", seal(value, sealedSecretsIdentity(info.epoch))),
+      await actor.icp_sealed_secret_matches("e2e_probe", seal(value, sealedSecretsKeyLabel(info.epoch))),
     ) === "NotFound",
   );
 

@@ -167,9 +167,10 @@ export interface SealedSecretInfo {
    */
   'key_name' : string,
   /**
-   * The exact IBE identity bytes for the current epoch.
+   * The exact key-label bytes for the current epoch — the vetKD `input`,
+   * i.e. the IBE identity every secret here is sealed to.
    */
-  'identity' : Uint8Array,
+  'key_label' : Uint8Array,
   /**
    * Version of this interface. Currently 1.
    */
@@ -503,7 +504,7 @@ export const idlFactory: IDL.InterfaceFactory = ({ IDL }) => {
     'max_ciphertext_len' : IDL.Nat64,
     'epoch' : IDL.Nat32,
     'key_name' : IDL.Text,
-    'identity' : IDL.Vec(IDL.Nat8),
+    'key_label' : IDL.Vec(IDL.Nat8),
     'standard_version' : IDL.Nat32,
   });
   const Result_2 = IDL.Variant({

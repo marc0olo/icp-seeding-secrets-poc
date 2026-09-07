@@ -21,8 +21,9 @@ module {
     standard_version : Nat32;
     /// The exact vetKD `context` bytes this canister derives under.
     context : Blob;
-    /// The exact IBE identity bytes for the current epoch.
-    identity : Blob;
+    /// The exact key-label bytes for the current epoch — the vetKD `input`,
+    /// i.e. the IBE identity every secret here is sealed to.
+    key_label : Blob;
     /// The current epoch. New seals must target this value.
     epoch : Nat32;
     /// The vetKD key name, e.g. `key_1`.

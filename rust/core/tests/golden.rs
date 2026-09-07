@@ -31,15 +31,15 @@ fn context_golden_vectors() {
 #[test]
 fn identity_golden_vectors() {
     assert_eq!(
-        hex::encode(sealed_secrets_identity(0)),
+        hex::encode(sealed_secrets_key_label(0)),
         "01156963702d7365616c65642d736563726574732d763100000000"
     );
     assert_eq!(
-        hex::encode(sealed_secrets_identity(1)),
+        hex::encode(sealed_secrets_key_label(1)),
         "01156963702d7365616c65642d736563726574732d763100000001"
     );
     assert_eq!(
-        hex::encode(sealed_secrets_identity(u32::MAX)),
+        hex::encode(sealed_secrets_key_label(u32::MAX)),
         "01156963702d7365616c65642d736563726574732d7631ffffffff"
     );
 }

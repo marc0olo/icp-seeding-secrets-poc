@@ -133,7 +133,7 @@ module {
     case (#err(_)) [];
   };
 
-  public func identity(epoch : Nat32) : [Nat8] = Format.identity(epoch);
+  public func keyLabel(epoch : Nat32) : [Nat8] = Format.keyLabel(epoch);
 
   /// This canister's public key, as the subnet reports it.
   ///
@@ -222,12 +222,12 @@ module {
     // an all-zero seed — makes the derived key readable by anyone who can read
     // the subnet's messages, and moots the verification below.
     let tsk = Scalar.hashToScalar(seed.toArray(), DS_TRANSPORT_KEY);
-    let identityBytes = identity(epoch);
+    let labelBytes = keyLabel(epoch);
 
     let reply = try {
       await (with cycles = vetkdFee(ctx.keyName)) IC.vetkd_derive_key({
         context = context().toBlob();
-        input = identityBytes.toBlob();
+        input = labelBytes.toBlob();
         key_id = keyId(ctx.keyName);
         transport_public_key = VetKey.transportPublicKey(tsk);
       });
@@ -241,7 +241,7 @@ module {
       case null { return #Err(#Internal("malformed encrypted vetkey")) };
     };
 
-    switch (VetKey.decryptAndVerify(encrypted, tsk, derivedPublicKey, identityBytes)) {
+    switch (VetKey.decryptAndVerify(encrypted, tsk, derivedPublicKey, labelBytes)) {
       case (?k) {
         ctx.caches.vetkeys.add(epoch, k);
         #Ok(k);

@@ -16,7 +16,7 @@ import type { Principal } from "@icp-sdk/core/principal";
 export const SUITE = new TextEncoder().encode("icp-sealed-secrets-v1");
 
 export const CONTEXT_FORMAT_VERSION = 0x01;
-export const IDENTITY_FORMAT_VERSION = 0x01;
+export const KEY_LABEL_FORMAT_VERSION = 0x01;
 
 /** Fixed IBE overhead: 8-byte header + 32-byte seed + 96-byte G2 element. */
 export const IBE_OVERHEAD = 136;
@@ -58,18 +58,18 @@ export function sealedSecretsContext(appSeparator: string): Uint8Array {
 }
 
 /**
- * identity := 0x01 || u8(len(SUITE)) || SUITE || be_u32(epoch)
+ * key_label := 0x01 || u8(len(SUITE)) || SUITE || be_u32(epoch)
  *
- * Note the absence of the secret's name: one identity serves every secret in a
+ * Note the absence of the secret's name: one label serves every secret in a
  * canister, so a single `vetkd_derive_key` unlocks all of them.
  */
-export function sealedSecretsIdentity(epoch: number): Uint8Array {
+export function sealedSecretsKeyLabel(epoch: number): Uint8Array {
   if (!Number.isInteger(epoch) || epoch < 0 || epoch > 0xffffffff) {
     throw new Error(`epoch must be a uint32, got ${epoch}`);
   }
   const out = new Uint8Array(2 + SUITE.length + 4);
   let i = 0;
-  out[i++] = IDENTITY_FORMAT_VERSION;
+  out[i++] = KEY_LABEL_FORMAT_VERSION;
   out[i++] = SUITE.length;
   out.set(SUITE, i);
   i += SUITE.length;
