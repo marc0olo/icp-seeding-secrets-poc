@@ -1,77 +1,35 @@
 # yaml-language-server: $schema=https://github.com/dfinity/icp-cli/raw/refs/heads/main/docs/schemas/icp-yaml-schema.json
 
 canisters:
-  - name: sealed-secrets-rust
-    # These steps mirror the official @dfinity/rust recipe rather than using it,
-    # for one reason: the recipe has no parameter for cargo `--features`, and this
-    # PoC needs `--features test-hooks` (see README, "Seeing the
-    # plaintext"). Everything else here — the metadata injection and the shrink — is
-    # lifted straight from that recipe, because embedding candid:service is what
-    # makes `icp canister call` print field names instead of hashes.
+  # Two implementations of the same thing, so you can read whichever language
+  # you think in. They share one interface and one seeding script.
+  - name: dummy-secret-rust
     build:
       steps:
         - type: script
           commands:
             - command -v candid-extractor >/dev/null 2>&1 || { echo >&2 "candid-extractor not found. Run 'cargo install candid-extractor'."; exit 1; }
-            - command -v ic-wasm >/dev/null 2>&1 || { echo >&2 "ic-wasm not found; it ships with icp-cli."; exit 1; }
-
-        # --features test-hooks adds secret_reveal, so a human can look at a
-        # decrypted secret and believe the round trip worked. A real deployment
-        # builds WITHOUT it: the default build has no endpoint that discloses a
-        # secret at all. Automated verification does not need it —
-        # icp_sealed_secret_matches answers "is the right value set?" and is in
-        # every build.
-        - type: script
-          commands:
-            - cargo build --package sealed-secrets-canister --target wasm32-unknown-unknown --release --locked --features test-hooks
-            - TARGET_DIR=$(cargo metadata --format-version 1 --no-deps | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p'); cp "${TARGET_DIR}/wasm32-unknown-unknown/release/sealed_secrets_canister.wasm" "$ICP_WASM_OUTPUT_PATH"
-
-        - type: script
-          commands:
+            - cargo build --package dummy-secret-canister --target wasm32-unknown-unknown --release --locked
+            - TARGET_DIR=$(cargo metadata --format-version 1 --no-deps | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p'); cp "${TARGET_DIR}/wasm32-unknown-unknown/release/dummy_secret_canister.wasm" "$ICP_WASM_OUTPUT_PATH"
+            # Embedding candid:service is what makes `icp canister call` print
+            # field names instead of hashes.
             - did="$(mktemp)"; candid-extractor "$ICP_WASM_OUTPUT_PATH" >"$did" && ic-wasm "$ICP_WASM_OUTPUT_PATH" -o "$ICP_WASM_OUTPUT_PATH" metadata "candid:service" -f "$did" -v public --keep-name-section
-            - ic-wasm "$ICP_WASM_OUTPUT_PATH" -o "$ICP_WASM_OUTPUT_PATH" metadata "cargo:version" -d "$(cargo --version)" --keep-name-section
             - ic-wasm "$ICP_WASM_OUTPUT_PATH" -o "$ICP_WASM_OUTPUT_PATH" shrink --keep-name-section
 
-    # Just the key name. The canister asks the subnet for its public key rather
-    # than deriving it from a compiled-in constant, so the same build runs against
-    # a local network and mainnet with nothing else to configure.
-    init_args: '(record { key_name = "key_1" })'
-
-  # The same design in Motoko, on this repo's experimental BLS12-381 port.
-  #
-  # It speaks the identical interface, so `seed/` drives it with no changes —
-  # which is the point of having it here rather than in a repo of its own.
-  #
-  # No test-hooks equivalent. Motoko has no feature flags, and it turns out not
-  # to need any: `icp_sealed_secret_matches` answers "is the right value set?"
-  # from a build that ships, which is what the Rust canister's own docs
-  # recommend over `secret_reveal` anyway.
-  - name: sealed-secrets-motoko
+  - name: dummy-secret-motoko
     build:
       steps:
         - type: script
           commands:
             - command -v mops >/dev/null 2>&1 || { echo >&2 "mops not found. See https://mops.one"; exit 1; }
-            - command -v ic-wasm >/dev/null 2>&1 || { echo >&2 "ic-wasm not found; it ships with icp-cli."; exit 1; }
-
-        # Script steps run from the project root, so the cd is explicit.
-        # $ICP_WASM_OUTPUT_PATH is absolute, so it survives it.
-        - type: script
-          commands:
+            # Script steps run from the project root, so the cd is explicit.
+            # $ICP_WASM_OUTPUT_PATH is absolute, so it survives it.
             - cd motoko/canister && mops install
-            # --enhanced-orthogonal-persistence is not optional here: Keys.mo
-            # relies on the persisted vetKey cache surviving upgrades.
-            - cd motoko/canister && "$(mops toolchain bin moc)" $(mops sources) --enhanced-orthogonal-persistence --idl -o "$ICP_WASM_OUTPUT_PATH" src/Main.mo
-
-        # No metadata step, unlike the Rust canister. moc already embeds
-        # candid:service, and `ic-wasm metadata` *appends* rather than replaces
-        # — a second section makes the replica reject the module outright with
-        # "name candid:service already exists".
-        - type: script
-          commands:
+            - cd motoko/canister && "$(mops toolchain bin moc)" $(mops sources) --enhanced-orthogonal-persistence -o "$ICP_WASM_OUTPUT_PATH" src/Main.mo
+            # No metadata step, unlike the Rust canister: moc already embeds
+            # candid:service, and `ic-wasm metadata` appends rather than
+            # replaces, so a second section makes the replica reject the module.
             - ic-wasm "$ICP_WASM_OUTPUT_PATH" -o "$ICP_WASM_OUTPUT_PATH" shrink --keep-name-section
-
-    init_args: '(record { key_name = "key_1" })'
 
 networks:
   # Port 8000 is icp-cli's default; this project uses 8010 so it can run

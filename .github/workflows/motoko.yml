@@ -82,6 +82,3 @@ jobs:
         working-directory: motoko/vetkeys
         run: mops test
 
-      - name: canister — wire-format golden vectors
-        working-directory: motoko/canister
-        run: mops test

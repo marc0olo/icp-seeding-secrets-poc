@@ -1,5 +1,5 @@
 [workspace]
-members = ["rust/core", "rust/canister", "rust/vectorgen"]
+members = ["rust/canister", "rust/vectorgen"]
 resolver = "2"
 
 [workspace.package]
@@ -13,14 +13,8 @@ repository = "https://github.com/marc0olo/icp-seeding-secrets-poc"
 candid = "0.10.16"
 ic-cdk = "0.20.1"
 ic-cdk-management-canister = "0.1.1"
-ic-stable-structures = "0.7.0"
 ic-vetkeys = "0.9.0"
 ic_bls12_381 = "0.10.1"
-serde = { version = "1.0.217", features = ["derive"] }
-serde_bytes = "0.11.15"
-sha2 = "0.10.9"
-subtle = "2.6.1"
-zeroize = { version = "1.8.1", features = ["zeroize_derive"] }
 
 [profile.release]
 lto = true

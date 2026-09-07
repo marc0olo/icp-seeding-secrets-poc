@@ -7,12 +7,12 @@ license = "Apache-2.0"
 
 [dependencies]
 core = "2.6.1"
-sha2 = "0.2.5"
+# Not imported by anything here. It arrives transitively via sha3, and without a
+# floor mops resolves 0.8.2, which predates moc 1.15's system-capability types
+# and fails to type-check. The two libraries already resolve this version.
+base = "0.14.5"
 sealed-secrets-bls = "../bls12-381"
 sealed-secrets-vetkeys = "../vetkeys"
-
-[dev-dependencies]
-test = "2.1.1"
 
 [canisters.sealed_secrets_motoko]
 main = "src/Main.mo"

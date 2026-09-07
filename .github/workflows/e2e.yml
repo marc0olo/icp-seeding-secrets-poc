@@ -1,10 +1,5 @@
 # The real thing: a local replica, a deploy, and a secret sealed and spent.
 #
-# One workflow rather than two because both canisters share a network and a
-# deploy, so splitting it would double the slowest part. The implementations are
-# separate STEPS instead, so a failure names the culprit without opening the log.
-# `scripts/local-test.sh` takes the same phase names, so any step here is one
-# command locally.
 name: End-to-end
 
 on:
@@ -54,27 +49,10 @@ jobs:
         working-directory: seed
         run: npm ci
 
-      - name: Build assertions (no replica needed)
-        run: ./scripts/local-test.sh build
-
-      - name: Start the network and deploy both canisters
-        run: ./scripts/local-test.sh setup
-
-      # Seals a secret, reads the plaintext back through the test-hooks build so
-      # a silent decryption failure cannot pass, makes a real authenticated
-      # HTTPS outcall, upgrades, and runs the 17 negative cases.
-      #
-      # The outcall reaches postman-echo.com. An unreachable API is treated as a
-      # skip rather than a failure, so a third-party outage cannot turn this red
-      # — but a *wrong* status still fails it.
-      - name: Rust canister — seal, spend, upgrade, negative cases
-        run: ./scripts/local-test.sh rust
-
-      # The same, on this repo's experimental pure-Motoko crypto, driven by the
-      # same seeding client with nothing changed but the canister id. That is the
-      # claim this repo makes, and running the suite twice is what tests it.
-      - name: Motoko canister — seal, spend, upgrade, negative cases
-        run: ./scripts/local-test.sh motoko
+      # Deploys both canisters, seals a secret into each with the seeding
+      # script, reads it back, and checks it round-tripped.
+      - name: Seal and read back, both canisters
+        run: ./scripts/local-test.sh
 
       - name: Stop the network
         if: always()

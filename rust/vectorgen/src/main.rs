@@ -15,6 +15,7 @@
 
 use ic_bls12_381::hash_to_curve::{ExpandMsgXmd, HashToCurve};
 use ic_bls12_381::{G1Affine, G1Projective, G2Affine, G2Projective, Scalar};
+use ic_cdk_management_canister::{VetKDCurve, VetKDKeyId};
 use ic_vetkeys::{
     DerivedPublicKey, EncryptedVetKey, IbeCiphertext, IbeIdentity, IbeSeed, TransportSecretKey,
     VetKey,
@@ -325,47 +326,69 @@ fn emit_encrypted_vetkey_vector() {
 /// port that conflates the two passes every single-network test and then
 /// produces undecryptable ciphertext on the other network.
 fn emit_derivation_vectors() {
-    use sealed_secrets_core::{derive_public_key, key_id, sealed_secrets_context, MasterKeySource};
+    use ic_vetkeys::MasterPublicKey;
+
+    // The PoC's own context, spelled here rather than imported: vectorgen is a
+    // dev tool for the Motoko libraries, and should not make the canister a
+    // dependency of them.
+    let context = b"dummy-secret-poc".to_vec();
+
+    #[derive(Clone, Copy)]
+    enum MasterKeySource {
+        Mainnet,
+        PocketIc,
+    }
+
+    let key_id = |name: &str| VetKDKeyId {
+        curve: VetKDCurve::Bls12_381_G2,
+        name: name.to_string(),
+    };
+    let derive_public_key =
+        |source: MasterKeySource, id: &VetKDKeyId, cid: &candid::Principal, ctx: &[u8]| {
+            let master = match source {
+                MasterKeySource::Mainnet => MasterPublicKey::for_mainnet_key(id),
+                MasterKeySource::PocketIc => MasterPublicKey::for_pocketic_key(id),
+            }
+            .expect("known key id");
+            master
+                .derive_canister_key(cid.as_slice())
+                .derive_sub_key(ctx)
+        };
 
     let cases = [
         (
             MasterKeySource::Mainnet,
             "key_1",
             "rwlgt-iiaaa-aaaaa-aaaaa-cai",
-            "",
         ),
         (
             MasterKeySource::Mainnet,
             "test_key_1",
             "rrkah-fqaaa-aaaaa-aaaaq-cai",
-            "",
         ),
         (
             MasterKeySource::PocketIc,
             "key_1",
             "rwlgt-iiaaa-aaaaa-aaaaa-cai",
-            "",
         ),
         (
             MasterKeySource::PocketIc,
             "test_key_1",
             "ryjl3-tyaaa-aaaaa-aaaba-cai",
-            "demo",
         ),
     ];
 
     println!("  \"derived_public_key\": [");
     let mut first = true;
-    for (source, name, canister, app_sep) in cases {
+    for (source, name, canister) in cases {
         let cid = candid::Principal::from_text(canister).expect("valid principal");
-        let context = sealed_secrets_context(app_sep).expect("valid separator");
-        let dpk = derive_public_key(source, &key_id(name), &cid, &context).expect("known key");
+        let dpk = derive_public_key(source, &key_id(name), &cid, &context);
         if !first {
             println!(",");
         }
         first = false;
         print!(
-            "    {{ \"source\": \"{}\", \"key_name\": \"{}\", \"canister_id\": \"{}\", \"canister_id_bytes\": \"{}\", \"app_separator\": \"{}\", \"context\": \"{}\", \"derived_public_key\": \"{}\" }}",
+            "    {{ \"source\": \"{}\", \"key_name\": \"{}\", \"canister_id\": \"{}\", \"canister_id_bytes\": \"{}\", \"context\": \"{}\", \"derived_public_key\": \"{}\" }}",
             match source {
                 MasterKeySource::Mainnet => "mainnet",
                 MasterKeySource::PocketIc => "pocketic",
@@ -373,7 +396,6 @@ fn emit_derivation_vectors() {
             name,
             canister,
             hex::encode(cid.as_slice()),
-            app_sep,
             hex::encode(&context),
             hex::encode(dpk.serialize())
         );
