@@ -17,7 +17,7 @@ path is meant to be read start to finish:
 
 | file                                                           | size      |
 | -------------------------------------------------------------- | --------- |
-| [`rust/canister/src/lib.rs`](./rust/canister/src/lib.rs)       | 204 lines |
+| [`rust/canister/src/lib.rs`](./rust/canister/src/lib.rs)       | 205 lines |
 | [`motoko/canister/src/Main.mo`](./motoko/canister/src/Main.mo) | 215 lines |
 | [`seed/src/index.ts`](./seed/src/index.ts)                     | 164 lines |
 
@@ -33,12 +33,11 @@ You want to hand a secret to one specific canister so only it can read it. That
 is what public-key encryption is for — the recipient needs a public key you can
 encrypt to, and a private key only they can use.
 
-**A canister cannot generate a keypair and keep the private half.** Its entire
-memory is replicated to every node of its subnet, written to disk in
-checkpoints, and shipped to new nodes during state sync. Its randomness is not
-private either — `raw_rand` is derived from the round's random tape, a threshold
-signature the subnet produces and every node holds. There is nowhere to put a
-private key that the subnet cannot see.
+**A canister cannot keep a private key its own subnet cannot see.** Its entire
+memory is replicated to every node of that subnet, written to disk in
+checkpoints, and shipped to new nodes during state sync. Its randomness is no
+different — `raw_rand` comes from the round's random tape, a threshold signature
+every node of the subnet holds. Whatever it generates, the subnet has too.
 
 **vetKD supplies the missing half.** Subnets that hold a vetKD key hold a master
 secret, split across their nodes so no single node has it. From that:
@@ -54,13 +53,11 @@ for that key — which need not be the calling canister's own. What binds the ke
 to _your_ canister is not which subnet serves it, but that the derivation takes
 the **caller's** canister id as an input.
 
-Note what this does and does not solve. The private key is still not hidden from
-the subnet — it cannot be, for the reasons above. What changed is that a client
-can now encrypt to a canister offline, and only that canister can obtain the
-matching key. Trusting the subnet with the plaintext is the remaining
-requirement, and
-[why this design needs a confidential subnet](#why-this-design-needs-a-confidential-subnet)
-is about exactly that.
+Note what that does *not* fix: the key is still visible to the subnet, for the
+reasons above. What changes is that a client can encrypt to a canister offline,
+and only that canister can obtain the matching key. Trusting the subnet with the
+plaintext remains a requirement —
+[why this design needs a confidential subnet](#why-this-design-needs-a-confidential-subnet).
 
 ### Could the canister just generate a keypair?
 
@@ -82,10 +79,10 @@ Four things are, and only the first is specific to seeding:
   self-generated key needs deploy, execute, and fetch first.
 - **The key outlives the canister's memory.** Reinstall and vetKD returns the
   same key; a self-generated one is gone, and every ciphertext with it.
-- **Key quality does not depend on the canister's code.** A weak seed or a key
-  that leaks into a log is invisible to the client. With vetKD the key comes
-  from the protocol, and the client checks the canister's answer against a
-  constant it ships itself.
+- **Key quality does not depend on the canister's code.** A weak seed, or a key
+  that leaks into a log, is invisible to whoever is encrypting. With vetKD the
+  key comes from the protocol and the client never asks the canister for it at
+  all, so there is nothing about the canister's implementation to get right.
 
 For one credential in a canister you control, this is a close call. It stops
 being one as soon as clients should not have to trust the canister's code, or

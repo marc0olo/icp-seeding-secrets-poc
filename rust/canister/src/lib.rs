@@ -142,10 +142,11 @@ async fn vetkey() -> Result<VetKey, String> {
     .map_err(|e| format!("vetkd_public_key: {e}"))?
     .public_key;
 
-    let dpk = DerivedPublicKey::deserialize(&dpk_bytes).map_err(|e| format!("bad dpk: {e:?}"))?;
+    let dpk = DerivedPublicKey::deserialize(&dpk_bytes)
+        .map_err(|e| format!("subnet returned a malformed public key: {e:?}"))?;
 
     let vetkey = EncryptedVetKey::deserialize(&reply.encrypted_key)
-        .map_err(|e| format!("bad encrypted key: {e}"))?
+        .map_err(|e| format!("malformed encrypted key: {e}"))?
         .decrypt_and_verify(&tsk, &dpk, KEY_LABEL)
         .map_err(|e| format!("the subnet returned a key we cannot verify: {e}"))?;
 
