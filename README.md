@@ -104,7 +104,9 @@ sequenceDiagram
     Note over Dev,Can: an ordinary update call — opaque to<br/>boundary nodes, and bound to THIS canister id
     Can->>Can: is_controller(caller)?
 
-    Can->>Mgmt: raw_rand, then vetkd_derive_key
+    Can->>Can: raw_rand -> a single-use transport keypair
+    Note over Can: the private half stays here, and is the only<br/>thing that can open the reply
+    Can->>Mgmt: vetkd_derive_key(label, transport PUBLIC key)
     Note over Can,Mgmt: routed to a subnet holding that key, which need not<br/>be this canister's own. Each node computes its share<br/>ALREADY encrypted to the transport key, so no node<br/>ever assembles the plaintext vetKey.
     Mgmt-->>Can: EncryptedVetKey
     Can->>Can: unwrap, verify, then decrypt the secret
@@ -130,12 +132,22 @@ neither is visible in the call.
 for this label" and "sign this label" are the same operation, and it is what
 makes the reply verifiable at all.
 
-**It arrives encrypted, and no node ever assembles it.** The transport public key
-goes into the share computation itself, so each node produces a share already
-encrypted under it. `decrypt_and_verify` then strips that blinding and checks the
-result really is a signature over `KEY_LABEL` — which is what makes a forged
-reply useless. The algebra is in
+**It arrives encrypted to something only this canister holds.** Before asking,
+the canister generates a single-use _transport keypair_ from `raw_rand` and sends
+only the public half. That public half goes into the share computation itself, so
+each node produces a share already encrypted under it and no node ever assembles
+the plaintext vetKey.
+
+The private half never leaves, and it is the whole answer to "how can the
+canister decrypt this?": `decrypt_and_verify` uses it to strip the blinding, then
+checks the result really is a signature over `KEY_LABEL`, which is what makes a
+forged reply useless. The algebra is in
 [`ic-vetkeys`](https://github.com/dfinity/vetkeys).
+
+"Only this canister" means only it, among everyone outside its subnet. `raw_rand`
+is deterministic given the subnet's random tape, so its own nodes could recompute
+the transport key — which changes nothing, since they can read the canister's
+memory regardless.
 
 ## Storing more than one secret
 
