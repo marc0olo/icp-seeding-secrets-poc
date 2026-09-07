@@ -1097,18 +1097,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "vectorgen"
-version = "0.1.0"
-dependencies = [
- "candid",
- "hex",
- "ic-cdk-management-canister",
- "ic-vetkeys",
- "ic_bls12_381",
- "sha2",
-]
-
-[[package]]
 name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"

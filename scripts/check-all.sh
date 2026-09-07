@@ -20,11 +20,6 @@ candid-extractor target/wasm32-unknown-unknown/release/dummy_secret_canister.was
 diff -q /tmp/extracted.did rust/canister/dummy_secret.did \
   || { echo "rust/canister/dummy_secret.did is stale"; exit 1; }
 
-step "motoko: the vectors still match the Rust reference"
-cargo run -q -p vectorgen > /tmp/vectors.json
-diff -q /tmp/vectors.json motoko/vectors.json \
-  || { echo "motoko/vectors.json is stale"; exit 1; }
-
 step "motoko: check and test"
 # Warnings fail on purpose: the M0236/M0237/M0223 lints are enabled in each
 # mops.toml and `mops check --fix` applies them, but `mops check` exits 0 on

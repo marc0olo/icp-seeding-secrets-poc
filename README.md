@@ -191,7 +191,8 @@ scripts/local-test.sh  the round trip, one command
 
 motoko/bls12-381/      EXPERIMENTAL, UNAUDITED BLS12-381 for Motoko
 motoko/vetkeys/        EXPERIMENTAL, UNAUDITED vetKD layer on it
-rust/vectorgen/        generates the test vectors those two assert against
+motoko/vectors.json    what those two test against, generated from the Rust
+                       reference implementation
 ```
 
 The two Motoko libraries exist because `mo:ic-vetkeys` has no BLS12-381, so
