@@ -82,8 +82,8 @@ split across nodes so no single node has it. From that:
 
 That is a real asymmetric keypair for a canister. "Identity-based" means the public
 key is *derived from a name* — the canister id plus a context string — rather than
-being a random blob someone had to generate and distribute. That is why step 1 below
-is arithmetic you can do on a laptop before the canister has executed a single
+being a random blob someone had to generate and distribute. That is why deriving it
+is arithmetic you can do on a laptop, before the canister has executed a single
 instruction.
 
 **Is IBE required?** You need some public-key encryption where the canister holds the
@@ -147,10 +147,11 @@ reported, not one derived from a master key compiled into the Wasm. That is circ
 the subnet vouching for itself — and it is a deliberate trade, so that one build runs
 against a local network and mainnet with no configuration saying which. It costs little:
 a subnet that would lie about its public key already holds the master key and could
-decrypt everything anyway. **The non-circular check is on the client**, which derives the
-key offline from a master key it ships and refuses to encrypt if the canister disagrees —
-and that is the check that matters, because the client's request crosses boundary nodes
-where the canister's inter-canister call does not.
+decrypt everything anyway. What keeps the *client* honest is not a comparison but the
+absence of one: it derives the key offline from a master key it ships and never asks the
+canister for one, so there is no reply for anyone in between to substitute. That matters
+precisely because a reply to the client would cross boundary nodes, where the canister's
+inter-canister call does not.
 
 That vetKey is simultaneously the IBE decryption key for anything sealed to the same
 label, which is why one derivation opens every secret in the canister.
@@ -235,7 +236,7 @@ sequenceDiagram
     Dev->>Can: icp canister call icp_sealed_secret_set --args-file …
 
     rect rgba(120,120,120,.12)
-    Note over Can,Mgmt: set is async and trial-decrypts —<br/>a wrong key fails HERE, not in production
+    Note over Can,Mgmt: set is async and decrypts before storing —<br/>a wrong key fails HERE, not in production
     Can->>Can: is_controller(caller), then IbeCiphertext::deserialize(ct)
     Can->>Mgmt: raw_rand()
     Mgmt-->>Can: 32 bytes
@@ -274,11 +275,9 @@ sequenceDiagram
     Can-->>User: 200 — the status only, never the body
 ```
 
-**vetKD is still used, on two paths, and both are administrative:** `set` trial-decrypts
-before storing, and `matches` decrypts the sealed candidate it is asked to compare. Each
-needs the vetKey, which is cached — in the Rust canister on the heap, so the first such
-call after an upgrade re-derives it; in the Motoko canister in persisted state, so it does
-not. Neither pays anything on the path above.
+**vetKD is still used, on two paths, and both are administrative:** `set` decrypts
+before storing, and `matches` decrypts the sealed candidate it is asked to compare.
+Neither is on the path above, which is why that path is free.
 
 **Cost.** A `vetkd_derive_key` with `key_1` costs **26_153_846_153 cycles**
 (`test_key_1`: 10_000_000_000), the same locally and on mainnet. `vetkd_public_key` is
@@ -286,11 +285,10 @@ free. The figure comes from `VETKD_FEE` — 10B cycles at the 13-node reference 
 scaled by replication factor (`ic/rs/config/src/subnet_config.rs:130`), which the comment
 there puts at 1 SDR cent per 10B.
 
-It is **not paid per secret** — one label serves them all — and it is **not paid on
-the path that spends one**. Only `set` and `matches` need a vetKey. The Rust canister
-caches it on the heap, so the first such call after an upgrade re-derives it; the Motoko
-canister keeps that cache in persisted state, so it does not. Either way, cost is no
-reason to deviate from IBE.
+It is **not paid per secret** — one label serves them all — and it is **not paid on the
+path that spends one**. The vetKey is cached: in Rust on the heap, so the first `set` or
+`matches` after an upgrade re-derives it; in Motoko in persisted state, so it does not.
+Either way, cost is no reason to deviate from IBE.
 
 ### Using the secret — the point of all this
 
@@ -593,7 +591,7 @@ which is the whole point of a PoC someone is deciding whether to trust — build
 `local-test.sh` step 8 prints both the sealed and the revealed value.
 
 That feature exists for exactly one reason: convincing a human. Nothing automated needs it.
-A successful `set` already proves the canister could decrypt, since `set` trial-decrypts
+A successful `set` already proves the canister could decrypt, since `set` decrypts
 before storing, and `matches` covers verification. **A generalized implementation would
 ship no such endpoint at all**, and neither should any real deployment — see
 [Can I just add a getter?](#can-i-just-add-a-getter).
@@ -889,9 +887,10 @@ changes nothing (the ID travels with it), but re-creating one does.
 **The subnet's nodes must be SEV-SNP.** That is the whole prerequisite, and it is
 load-bearing rather than a bonus: the canister decrypts the secret into replicated state,
 so without memory encryption a node operator reads the plaintext out of a checkpoint.
-The seeding script resolves the canister's subnet and refuses to seal unless the registry
-reports `features.sev_enabled`, with `--allow-unverified-sev` for the local case where the
-property cannot be reported at all.
+`npm run preflight` resolves the canister's subnet and fails unless the registry reports
+`features.sev_enabled`, with `--allow-unverified-sev` for the local case where the property
+cannot be reported at all. It is a separate command from sealing because it is a separate
+question — run once per deployment, where sealing is per secret and touches no network.
 
 **The vetKD key is deliberately not a prerequisite of the subnet.** `vetkd_derive_key` is
 routed to a subnet enabled for the key, which need not be the caller's, so a canister on a
@@ -967,13 +966,13 @@ be Rust-only. The obstacle was that Motoko has no BLS12-381, so a Motoko caniste
 could receive a sealed secret and never open it.
 
 **`motoko/canister/` now does the whole thing**, on this repo's own crypto: it
-calls `vetkd_derive_key`, verifies the reply against a master key compiled into
-its Wasm, decrypts the sealed secret, and authenticates an HTTPS outcall with it —
-returning `200`, and `401` when the credential is wrong, which is what shows the
-secret's *value* is doing the work. It survives an upgrade with no re-seeding. It
-speaks the identical Candid interface, so `seed/` drives it unchanged.
-`scripts/local-test.sh` steps 13–14 run that round trip on every CI build, including
-the same 17 negative-case assertions the Rust canister faces.
+calls `vetkd_derive_key`, verifies the reply, decrypts the sealed secret, and
+authenticates an HTTPS outcall with it — returning `200`, and `401` when the
+credential is wrong, which is what shows the secret's *value* is doing the work.
+It survives an upgrade with no re-seeding. It speaks the identical Candid
+interface, so `seed/` drives it unchanged. `scripts/local-test.sh` steps 13–14 run
+that round trip on every CI build, including the same 14 negative-case assertions
+the Rust canister faces.
 
 `motoko/` holds an **experimental, unaudited** implementation, split the way Rust
 splits it — [`bls12-381/`](./motoko/bls12-381) for the curve,
@@ -988,10 +987,11 @@ It is a library, not a canister. Fetching the vetKD reply is an ordinary
 management-canister call Motoko can already make via `mo:ic-vetkeys`'
 `ManagementCanister.mo`.
 
-It also derives public keys offline from a master key compiled into the canister
-(`PublicKey.mo`), which is how a canister checks the subnet's reply against a
-constant an auditor can read rather than asking the subnet to vouch for itself.
-Its output matches `rust/core`'s byte for byte, on the same vectors.
+It also derives public keys offline from a master key compiled into the library
+(`PublicKey.mo`), matching `rust/core` byte for byte on the same vectors. Both
+canisters here take their public key from `vetkd_public_key` instead, so that one
+build runs on any network — but a client must derive offline, and `mo:ic-vetkeys`
+cannot, so a Motoko client needs this.
 
 Three tests carry the weight: it decrypts a ciphertext generated by the Rust
 reference, it verifies a real `vetkd_derive_key` reply taken from `ic-vetkeys`'

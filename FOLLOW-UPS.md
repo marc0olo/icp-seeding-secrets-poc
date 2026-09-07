@@ -163,7 +163,7 @@ the right value is deployed. What is *not* implemented is using it to make `icp 
 idempotent.
 
 IBE is randomised, so a client can never compare its ciphertext to the stored one, and
-re-sealing on every deploy is not free: every `set` trial-decrypts, which needs the vetKey
+re-sealing on every deploy is not free: every `set` decrypts, which needs the vetKey
 and so a `vetkd_derive_key` whenever the cache is cold.
 
 ```candid
@@ -405,7 +405,7 @@ Not a `SyncStep`: those only run during `icp deploy`, so one could never back
 Values should be updatable rather than write-once — seal only what is missing by
 default, `--reseal-secrets` to force, moving to `matches`-based diffing once available.
 
-**The CLI needs no read-back endpoint to know it worked.** `set` trial-decrypts before
+**The CLI needs no read-back endpoint to know it worked.** `set` decrypts before
 storing, so a successful `set` *is* the proof that the canister can read the secret. That
 is worth stating explicitly, because the obvious alternative — a getter the tool calls to
 confirm — is exactly the endpoint that must not exist (see the README on why). The

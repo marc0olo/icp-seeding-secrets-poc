@@ -298,7 +298,7 @@ case "$MO_AFTER" in
   *)          fail "the Motoko canister lost its secret across an upgrade: $MO_AFTER" ;;
 esac
 
-# The same 17 assertions step 12 runs against the Rust canister, with nothing
+# The same 14 assertions step 12 runs against the Rust canister, with nothing
 # changed but the canister id. That is the claim this repo makes -- one wire
 # format, one client, two implementations -- and running the suite twice is what
 # tests it. It needs no test hooks, which is why the Motoko canister can pass it

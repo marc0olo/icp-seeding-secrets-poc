@@ -3,7 +3,7 @@
 //! There is no plaintext cache. Records hold the decrypted secret (see
 //! `store::SealedRecord`), so reading one is a map lookup and decryption happens
 //! only on the two paths that receive a ciphertext from a caller: `set`, which
-//! trial-decrypts before storing, and `matches`, which decrypts the candidate it
+//! decrypts before storing, and `matches`, which decrypts the candidate it
 //! is asked to compare.
 //!
 //! Two rules govern everything here.
