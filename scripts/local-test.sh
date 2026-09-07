@@ -34,6 +34,15 @@ fail() { printf '\033[31mFAIL: %s\033[0m\n' "$*" >&2; exit 1; }
 # not something to replicate on mainnet.
 say "1. start the local network and deploy (as $(icp identity default 2>/dev/null || echo anonymous))"
 icp network status "$ENV" >/dev/null 2>&1 || icp network start "$ENV" --background
+
+# Repeated runs drain these: a cold `vetkd_derive_key` costs 26 billion cycles,
+# and a reinstall resets the cache so the next run derives again. Cycles are free
+# on a local network, so top up when the canisters already exist — otherwise the
+# fourth or fifth run fails on install with "out of cycles" and looks like a bug.
+for c in dummy-secret-rust dummy-secret-motoko; do
+  icp canister top-up "$c" --amount 5t -e "$ENV" >/dev/null 2>&1 || true
+done
+
 icp deploy -e "$ENV" --yes >/dev/null
 ( cd seed && [ -d node_modules ] || npm install --silent >/dev/null 2>&1 )
 
