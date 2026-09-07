@@ -33,12 +33,12 @@ You want to hand a secret to one specific canister so only it can read it. That
 is what public-key encryption is for — the recipient needs a public key you can
 encrypt to, and a private key only they can use.
 
-**A canister cannot just generate a keypair.** Its entire memory is replicated
-across every node of its subnet, written to disk in checkpoints, and shipped to
-new nodes during state sync. Even its randomness is not private: `raw_rand`
-comes from the round's random tape, which every node sees. A canister has no
-secrets from its own subnet's replicas, so it cannot generate a private key and
-keep it.
+**A canister cannot generate a keypair and keep the private half.** Its entire
+memory is replicated to every node of its subnet, written to disk in
+checkpoints, and shipped to new nodes during state sync. Its randomness is not
+private either — `raw_rand` is derived from the round's random tape, a threshold
+signature the subnet produces and every node holds. There is nowhere to put a
+private key that the subnet cannot see.
 
 **vetKD supplies the missing half.** The subnet collectively holds a master
 secret, split across its nodes so no single node has it. From that:
@@ -85,14 +85,9 @@ public key shipped in the vetKeys library — it never asks the canister what to
 encrypt to, because anyone able to tamper with that reply could hand it a key
 they control.
 
-And **the encrypting half needs no identity at all.** Deriving a public key and
-encrypting to it are pure computation: no key of yours goes in, so anyone can
-seal a secret *to* this canister. Only the canister can open it.
-
-Only the call needs a signature, and what it needs is a **controller of the
-canister** — any identity that controls it, from any client. This PoC uses
-`icp canister call` because you already have icp-cli and it already holds an
-identity, which is why nothing here asks you to export a private key to a file.
+And **only the sending step involves you.** Encrypting is pure computation with
+no key of yours in it, so anyone can seal a secret *to* this canister — and only
+the canister can open it. The call is what needs a signature, from a controller.
 
 
 ## What the canister actually receives
