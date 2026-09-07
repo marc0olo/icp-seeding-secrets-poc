@@ -20,7 +20,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 ENV=local
-SECRET="hunter2-$(date +%s)"
+# The timestamp is not decoration: it makes every run's secret distinct, so a
+# value left over from a previous run cannot make the comparison pass.
+SECRET="super-secret-value-$(date +%s)"
 ARG=$(mktemp)
 
 say()  { printf '\n\033[1m== %s\033[0m\n' "$*"; }

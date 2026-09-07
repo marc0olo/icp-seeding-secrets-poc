@@ -11,7 +11,7 @@
  * Then it stops. Sending the result is an ordinary canister call, and icp-cli
  * already knows how to make one:
  *
- *   DUMMY_SECRET=hunter2 npm run seal -- --canister <id> --out /tmp/arg.did
+ *   DUMMY_SECRET=super-secret-value npm run seal -- --canister <id> --out /tmp/arg.did
  *   icp canister call dummy-secret-rust set_dummy_secret --args-file /tmp/arg.did -e local
  *
  * That split is deliberate. **Nothing here needs your identity.** Deriving a
@@ -132,7 +132,7 @@ function main() {
   if (!secret) {
     console.error(
       "error: DUMMY_SECRET is unset.\n" +
-        "       Set it in your shell, e.g.  export DUMMY_SECRET=hunter2\n" +
+        "       Set it in your shell, e.g.  export DUMMY_SECRET=super-secret-value\n" +
         "       (read from the environment on purpose — a --value flag would\n" +
         "        land in shell history and CI logs)",
     );

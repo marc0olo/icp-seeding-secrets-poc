@@ -10,7 +10,7 @@ plaintext.
 
 ```bash
 # encrypt, offline — no identity needed
-DUMMY_SECRET=hunter2 npm run seal -- --canister <id> --out arg.did
+DUMMY_SECRET=super-secret-value npm run seal -- --canister <id> --out arg.did
 # send it — an ordinary call, made by a controller of the canister
 icp canister call <canister> set_dummy_secret --args-file arg.did
 ```
@@ -169,14 +169,14 @@ icp deploy -e local --yes
 CID=$(icp canister status dummy-secret-rust -e local --json | jq -r .id)
 
 # encrypt — offline, and with no identity involved
-DUMMY_SECRET=hunter2 npm --prefix seed run seal -- \
+DUMMY_SECRET=super-secret-value npm --prefix seed run seal -- \
   --canister "$CID" --source pocketic --out /tmp/arg.did
 
 # send it — an ordinary call, made by a controller of the canister
 icp canister call dummy-secret-rust set_dummy_secret --args-file /tmp/arg.did -e local
 
 icp canister call dummy-secret-rust get_dummy_secret '()' -e local
-# (variant { Ok = opt "hunter2" })
+# (variant { Ok = opt "super-secret-value" })
 ```
 
 For the Motoko canister, call `setDummySecret` and `getDummySecret` — each
