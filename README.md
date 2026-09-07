@@ -99,46 +99,31 @@ Not a key. An `EncryptedVetKey` — three curve points — which it unwraps itse
 Three things about that are not obvious from the call.
 
 **The vetKey is a BLS signature**, and the rest follows from that. The derived
-public key is an IBE *master* public key, and the private key for an identity is
-the **signature over that identity** under the matching secret. "Derive a key for
-this identity" and "sign this identity" are the same operation.
+public key is an IBE *master* public key, and the private key for a label is the
+**signature over that label** under the matching secret. "Derive the key for this
+label" and "sign this label" are the same operation.
 
 **It arrives encrypted because it can never exist in the clear.** A reply travels
-through replicated state: every node of the receiving subnet sees it, and it is
-checkpointed to disk. A plaintext key there is a key everybody has. So the
-canister generates a single-use *transport keypair*, sends the public half with
-the request, and the nodes compute their shares **already encrypted under it**.
-The plaintext vetKey is never assembled anywhere — not on a node, not on the
-wire, not in replicated state. It first exists inside the canister, after
-unwrapping. The blinding is ElGamal-shaped:
-
-```text
-c1 = g1·r             the randomiser, in G1
-c2 = g2·r             the same randomiser, in G2
-c3 = vetKey + tpk·r   the key, blinded      (tpk = g1·tsk)
-```
+through replicated state — every node of the canister's subnet sees it, and it is
+checkpointed to disk — and a plaintext key there is a key everybody has. So the
+canister sends a single-use *transport public key* with the request, and the
+nodes compute their shares **already encrypted under it**. The plaintext vetKey
+is never assembled anywhere: not on a node, not on the wire, not in replicated
+state. It first exists inside the canister, after unwrapping.
 
 **Unwrapping is also a verification**, and that is what stops a forged reply.
-`decrypt_and_verify` does three separate things:
+`decrypt_and_verify` does three things, in order:
 
-```text
-1. consistency   e(c1, -g2) · e(g1, c2) == 1
-                 proves c1 and c2 carry the same r, so a malformed
-                 reply fails before anything is unwrapped.
-
-2. unwrap        k = c3 − c1·tsk
-                   = (vetKey + g1·tsk·r) − g1·r·tsk
-                   = vetKey                     the blinding cancels exactly
-
-3. verify        e(k, -g2) · e(H(dpk ‖ KEY_LABEL), dpk) == 1
-                 k really is a BLS signature over KEY_LABEL under dpk
-```
+1. rejects a reply whose two randomisers disagree, before unwrapping anything;
+2. strips the transport blinding, which cancels exactly;
+3. checks the result is a valid BLS signature over `KEY_LABEL` under `dpk`.
 
 Step 3 is the one that matters. Without it the canister accepts whatever the
 reply contained; with it, forging a reply means forging a BLS signature under a
-key you do not have.
+key you do not have. The algebra is in
+[`ic-vetkeys`](https://github.com/dfinity/vetkeys) — `EncryptedVetKey::decrypt_and_verify`.
 
-Only then does it decrypt the secret, and that step is authenticated too — after
+Only then does it decrypt the secret, and that step is authenticated too: after
 recovering the plaintext it recomputes the scalar the ciphertext commits to and
 checks it matches, so a wrong key gives an error rather than plausible-looking
 garbage.
