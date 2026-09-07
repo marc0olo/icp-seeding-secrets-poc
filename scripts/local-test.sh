@@ -26,7 +26,13 @@ say()  { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 fail() { printf '\033[31mFAIL: %s\033[0m\n' "$*" >&2; exit 1; }
 trap 'rm -f "$ARG"' EXIT
 
-say "1. start the local network and deploy"
+# Printed because it decides everything below: whoever deploys becomes the
+# canister's controller, and `set_dummy_secret` accepts only the controller.
+# On a fresh container with no identity configured this is the ANONYMOUS
+# principal, which still works — it deploys, so it is the controller — but the
+# check is then vacuous, since anyone can call as anonymous. Fine locally;
+# not something to replicate on mainnet.
+say "1. start the local network and deploy (as $(icp identity default 2>/dev/null || echo anonymous))"
 icp network status "$ENV" >/dev/null 2>&1 || icp network start "$ENV" --background
 icp deploy -e "$ENV" --yes >/dev/null
 ( cd seed && [ -d node_modules ] || npm install --silent >/dev/null 2>&1 )

@@ -165,6 +165,13 @@ data partition keyed to the launch measurement.
 
 This PoC does not check whether it is on such a subnet. A real deployment must.
 
+**Whoever deploys is the controller**, and both endpoints accept only the
+controller. Nothing here creates or exports an identity — `icp-cli` signs with
+the one it already has. One caveat: on a fresh machine with no identity
+configured, that is the *anonymous* principal, which deploys fine and so becomes
+the controller — but the check is then vacuous, because anyone can call as
+anonymous. Harmless for a local run; not a deployment posture.
+
 **Also does not protect against the controller.** They can install code that
 decrypts the secret — vetKD binds the key to the _canister id_, not the module
 hash — or read it out of a canister snapshot. For this use case that is usually

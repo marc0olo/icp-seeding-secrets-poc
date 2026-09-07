@@ -37,7 +37,7 @@ persistent actor DummySecret {
   /// The derivation is master key -> canister id -> context, so changing this
   /// byte for byte gives this canister an entirely different keypair. One
   /// context per purpose. Must match the client exactly.
-  transient let CONTEXT : Blob = "\64\75\6d\6d\79\2d\73\65\63\72\65\74\2d\70\6f\63"; // "dummy-secret-poc"
+  transient let CONTEXT : Blob = Text.encodeUtf8("dummy-secret-poc");
 
   /// The IBE **identity**: what selects a key *within* that keypair.
   ///
@@ -46,7 +46,7 @@ persistent actor DummySecret {
   /// one canister that costs a separate 26-billion-cycle derive per identity and
   /// buys nothing, since this canister's code can derive any identity's key
   /// whenever it likes.
-  transient let IDENTITY : Blob = "\64\75\6d\6d\79\2d\73\65\63\72\65\74"; // "dummy-secret"
+  transient let IDENTITY : Blob = Text.encodeUtf8("dummy-secret");
 
   /// Turns 32 random bytes into a transport scalar. Nothing interoperates with
   /// this value — the subnet only ever sees the matching public key.
