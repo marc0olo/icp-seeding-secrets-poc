@@ -1,8 +1,8 @@
 # Seeding a canister with a secret, via vetKeys
 
-A minimal proof of concept: get an API key into a **deployed** canister without
-the plaintext ever appearing in an ingress message, a manifest, a shell history,
-or a CI log.
+A minimal proof of concept: get a secret — an API key, a token, a private key,
+anything — into a **deployed** canister without the plaintext ever appearing in
+an ingress message, a manifest, a shell history, or a CI log.
 
 The client encrypts to a public key it derives **offline**, sends the ciphertext
 in an ordinary update call, and only the target canister can recover the
@@ -18,9 +18,9 @@ icp canister call <canister> set_dummy_secret --args-file arg.did
 Two endpoints, two implementations of them, and one script. Everything on the
 path is meant to be read start to finish:
 
-|                                                                |           |
-| -------------------------------------------------------------- | --------- |
-| [`rust/canister/src/lib.rs`](./rust/canister/src/lib.rs)       | 159 lines |
+| file | size |
+| --- | --- |
+| [`rust/canister/src/lib.rs`](./rust/canister/src/lib.rs) | 159 lines |
 | [`motoko/canister/src/Main.mo`](./motoko/canister/src/Main.mo) | 173 lines |
 | [`seed/src/index.ts`](./seed/src/index.ts)                     | 165 lines |
 
@@ -153,7 +153,7 @@ garbage.
 ## Try it
 
 Needs [icp-cli](https://github.com/dfinity/icp-cli), a Rust toolchain with the
-`wasm32-unknown-unknown` target, [mops](https://mops.one), and Node 22+.
+`wasm32-unknown-unknown` target, [mops](https://mops.one), and Node 18+.
 
 ```bash
 ./scripts/local-test.sh
@@ -222,11 +222,12 @@ data partition keyed to the launch measurement.
 This PoC does not check whether it is on such a subnet. A real deployment must.
 
 **Whoever deploys is the controller**, and both endpoints accept only the
-controller. Nothing here creates or exports an identity — `icp-cli` signs with
-the one it already has. One caveat: on a fresh machine with no identity
-configured, that is the *anonymous* principal, which deploys fine and so becomes
-the controller — but the check is then vacuous, because anyone can call as
-anonymous. Harmless for a local run; not a deployment posture.
+controller. Nothing here creates or exports an identity — any client holding a
+controller identity can make the call, and `icp-cli` already holds one. One
+caveat: on a fresh machine with no identity configured, that is the *anonymous*
+principal, which deploys fine and so becomes the controller — but the check is
+then vacuous, because anyone can call as anonymous. Harmless for a local run;
+not a deployment posture.
 
 **Also does not protect against the controller.** They can install code that
 decrypts the secret — vetKD binds the key to the _canister id_, not the module
