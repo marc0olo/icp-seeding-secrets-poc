@@ -130,9 +130,11 @@ async fn vetkey() -> Result<VetKey, String> {
     //
     //    It needs the matching public key, and asking the same place we just
     //    asked for the private one is admittedly circular — a subnet that would
-    //    lie here already holds the master key. The non-circular check is on the
-    //    client, which derives the key offline and refuses to encrypt on a
-    //    mismatch.
+    //    lie here already holds the master key and could decrypt everything
+    //    anyway, so the circularity costs little. What keeps the client honest
+    //    is not a comparison but the absence of one: it derives the key offline
+    //    from a master key it ships and never asks us for one, so there is no
+    //    reply for anyone in between to substitute.
     let dpk_bytes = vetkd_public_key(&VetKDPublicKeyArgs {
         canister_id: None,
         context: CONTEXT.to_vec(),

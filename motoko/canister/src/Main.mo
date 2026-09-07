@@ -139,9 +139,11 @@ persistent actor DummySecret {
     //    forged reply useless.
     //
     //    Asking the same place for the public key is circular — a subnet that
-    //    would lie here already holds the master key. The non-circular check is
-    //    on the client, which derives offline and refuses to encrypt on a
-    //    mismatch.
+    //    would lie here already holds the master key and could decrypt
+    //    everything anyway, so the circularity costs little. What keeps the
+    //    client honest is not a comparison but the absence of one: it derives
+    //    the key offline from a master key it ships and never asks us for one,
+    //    so there is no reply for anyone in between to substitute.
     let reported = try {
       await ic.vetkd_public_key({ canister_id = null; context = CONTEXT; key_id = keyId });
     } catch (e) {
