@@ -47,7 +47,9 @@ for canister in dummy-secret-rust dummy-secret-motoko; do
   GETTER=get_dummy_secret
   [ "$canister" = dummy-secret-motoko ] && GETTER=getDummySecret
 
-  for name in api-token db-password; do
+  # Two secrets a canister would plausibly hold: credentials for the HTTPS
+  # outcalls it makes. The names are map keys, so any strings would do.
+  for name in exchange-rate-api-key rpc-provider-key; do
     # Deliberately the same command the README tells you to run, so the
     # documented path is the tested one.
     say "2. seal '$name' into $canister"
@@ -65,9 +67,10 @@ for canister in dummy-secret-rust dummy-secret-motoko; do
 
   # Both were sealed to the same label, so the second used the cached key.
   say "4. $canister still holds the first secret after the second was set"
-  FIRST=$(icp canister call "$canister" "$GETTER" '("api-token")' -e "$ENV" 2>/dev/null \
+  FIRST=$(icp canister call "$canister" "$GETTER" '("exchange-rate-api-key")' -e "$ENV" 2>/dev/null \
     | tr -d '\n' | sed -n 's/.*opt "\([^"]*\)".*/\1/p')
-  [ "$FIRST" = "$SECRET-api-token" ] || fail "$canister lost 'api-token': got '$FIRST'"
+  [ "$FIRST" = "$SECRET-exchange-rate-api-key" ] \
+    || fail "$canister lost 'exchange-rate-api-key': got '$FIRST'"
   echo "  ok — two secrets, independently set, one derived key"
 done
 

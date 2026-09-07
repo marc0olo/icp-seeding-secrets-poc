@@ -9,7 +9,7 @@ in an ordinary update call, and only the target canister can recover the
 plaintext.
 
 ```bash
-DUMMY_SECRET=super-secret-value ./scripts/seal.sh dummy-secret-rust api-token
+DUMMY_SECRET=super-secret-value ./scripts/seal.sh dummy-secret-rust exchange-rate-api-key
 ```
 
 Two endpoints, two implementations of them, and one script. Everything on the
@@ -130,9 +130,10 @@ garbage.
 
 ## Storing more than one secret
 
-Costs exactly one derivation, no matter how many. Every secret is sealed to the
-same **label** — `KEY_LABEL`, the IBE identity — and one derived key opens every
-ciphertext sealed to it. The per-secret names are map keys in the canister's own
+Costs exactly one derivation, no matter how many. A canister holding secrets
+usually holds several — credentials for the HTTPS outcalls it makes, say — and
+every one of them is sealed to the same **label**: `KEY_LABEL`, the IBE identity.
+One derived key opens every ciphertext sealed to it. The per-secret names are map keys in the canister's own
 storage; they are not part of any derivation and never reach vetKD.
 
 ```text
@@ -140,8 +141,8 @@ caller  = your canister id      the replica fills this in; cannot be forged
 context = "dummy-secret-poc"    your namespace
 label   = "dummy-secret"        one key, derived once and cached
 
-   ├── secrets["api-token"]     ciphertexts, all sealed to that one key
-   └── secrets["db-password"]
+   ├── secrets["exchange-rate-api-key"]   all sealed to that one key
+   └── secrets["rpc-provider-key"]
 ```
 
 Giving each secret its own label would cost a separate `vetkd_derive_key` — 26
@@ -171,10 +172,10 @@ each, reads them back, and checks they match. To do it by hand:
 icp network start local --background
 icp deploy -e local --yes
 
-DUMMY_SECRET=super-secret-value ./scripts/seal.sh dummy-secret-rust api-token
-DUMMY_SECRET=another-value      ./scripts/seal.sh dummy-secret-rust db-password
+DUMMY_SECRET=super-secret-value ./scripts/seal.sh dummy-secret-rust exchange-rate-api-key
+DUMMY_SECRET=another-value      ./scripts/seal.sh dummy-secret-rust rpc-provider-key
 
-icp canister call dummy-secret-rust get_dummy_secret '("api-token")' -e local
+icp canister call dummy-secret-rust get_dummy_secret '("exchange-rate-api-key")' -e local
 # (variant { Ok = opt "super-secret-value" })
 ```
 
@@ -187,7 +188,7 @@ CID=$(icp canister status dummy-secret-rust -e local -i)
 
 # 1. encrypt — offline, and with no identity involved
 DUMMY_SECRET=super-secret-value npm --prefix seed run seal -- \
-  --canister "$CID" --name api-token --out /tmp/arg.did
+  --canister "$CID" --name exchange-rate-api-key --out /tmp/arg.did
 
 # 2. send it — an ordinary call, made by a controller of the canister
 icp canister call dummy-secret-rust set_dummy_secret --args-file /tmp/arg.did -e local

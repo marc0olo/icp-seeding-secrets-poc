@@ -2,8 +2,8 @@
 #
 # Encrypt a secret for a canister and send it.
 #
-#   DUMMY_SECRET=super-secret-value ./scripts/seal.sh dummy-secret-rust api-token
-#   DUMMY_SECRET=super-secret-value ./scripts/seal.sh dummy-secret-rust api-token ic
+#   DUMMY_SECRET=super-secret-value ./scripts/seal.sh dummy-secret-rust exchange-rate-api-key
+#   DUMMY_SECRET=super-secret-value ./scripts/seal.sh dummy-secret-rust exchange-rate-api-key ic
 #
 # Two steps behind one command, and they are worth knowing apart:
 #
@@ -23,7 +23,7 @@ NAME=${2:-}
 ENV=${3:-local}
 if [ -z "$CANISTER" ] || [ -z "$NAME" ] || [ -z "${DUMMY_SECRET:-}" ]; then
   echo "usage: DUMMY_SECRET=<value> $0 <canister-name> <secret-name> [environment]" >&2
-  echo "       e.g. DUMMY_SECRET=super-secret-value $0 dummy-secret-rust api-token" >&2
+  echo "       e.g. DUMMY_SECRET=super-secret-value $0 dummy-secret-rust exchange-rate-api-key" >&2
   exit 1
 fi
 
