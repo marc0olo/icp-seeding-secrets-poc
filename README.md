@@ -166,7 +166,7 @@ reads it back, and checks it matches. To do it by hand:
 icp network start local --background
 icp deploy -e local --yes
 
-CID=$(icp canister status dummy-secret-rust -e local --json | jq -r .id)
+CID=$(icp canister status dummy-secret-rust -e local -i)
 
 # encrypt — offline, and with no identity involved
 DUMMY_SECRET=super-secret-value npm --prefix seed run seal -- \

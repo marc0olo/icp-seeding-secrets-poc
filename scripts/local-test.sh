@@ -43,7 +43,7 @@ icp deploy -e "$ENV" --yes >/dev/null
 # Everything below runs identically against both canisters. That is the point:
 # one wire format, one client, two implementations.
 for canister in dummy-secret-rust dummy-secret-motoko; do
-  CID=$(icp canister status "$canister" -e "$ENV" --json | jq -r .id)
+  CID=$(icp canister status "$canister" -e "$ENV" -i)
 
   # Each canister names its methods the way its own language does.
   SETTER=set_dummy_secret GETTER=get_dummy_secret
