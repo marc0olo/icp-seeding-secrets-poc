@@ -16,6 +16,9 @@ import Scalar "mo:sealed-secrets-bls/Scalar";
 import Ibe "mo:sealed-secrets-vetkeys/Ibe";
 import VetKey "mo:sealed-secrets-vetkeys/VetKey";
 
+import { ic } "mo:ic";
+import IC "mo:ic/Types";
+
 import Array "mo:core/Array";
 import Blob "mo:core/Blob";
 import Error "mo:core/Error";
@@ -29,13 +32,20 @@ persistent actor DummySecret {
   /// argument: a constant cannot be lost on upgrade.
   transient let KEY_NAME = "key_1";
 
-  /// The vetKD *context*: mixed into the key derivation, so this canister's key
-  /// differs from the key it would have for any other purpose. Must match the
-  /// client byte for byte.
+  /// The vetKD **context**: what selects the *keypair*.
+  ///
+  /// The derivation is master key -> canister id -> context, so changing this
+  /// byte for byte gives this canister an entirely different keypair. One
+  /// context per purpose. Must match the client exactly.
   transient let CONTEXT : Blob = "\64\75\6d\6d\79\2d\73\65\63\72\65\74\2d\70\6f\63"; // "dummy-secret-poc"
 
-  /// The IBE *identity*: what the secret is sealed to, and the `input` to
-  /// `vetkd_derive_key`. One fixed value, because there is one secret.
+  /// The IBE **identity**: what selects a key *within* that keypair.
+  ///
+  /// Also the `input` to `vetkd_derive_key`. One fixed identity here, because
+  /// there is one secret. Several secrets could each have their own — but inside
+  /// one canister that costs a separate 26-billion-cycle derive per identity and
+  /// buys nothing, since this canister's code can derive any identity's key
+  /// whenever it likes.
   transient let IDENTITY : Blob = "\64\75\6d\6d\79\2d\73\65\63\72\65\74"; // "dummy-secret"
 
   /// Turns 32 random bytes into a transport scalar. Nothing interoperates with
@@ -50,24 +60,9 @@ persistent actor DummySecret {
   /// should make you re-seal and watch it work again.
   transient var secret : ?Text = null;
 
-  transient let IC = actor ("aaaaa-aa") : actor {
-    raw_rand : () -> async Blob;
-    vetkd_public_key : ({
-      canister_id : ?Principal;
-      context : Blob;
-      key_id : { curve : { #bls12_381_g2 }; name : Text };
-    }) -> async ({ public_key : Blob });
-    vetkd_derive_key : ({
-      context : Blob;
-      input : Blob;
-      key_id : { curve : { #bls12_381_g2 }; name : Text };
-      transport_public_key : Blob;
-    }) -> async ({ encrypted_key : Blob });
-  };
-
-  func keyId() : { curve : { #bls12_381_g2 }; name : Text } = {
-    curve = #bls12_381_g2;
+  transient let keyId : { name : Text; curve : IC.VetkdCurve } = {
     name = KEY_NAME;
+    curve = #bls12_381_g2;
   };
 
   /// Stores a secret that was encrypted to this canister's public key.
@@ -78,7 +73,7 @@ persistent actor DummySecret {
   public func setDummySecret(ciphertext : Blob) : async Result<()> {
     // 1. A single-use transport key, so the subnet's reply comes back encrypted
     //    to us rather than readable by every node that helped produce it.
-    let seed = try { await IC.raw_rand() } catch (e) {
+    let seed = try { await ic.raw_rand() } catch (e) {
       return #Err("raw_rand: " # e.message());
     };
     let tsk = Scalar.hashToScalar(seed.toArray(), DS_TRANSPORT);
@@ -86,10 +81,10 @@ persistent actor DummySecret {
     // 2. Ask the subnet for the private key belonging to
     //    (this canister, CONTEXT, IDENTITY). Each node contributes a share.
     let reply = try {
-      await (with cycles = VETKD_FEE) IC.vetkd_derive_key({
+      await (with cycles = VETKD_FEE) ic.vetkd_derive_key({
         context = CONTEXT;
         input = IDENTITY;
-        key_id = keyId();
+        key_id = keyId;
         transport_public_key = VetKey.transportPublicKey(tsk);
       });
     } catch (e) {
@@ -101,7 +96,7 @@ persistent actor DummySecret {
     //    already holds the master key. The non-circular check is on the client,
     //    which derives the key offline and refuses to encrypt on a mismatch.
     let reported = try {
-      await IC.vetkd_public_key({ canister_id = null; context = CONTEXT; key_id = keyId() });
+      await ic.vetkd_public_key({ canister_id = null; context = CONTEXT; key_id = keyId });
     } catch (e) {
       return #Err("vetkd_public_key: " # e.message());
     };

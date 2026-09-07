@@ -6,7 +6,8 @@
   "description": "Seals a secret with vetKD IBE and sends it to the canister",
   "scripts": {
     "seal": "tsx src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check:diagrams": "node ../scripts/check-diagrams.mjs ../README.md"
   },
   "dependencies": {
     "@icp-sdk/core": "^6.1.0",

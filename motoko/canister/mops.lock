@@ -1,10 +1,11 @@
 {
   "version": 3,
-  "mopsTomlDepsHash": "da95b3141a2cc9ea4655154bfdbfef22bbcae3490d624d9859dc6e0386ff0b3b",
+  "mopsTomlDepsHash": "10e4055943ed1c719b51b696cbd9c9c40eb4455dd9c36ffc51ad42100fb8571a",
   "localDepsHash": "4b5b02fc2ee6fe222a5fadbb5ea10f0d2756d56a41f12692e12e77a56457d4d7",
   "deps": {
     "base": "0.14.5",
     "core": "2.6.1",
+    "ic": "4.2.0",
     "iterext": "https://github.com/timohanke/motoko-iterext#v2.0.0",
     "sealed-secrets-bls": "../bls12-381",
     "sealed-secrets-vetkeys": "../vetkeys",
@@ -16,6 +17,9 @@
     "base@0.8.2": {},
     "core@2.5.0": {},
     "core@2.6.1": {},
+    "ic@4.2.0": {
+      "core": "2.5.0"
+    },
     "sha2@0.2.5": {
       "core": "2.5.0"
     },
@@ -144,6 +148,14 @@
       "core@2.6.1/src/pure/Queue.mo": "129647e8a3dd65404f8ad28fc8f299fd4586bc32802ad9ede9c1f21249d4e54b",
       "core@2.6.1/src/pure/RealTimeQueue.mo": "60e1f118e1fd728c64ac769396b2441a3e9be5208051139b3dd652125a81a0cb",
       "core@2.6.1/src/pure/Set.mo": "c8f6f193a4b42b2df65ce8c05d610ccbcdc8befddc72acd44445e7290224373e"
+    },
+    "ic@4.2.0": {
+      "ic@4.2.0/LICENSE": "ec415b57f8143746b567c94bfad243f5342f3edf110c94641a1a60e02722db55",
+      "ic@4.2.0/README.md": "4aacc06321244e54f741e9d826f3d374144a4b32372cb58dddaedcaad2e12bc3",
+      "ic@4.2.0/mops.toml": "90a4087e4c1fb5ca9b976d824370bca632d860191eedd0461ac85bdbc4169f55",
+      "ic@4.2.0/src/Call.mo": "b4a3572e5617d0b1eb696450344b65e99504f844794e7ddf1cff664fcfeb2994",
+      "ic@4.2.0/src/Types.mo": "3d145437f9b8c6a661266ec659c9522c4b9001b50954945816e746f48028c9fc",
+      "ic@4.2.0/src/lib.mo": "9d9ec84a85eb25d191c1cae99cb841d9b6e0cf0f9bc27c3f3805ac9673d7bef1"
     },
     "sha2@0.2.5": {
       "sha2@0.2.5/LICENSE": "ab81130a0a5f64eb71f0c0f84ff643fdd13b0d3d24c5e741b73768760d9f62dc",

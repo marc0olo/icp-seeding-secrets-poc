@@ -7,6 +7,8 @@ license = "Apache-2.0"
 
 [dependencies]
 core = "2.6.1"
+# The management canister interface, so this file does not hand-declare one.
+ic = "4.2.0"
 # Not imported by anything here. It arrives transitively via sha3, and without a
 # floor mops resolves 0.8.2, which predates moc 1.15's system-capability types
 # and fails to type-check. The two libraries already resolve this version.

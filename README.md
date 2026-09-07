@@ -70,7 +70,7 @@ sequenceDiagram
     Note over Script,Can: opaque to boundary nodes,<br/>and bound to THIS canister id
 
     Can->>Subnet: raw_rand, then vetkd_derive_key
-    Note over Can,Subnet: each node contributes a share;<br/>the reply is encrypted to a<br/>single-use transport key
+    Note over Can,Subnet: each node contributes a share —<br/>the reply is encrypted to a<br/>single-use transport key
     Subnet-->>Can: EncryptedVetKey
     Can->>Can: unwrap, verify, decrypt
     Can-->>Dev: Ok

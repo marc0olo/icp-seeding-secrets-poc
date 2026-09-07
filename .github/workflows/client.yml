@@ -19,7 +19,7 @@ env:
 
 jobs:
   client:
-    name: typecheck
+    name: typecheck and diagrams
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/dfinity/icp-dev-env-all:v2.0.0
@@ -36,3 +36,9 @@ jobs:
       - name: Typecheck
         working-directory: seed
         run: npm run typecheck
+
+      # GitHub renders a mermaid block with a syntax error as an error box
+      # rather than a diagram — silently broken, and visibly so.
+      - name: Mermaid diagram parses
+        working-directory: seed
+        run: npm run check:diagrams

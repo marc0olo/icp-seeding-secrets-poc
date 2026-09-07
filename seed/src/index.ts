@@ -56,7 +56,23 @@ interface Service {
   setDummySecret: (ct: Uint8Array) => Promise<{ Ok: null } | { Err: string }>;
 }
 
-/** Must match the canister byte for byte — see rust/canister/src/lib.rs. */
+/**
+ * The two constants that must match the canister byte for byte.
+ *
+ * `CONTEXT` selects the **keypair**. The derivation is master key -> canister id
+ * -> context, so a different context is a different keypair entirely. One per
+ * purpose: a canister using vetKD for two unrelated things gives each its own.
+ *
+ * `IDENTITY` selects a key **within** that keypair — it is the IBE identity the
+ * secret is sealed to, and the `input` the canister passes to
+ * `vetkd_derive_key`. One fixed value here, because there is one secret.
+ *
+ * Get either wrong and encryption still succeeds. You find out when the canister
+ * cannot decrypt, which is why `set_dummy_secret` decrypts immediately rather
+ * than storing the blob and hoping.
+ *
+ * See rust/canister/src/lib.rs.
+ */
 const CONTEXT = new TextEncoder().encode("dummy-secret-poc");
 const IDENTITY = new TextEncoder().encode("dummy-secret");
 

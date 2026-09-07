@@ -17,12 +17,26 @@ use ic_cdk_management_canister::{
 use ic_vetkeys::{DerivedPublicKey, EncryptedVetKey, IbeCiphertext, TransportSecretKey};
 use std::cell::RefCell;
 
-/// The vetKD *context*: mixed into the key derivation, so this canister's key
-/// differs from the key it would have for any other purpose.
+/// The vetKD **context**: what selects the *keypair*.
+///
+/// The derivation is master key -> canister id -> context, so changing this byte
+/// for byte gives this canister an entirely different keypair. One context per
+/// purpose: a canister using vetKD for two unrelated things gives each its own,
+/// and neither can open the other's ciphertext.
 const CONTEXT: &[u8] = b"dummy-secret-poc";
 
-/// The IBE *identity*: what the secret is sealed to, and the `input` to
-/// `vetkd_derive_key`. One fixed value, because there is one secret.
+/// The IBE **identity**: what selects a key *within* that keypair.
+///
+/// Also the `input` to `vetkd_derive_key`. The context fixes a keypair; the
+/// identity picks one of the infinitely many keys under it, and the client seals
+/// to the same value. One fixed identity here, because there is one secret.
+///
+/// Holding several secrets, you could give each its own identity — but inside a
+/// single canister that buys nothing and costs real money. Each distinct
+/// identity is a separate `vetkd_derive_key` call at 26 billion cycles, and
+/// there is no privilege boundary to enforce: this canister's code can derive
+/// the key for any identity it likes, whenever it likes. One identity, one
+/// derive, every secret.
 const IDENTITY: &[u8] = b"dummy-secret";
 
 /// The vetKD key this subnet serves. `key_1` exists on mainnet and on a local
