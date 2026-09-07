@@ -12,14 +12,21 @@ plaintext.
 DUMMY_SECRET=super-secret-value ./scripts/seal.sh dummy-secret-rust exchange-rate-api-key
 ```
 
-Two endpoints, two implementations of them, and one script. Everything on the
-path is meant to be read start to finish:
+Two endpoints, and one script that produces what they take:
 
-| file                                                           | size      |
-| -------------------------------------------------------------- | --------- |
-| [`rust/canister/src/lib.rs`](./rust/canister/src/lib.rs)       | 205 lines |
-| [`motoko/canister/src/Main.mo`](./motoko/canister/src/Main.mo) | 215 lines |
-| [`seed/src/index.ts`](./seed/src/index.ts)                     | 164 lines |
+```candid
+// name is a map key in the canister — it plays no part in any key derivation
+set_dummy_secret : (name : text, ciphertext : blob) -> (variant { Ok; Err : text });
+get_dummy_secret : (name : text) -> (variant { Ok : opt text; Err : text }) query;
+```
+
+|                                                                |                                                                                                                |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| [`rust/canister/src/lib.rs`](./rust/canister/src/lib.rs)       | the canister: has its key derived, decrypts, stores the plaintext                                              |
+| [`motoko/canister/src/Main.mo`](./motoko/canister/src/Main.mo) | the same interface, on this repo's own crypto — `setDummySecret` / `getDummySecret`, following Motoko's naming |
+| [`seed/src/index.ts`](./seed/src/index.ts)                     | the client: derives the canister's public key offline and encrypts to it                                       |
+
+Each is short enough to read start to finish, which is the point of the thing.
 
 > A fuller version of this — a proposed standard interface, subnet preflight
 > checks, rotation, key-diffing, an HTTPS-outcall example, and the reasoning
