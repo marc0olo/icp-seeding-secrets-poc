@@ -1,5 +1,11 @@
 /**
- * Subnet preflight.
+ * Subnet preflight — a command of its own.
+ *
+ *   npx tsx src/preflight.ts --canister <id> [--host <url>]
+ *
+ * Separate from sealing because it is a different question. Sealing is pure
+ * offline arithmetic and needs no network at all; this asks the registry about
+ * the canister's subnet. Run it once per deployment, before you seal anything.
  *
  * One property, checked before it is worth sealing anything: **the subnet's
  * nodes are SEV-SNP**. Without that, the plaintext is readable by node operators
@@ -127,4 +133,50 @@ export function evaluatePreflight(
   lines.push(`vetkd:    keys on this subnet: ${held} (not a gate — see preflight.ts)`);
 
   return { ok, lines };
+}
+
+
+// ---------------------------------------------------------------------- main
+
+async function main() {
+  const arg = (flag: string, fallback?: string): string => {
+    const i = process.argv.indexOf(flag);
+    const v = i === -1 ? fallback : process.argv[i + 1];
+    if (v === undefined) {
+      console.error(`error: ${flag} is required\n\nusage: preflight --canister <id> [--host <url>] [--local]`);
+      process.exit(1);
+    }
+    return v;
+  };
+
+  const canisterId = Principal.fromText(arg("--canister"));
+  const host = arg("--host", "http://127.0.0.1:8000");
+  const allowUnverifiedSev = process.argv.includes("--allow-unverified-sev") || process.argv.includes("--local");
+
+  const { HttpAgent, AnonymousIdentity } = await import("@icp-sdk/core/agent");
+  const agent = await HttpAgent.create({ host, identity: new AnonymousIdentity() });
+  if (!host.includes("icp-api.io") && !host.includes("ic0.app")) {
+    await agent.fetchRootKey();
+  }
+
+  const outcome = evaluatePreflight(await inspectSubnet(agent, canisterId), { allowUnverifiedSev });
+  for (const line of outcome.lines) console.log(`  ${line}`);
+
+  if (!outcome.ok) {
+    console.error(
+      "\npreflight FAILED. Sealing a secret onto a non-SEV-SNP subnet means node\n" +
+        "operators can read the plaintext out of a checkpoint once the canister\n" +
+        "decrypts it. For a local network, pass --local.",
+    );
+    process.exit(1);
+  }
+  console.log("\npreflight ok");
+}
+
+// Only when run directly, so importing this module for its types is free.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch((e) => {
+    console.error(`error: ${e instanceof Error ? e.message : String(e)}`);
+    process.exit(1);
+  });
 }

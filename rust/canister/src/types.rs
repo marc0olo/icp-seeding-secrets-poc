@@ -6,35 +6,6 @@ use candid::CandidType;
 use serde::Deserialize;
 use serde_bytes::ByteBuf;
 
-/// Everything a client needs in order to seal a secret for this canister, and
-/// to check that it is sealing to the right key.
-#[derive(CandidType, Deserialize, Debug, Clone)]
-pub struct SealedSecretInfo {
-    /// Version of this interface. Currently 1.
-    pub standard_version: u32,
-    /// The exact vetKD `context` bytes this canister derives under.
-    pub context: ByteBuf,
-    /// The exact key-label bytes for the current epoch — the vetKD `input`,
-    /// i.e. the IBE identity every secret here is sealed to.
-    pub key_label: ByteBuf,
-    /// The current epoch. New seals must target this value.
-    pub epoch: u32,
-    /// The vetKD key name, e.g. `key_1`.
-    pub key_name: String,
-    /// The 96-byte derived public key to encrypt to.
-    ///
-    /// A client must treat this as a *cross-check* against its own offline
-    /// derivation, never as the key to encrypt to: derive the key yourself from a
-    /// master public key you ship, compare, and refuse to encrypt on a mismatch.
-    /// This reply crosses boundary nodes, so trusting it would let anyone able to
-    /// tamper with it substitute a key they control.
-    pub public_key: ByteBuf,
-    /// Largest ciphertext this canister will accept.
-    pub max_ciphertext_len: u64,
-    /// Largest number of secrets this canister will hold.
-    pub max_secrets: u64,
-}
-
 /// One stored secret, as reported by `list`. Carries nothing derived from the
 /// plaintext: a digest of the plaintext would be an offline guessing oracle for
 /// low-entropy secrets, whereas a digest of a randomised ciphertext reveals
@@ -43,13 +14,14 @@ pub struct SealedSecretInfo {
 pub struct SealedSecretEntry {
     /// The secret's name.
     pub name: String,
-    /// The epoch its ciphertext was sealed under.
-    pub epoch: u32,
     /// Increments on every overwrite.
     pub revision: u64,
-    /// Ciphertext length in bytes.
-    pub ciphertext_len: u64,
-    /// SHA-256 of the ciphertext, so a client can confirm its upload landed.
+    /// SHA-256 of the ciphertext that was submitted, so a client can confirm the
+    /// stored value is the one *it* uploaded.
+    ///
+    /// Not a way to check the value is correct: IBE is randomised, so sealing
+    /// the same secret twice gives different digests. That question is
+    /// `icp_sealed_secret_matches`.
     pub ciphertext_sha256: ByteBuf,
     /// Nanoseconds since the epoch when this name was first set.
     pub created_at_ns: u64,
@@ -67,12 +39,8 @@ pub enum SealedSecretsError {
     /// The name is empty, too long, or has characters outside `[A-Za-z0-9_.-]`.
     InvalidName(String),
     /// The blob is not a well-formed IBE ciphertext, or does not decrypt under
-    /// this canister's key — most often a wrong context, epoch or key id.
+    /// this canister's key — most often a wrong key name or master key table.
     InvalidCiphertext(String),
-    /// Ciphertext exceeds `max_ciphertext_len`.
-    TooLarge { max: u64 },
-    /// Storing this would exceed `max_secrets`.
-    TooMany { max: u64 },
     /// The subnet could not derive the key. Usually means this subnet does not
     /// hold an NI-DKG transcript for the requested vetKD key.
     VetKdUnavailable { key_name: String, detail: String },

@@ -27,9 +27,10 @@
 /// heap, with no serialisation barrier and no per-read cost, so keeping the
 /// cache is free.
 ///
-/// A persisted vetKey cannot go stale. It is keyed by epoch, and the key name
-/// cannot change across an upgrade because `Main` keeps the persisted config
-/// rather than the install argument, as the Rust canister does.
+/// A persisted vetKey cannot go stale: the context and label are constants of
+/// the standard, and the key name cannot change across an upgrade because `Main`
+/// keeps the persisted config rather than the install argument, as the Rust
+/// canister does.
 ///
 /// Mirrors `rust/canister/src/keys.rs`.
 
@@ -45,8 +46,6 @@ import Types "../Types";
 import Array "mo:core/Array";
 import Blob "mo:core/Blob";
 import Error "mo:core/Error";
-import Map "mo:core/Map";
-import Nat32 "mo:core/Nat32";
 import Principal "mo:core/Principal";
 import Text "mo:core/Text";
 
@@ -106,15 +105,16 @@ module {
   public type Caches = {
     /// The derived public key the subnet reports, after the first call.
     var dpk : ?G2.Affine;
-    /// vetKeys by epoch. Each miss costs one `vetkd_derive_key` — the call, its
-    /// fee, and a round of consensus. This is the expensive thing, and the whole
-    /// reason to persist anything.
-    vetkeys : Map.Map<Nat32, G1.Affine>;
+    /// The vetKey. One of them, because one label serves every secret — which is
+    /// the point of the label being a constant. Filling it costs one
+    /// `vetkd_derive_key`: the call, its fee, and a round of consensus. This is
+    /// the expensive thing, and the whole reason to persist anything.
+    var vetkey : ?G1.Affine;
   };
 
   public func emptyCaches() : Caches = {
     var dpk = null;
-    vetkeys = Map.empty();
+    var vetkey = null;
   };
 
   /// Everything the functions below need, gathered so call sites stay short.
@@ -126,13 +126,9 @@ module {
     caches : Caches;
   };
 
-  public func context() : [Nat8] = switch (Format.context("")) {
-    case (#ok(c)) c;
-    // The separator is the empty string, which cannot exceed the bound.
-    case (#err(_)) [];
-  };
+  public func context() : [Nat8] = Format.CONTEXT;
 
-  public func keyLabel(epoch : Nat32) : [Nat8] = Format.keyLabel(epoch);
+  public func keyLabel() : [Nat8] = Format.KEY_LABEL;
 
   /// This canister's public key, as the subnet reports it.
   ///
@@ -164,15 +160,7 @@ module {
     };
   };
 
-  /// The subnet's reported public key, compressed — what `info` returns.
-  public func publicKeyBytes(ctx : Context) : async* Types.Result<Blob> {
-    switch (await* publicKey(ctx)) {
-      case (#Ok(k)) #Ok(G2.toCompressed(k));
-      case (#Err(e)) #Err(e);
-    };
-  };
-
-  /// The vetKey for `epoch`, deriving it on a miss.
+  /// This canister's vetKey, deriving it on a miss.
   ///
   /// Two concurrent cold callers will both derive. Accepted rather than
   /// prevented: derivation is deterministic in
@@ -180,8 +168,8 @@ module {
   /// the only cost is a duplicate fee. Rejecting the second caller is bad UX in
   /// a business path, and making it wait is not implementable — they are
   /// separate message executions and neither can await the other.
-  public func vetkey(ctx : Context, epoch : Nat32) : async* Types.Result<G1.Affine> {
-    switch (ctx.caches.vetkeys.get(epoch)) {
+  public func vetkey(ctx : Context) : async* Types.Result<G1.Affine> {
+    switch (ctx.caches.vetkey) {
       case (?k) { return #Ok(k) };
       case null {};
     };
@@ -199,7 +187,7 @@ module {
     // an all-zero seed — makes the derived key readable by anyone who can read
     // the subnet's messages, and moots the verification below.
     let tsk = Scalar.hashToScalar(seed.toArray(), DS_TRANSPORT_KEY);
-    let labelBytes = keyLabel(epoch);
+    let labelBytes = keyLabel();
 
     let reply = try {
       await (with cycles = vetkdFee(ctx.keyName)) IC.vetkd_derive_key({
@@ -220,7 +208,7 @@ module {
 
     switch (VetKey.decryptAndVerify(encrypted, tsk, derivedPublicKey, labelBytes)) {
       case (?k) {
-        ctx.caches.vetkeys.add(epoch, k);
+        ctx.caches.vetkey := ?k;
         #Ok(k);
       };
       case null #Err(
@@ -229,13 +217,13 @@ module {
     };
   };
 
-  /// Decrypts a ciphertext under an epoch's key, touching no cache.
+  /// Decrypts a ciphertext with this canister's vetKey.
   ///
-  /// This is what `set` uses to trial-decrypt before storing — the check that
-  /// turns a wrong context, epoch or key id into an error in front of the
-  /// operator rather than a stored blob nobody can open months later.
-  public func decryptWithEpoch(ctx : Context, ciphertext : Blob, epoch : Nat32) : async* Types.Result<Blob> {
-    let key = switch (await* vetkey(ctx, epoch)) {
+  /// This is what `set` uses before storing — the check that turns a wrong key
+  /// name or master key table into an error in front of the operator rather than
+  /// a stored blob nobody can open months later.
+  public func decrypt(ctx : Context, ciphertext : Blob) : async* Types.Result<Blob> {
+    let key = switch (await* vetkey(ctx)) {
       case (#Ok(k)) k;
       case (#Err(e)) { return #Err(e) };
     };
@@ -249,8 +237,9 @@ module {
       case (?plaintext) #Ok(plaintext.toBlob());
       case null #Err(
         #InvalidCiphertext(
-          "ciphertext was not encrypted to this canister's key for this epoch — "
-          # "check the context, epoch and key name"
+          "ciphertext was not encrypted to this canister's key: check that the "
+          # "client used this canister's id, the same vetKD key name, and the "
+          # "master key table for this network"
         )
       );
     };

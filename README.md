@@ -165,37 +165,36 @@ nodes running that canister do hold it. That is the topology above, restated.
 Before the diagrams, the same thing in words — the mechanism is simpler than the API
 names make it look.
 
-**Set up once, in the canister's source.** Pick a context string. That string plus the
-canister's own id is what determines the keypair. Nothing is generated or stored; the
-keypair is *implied* by those two values.
+**Nothing is set up.** The context and the key label are constants of this standard, and
+the keypair is *implied* by those plus the canister's own id. Nothing is generated, nothing
+is stored, and nothing has to be configured on either side.
 
 **Seeding, after the canister is deployed:**
 
-1. **Ask the canister what it uses** — which vetKD key, which context, which epoch, and
-   the public key it believes it has.
-2. **Check the subnet is SEV-SNP**, because that is what protects the plaintext once the
-   canister decrypts it.
-3. **Compute the public key yourself**, on your own machine: take the network's published
-   master public key (a hardcoded 96-byte constant), mix in the canister id, mix in the
-   context. Pure arithmetic, no network call. Abort unless it matches what the canister
-   said.
-4. **Encrypt the secret to it** — the result is the secret plus a fixed 136 bytes.
-5. **Send the ciphertext** in an ordinary update call. That message is visible to boundary
+1. **Check the subnet is SEV-SNP**, because that is what protects the plaintext once the
+   canister decrypts it. Once per deployment, not once per secret.
+2. **Compute the canister's public key yourself**, on your own machine: take the network's
+   published master public key (a hardcoded 96-byte constant), mix in the canister id, mix
+   in the context. Pure arithmetic, no network call — you can do it before the canister has
+   executed a single instruction.
+3. **Encrypt the secret to it** — the result is the secret plus a fixed 136 bytes.
+4. **Send the ciphertext** in an ordinary update call. That message is visible to boundary
    nodes and recorded like any other, and it is opaque. It is also bound to *this* canister
    id, so replaying it elsewhere is useless.
-6. **The canister asks the subnet for its private key** and decrypts your ciphertext. It
-   stores what came out and discards the ciphertext, keeping only its digest and length so
-   you can still confirm your upload landed.
+5. **The canister asks the subnet for its private key** and decrypts your ciphertext. It
+   stores what came out and discards the ciphertext, keeping only its digest so you can
+   still confirm your upload landed.
 
 **Later, whenever the secret is used:** the canister reads it straight out of stable
-memory. No vetKey, no decryption — those happened once, at step 6. **You never re-seed**,
+memory. No vetKey, no decryption — those happened once, at step 5. **You never re-seed**,
 and an upgrade changes nothing on this path.
 
-Two things there are easy to skim past and matter a great deal. The public key in step 3 is
-*computed*, not *fetched* — if you asked the canister and believed the answer, anyone able
-to tamper with that reply could hand you a key they control. And step 6 decrypts *before*
-storing, which turns "wrong context, wrong key, wrong subnet" into an error in front of the
-operator instead of a value nobody discovers is unreadable until months later.
+The thing to notice is that steps 2 and 3 talk to nobody. The client asks the canister
+*nothing* before encrypting, so there is no reply for anyone to tamper with — a key it was
+told is a key it would have to trust, and it is never told one. What it does instead is
+derive from constants and let step 5 be the judge: `set` decrypts before storing, so a
+wrong key name, a wrong master key table or a wrong canister id becomes an error in front
+of the operator rather than a value nobody discovers is unreadable until months later.
 
 **Why not keep the ciphertext at rest?** Because it would not protect anything. The
 plaintext reaches the heap the moment the canister uses the secret, and the heap is
@@ -213,35 +212,26 @@ sequenceDiagram
     participant Can as Target canister
     participant Mgmt as Management canister
 
+    rect rgba(120,120,120,.12)
+    Note over Dev,Reg: 1. preflight — once per deployment, not per secret
+    Dev->>Reg: get_subnet_for_canister(cid), then get_subnet
+    Reg-->>Dev: features.sev_enabled
+    Dev->>Dev: assert sev_enabled is true, else ABORT
+    end
+
     Dev->>Script: DUMMY_API_KEY=… npm run seal
 
-    Note over Script,Can: 1. ask the canister what it uses. Anonymous:<br/>info is not controller-gated, and encryption needs no identity
-    Script->>Can: icp_sealed_secret_info()
-    Can->>Mgmt: vetkd_public_key (first call only, then cached)
-    Mgmt-->>Can: derived public key
-    Can-->>Script: public_key, context, key_label, epoch, key_name
-
     rect rgba(120,120,120,.12)
-    Note over Script,Reg: 2. preflight — is the canister's subnet SEV-SNP?
-    Script->>Reg: get_subnet_for_canister(cid)
-    Reg-->>Script: subnet_id
-    Script->>Reg: get_subnet(subnet_id)
-    Reg-->>Script: features.sev_enabled
-    Script->>Script: assert sev_enabled is true, else ABORT
-    end
-
-    rect rgba(120,120,120,.12)
-    Note over Script: 3. derive offline — pure arithmetic, zero network calls
+    Note over Script: 2. derive offline — pure arithmetic, zero network calls,<br/>no identity, and nothing asked of the canister
     Script->>Script: mpk = MasterPublicKey.productionKey(key_1)
     Script->>Script: dpk = mpk.deriveCanisterKey(cid).deriveSubKey(CONTEXT)
-    Script->>Script: assert dpk equals the reported public_key, else ABORT
     end
 
-    Note over Script: 4. encrypt to the key WE derived, never the reported one
-    Script->>Script: ct = IbeCiphertext.encrypt(dpk, key_label, secret, random seed)
+    Note over Script: 3. encrypt to the key WE derived
+    Script->>Script: ct = IbeCiphertext.encrypt(dpk, KEY_LABEL, secret, random seed)
     Script-->>Dev: the Candid argument, written to a file
 
-    Note over Dev,Can: 5. send it. This is the only step that needs a signature,<br/>and icp-cli already has one — no key is exported
+    Note over Dev,Can: 4. send it. The only step that needs a signature,<br/>and icp-cli already has one — no key is exported
     Dev->>Can: icp canister call icp_sealed_secret_set --args-file …
 
     rect rgba(120,120,120,.12)
@@ -254,7 +244,7 @@ sequenceDiagram
     Mgmt-->>Can: EncryptedVetKey, 192 bytes
     Can->>Can: vk = EncryptedVetKey.decrypt_and_verify(tsk, dpk, key_label)
     Can->>Can: plaintext = ct.decrypt(vk), else Err(InvalidCiphertext)
-    Can->>Can: store the plaintext, keep only the ciphertext digest and length
+    Can->>Can: store the plaintext, keep only the ciphertext digest
     end
 
     Can-->>Dev: Ok(revision)
@@ -394,23 +384,24 @@ runs.
 
 ### Three decisions worth understanding
 
-**The client computes the public key; it does not trust the one it is told.** If a
-client asked the canister and believed the answer, anyone able to tamper with that
-response could substitute a key they control and harvest the secret — and unlike the
-canister's inter-canister calls, this response really does cross boundary nodes. So the
-client derives the key from a master-key constant it ships with, uses
-`icp_sealed_secret_info` purely as a cross-check, and aborts on mismatch.
+**The client computes the public key; it never asks for one.** If a client asked the
+canister and believed the answer, anyone able to tamper with that response could
+substitute a key they control and harvest the secret — and unlike the canister's
+inter-canister calls, a reply to the client really does cross boundary nodes. So the
+client derives the key from a master-key constant it ships with, a canister id, and a
+context that is a constant of this standard. There is no request, so there is nothing to
+tamper with.
 
 The canister takes its own key from `vetkd_public_key`, which is authoritative for the
 subnet it is on. Verifying against that is circular, but cheaply so: a subnet that would
 lie about its public key already holds the master key and could decrypt everything
-anyway. The non-circular check is the client's, in the paragraph above — and it is the
-one that matters, because that is the response which crosses boundary nodes.
+anyway.
 
-**`set` is async and trial-decrypts before storing.** A wrong context, epoch or key
-name otherwise produces a perfectly-accepted ciphertext that nobody discovers is
-unreadable until a production call months later. Paying one key derivation at seal
-time turns that into an error in front of the operator.
+**`set` decrypts before storing.** A wrong key name, master key table or canister id
+otherwise produces a perfectly-accepted ciphertext that nobody discovers is unreadable
+until a production call months later. Paying one key derivation at seal time turns that
+into an error in front of the operator — and it is what makes the absence of any
+cross-check endpoint safe.
 
 **One key label serves every secret.** A single `vetkd_derive_key` unlocks all of them.
 Per-secret labels would multiply the cost by N and buy nothing: there is no privilege
@@ -437,21 +428,23 @@ Step by step:
 icp network start local --background
 icp deploy -e local
 
-# 2. encrypt a secret — read from the environment, never from argv
 cd seed && npm install
-export DUMMY_API_KEY='sk-example-not-a-real-key'
-
 CID=$(icp canister status sealed-secrets-rust -e local --json | jq -r .id)
 
+# 2. check the subnet, once per deployment. Locally this can only be waived —
+#    see "Local vs mainnet" below for what --local gives up.
+npm run preflight -- --canister "$CID" --host http://127.0.0.1:8010 --local
+
+# 3. encrypt a secret — read from the environment, never from argv.
+#    Fully offline: no network call, no identity, nothing asked of the canister.
+export DUMMY_API_KEY='sk-example-not-a-real-key'
 npm run seal -- \
   --canister "$CID" \
   --name DUMMY_API_KEY \
-  --host http://127.0.0.1:8010 \
   --source pocketic \
-  --out /tmp/sealed.args \
-  --local          # see "Local vs mainnet" below for what this waives
+  --out /tmp/sealed.args
 
-# 3. send it — this is the step that needs a controller, and icp-cli
+# 4. send it — this is the step that needs a controller, and icp-cli
 #    signs it with the identity you already have configured
 icp canister call "$CID" icp_sealed_secret_set --args-file /tmp/sealed.args -e local
 ```
@@ -462,25 +455,16 @@ open it. Only the *call* needs a signature, and `icp canister call` already has 
 That is why the two steps are separate.
 
 ```
-preflight
-  subnet:   w5bul-v73ez-…-7ae
-  sev-snp:  NOT REPORTED — expected on a local network, where SEV cannot be simulated
-  vetkd:    keys on this subnet: none (not a gate — see preflight.ts)
-
-key derivation
-  source    pocketic:key_1
-  context   01156963702d7365616c65642d736563726574732d763100
-  key_label 01156963702d7365616c65642d736563726574732d763100000000  (epoch 0)
-  derived   a0d33e4e648337dafede99ae71fdc17a…
-  verified  canister agrees with our offline derivation
-
-encrypted "DUMMY_API_KEY" (25 bytes → 161 bytes), wrote /tmp/sealed.args
+derived pocketic:key_1 key a0d33e4e648337dafede99ae71fdc17a… for bkyz2-fmaaa-… offline
+encrypted "DUMMY_API_KEY" (25 bytes → 161 bytes)
+wrote /tmp/sealed.args
 send it as a controller:
   icp canister call <id> icp_sealed_secret_set --args-file /tmp/sealed.args
 ```
 
-`icp_sealed_secret_set` trial-decrypts before storing, so it returns a revision only if
-the ciphertext is genuinely readable.
+`icp_sealed_secret_set` decrypts before storing, so it returns a revision only if the
+ciphertext is genuinely readable. That is the only confirmation you need, and the only
+one this interface offers.
 
 Confirm the canister holds the value you expect — the production-safe check, which
 discloses nothing in either direction:
@@ -520,9 +504,9 @@ check on mainnet, and it is the one thing a local run cannot rehearse at all.
 > called `key_1`, backed by **different** master public keys — necessarily so, since a
 > local test environment cannot hold mainnet's master secret. What that means is that
 > the key *name* does not identify a key, so the table has to be chosen explicitly.
-> Choosing wrong yields ciphertext nobody can ever decrypt, which is why the client
-> verifies against the canister before encrypting and why `rust/core/tests/golden.rs`
-> asserts the two derivations differ. `ic-vetkeys`' own
+> Choosing wrong yields ciphertext this canister cannot decrypt — which `set` catches,
+> because it decrypts before storing, and which `rust/core/tests/golden.rs` pins by
+> asserting the two derivations differ. `ic-vetkeys`' own
 > `management_canister::compute_vrf` gets this wrong today — see
 > [FOLLOW-UPS.md](./FOLLOW-UPS.md#a-bug-to-fix-while-in-there).
 
@@ -554,13 +538,15 @@ icp canister settings update <id> --add-controller "$(npm run --silent e2e -- --
 npm run e2e -- --canister <id> --host http://127.0.0.1:8010 --source pocketic
 ```
 
-The Rust and TypeScript golden vectors are byte-for-byte identical on purpose: the two
-implementations cannot drift without one suite failing. A future Motoko port should
-assert the same values.
+The Rust, Motoko and TypeScript golden vectors are byte-for-byte identical on purpose:
+three implementations cannot drift without one suite failing.
 
-The e2e suite covers the cases that matter — ciphertext sealed to the wrong epoch,
-malformed blobs, oversized input, invalid names, anonymous callers, that rejected writes
-leave no trace, and that an overwrite replaces the stored value rather than shadowing it.
+The e2e suite covers the cases that matter — ciphertext sealed to the wrong key label,
+malformed blobs, invalid names, anonymous callers, that rejected writes leave no trace,
+and that an overwrite replaces the stored value rather than shadowing it. Its first
+assertion, that a well-formed seal succeeds, is also the derivation-agreement check:
+`set` decrypts before storing, so it can only pass if client and canister derived the
+same key.
 
 ### Confirming the right secret is deployed
 
@@ -569,7 +555,7 @@ The question an operator actually has is *"is the value I hold the one in the ca
 
 ```bash
 DUMMY_API_KEY='the-value-i-expect' npm run seal -- \
-  --canister <id> --name DUMMY_API_KEY --verify --source mainnet --out check.args
+  --canister <id> --name DUMMY_API_KEY --source mainnet --verify --out check.args
 icp canister call <id> icp_sealed_secret_matches --args-file check.args --network ic
 ```
 
@@ -680,72 +666,90 @@ rather than a runtime surprise.
 ## Wire format
 
 ```
-context  := 0x01 || u8(len(SUITE)) || SUITE || u8(len(app_separator)) || app_separator
-key_label := 0x01 || u8(len(SUITE)) || SUITE || be_u32(epoch)
-SUITE     = "icp-sealed-secrets-v1"
+context   = "icp-sealed-secrets-v1"        // which keypair
+key_label = "icp-sealed-secrets-v1.keys"   // which key under it
 ```
 
-Both variable-length fields are length-prefixed so no two distinct inputs can encode
-identically. The application domain separator is **always empty** in this PoC — it
-exists so a canister that later needs vetKD for several purposes can adopt one without
-a format break, and is not exposed as configuration. Golden values:
+Two constants, and that is the entire format. No version byte — the version is in the
+string, and bumping it is the format break. No length prefixes — those existed to keep
+two variable-length fields from colliding, and there are none. Golden values:
 
 | Value | Bytes |
 |---|---|
-| `context("")` | `01156963702d7365616c65642d736563726574732d763100` |
-| `context("demo")` | `01156963702d7365616c65642d736563726574732d76310464656d6f` |
-| `key_label(0)` | `01156963702d7365616c65642d736563726574732d763100000000` |
+| `context` | `6963702d7365616c65642d736563726574732d7631` |
+| `key_label` | `6963702d7365616c65642d736563726574732d76312e6b657973` |
+
+Asserted byte-for-byte by [`rust/core/tests/golden.rs`](./rust/core/tests/golden.rs),
+[`motoko/canister/test/Format.test.mo`](./motoko/canister/test/Format.test.mo) and
+[`seed/src/format.test.ts`](./seed/src/format.test.ts) — three implementations that
+cannot drift without one suite failing.
+
+**Why the context needs nothing else.** The derivation is master key → canister id →
+context, so the canister id already separates one canister from another, and the suite
+separates sealed secrets from any other use of vetKD in the same canister. There is
+nothing left for a client to be told.
+
+**Why the label needs nothing else.** It is deliberately independent of the secret's
+name: one label serves every secret, so a single `vetkd_derive_key` unlocks all of them
+rather than N of them. Per-secret labels would multiply the cost by N and buy nothing,
+because there is no privilege boundary inside a canister — its code can derive the key
+for any label at any time.
 
 Secret names are `[A-Za-z0-9_.-]{1,64}` — matching environment-variable conventions,
-and sidestepping the Unicode confusables an arbitrary Candid `text` would admit.
+and sidestepping the Unicode confusables an arbitrary Candid `text` would admit. A name
+is a map key in the canister; it is **not** part of any derivation and never reaches
+vetKD.
 
 ## Interface
 
 ```candid
 // required
-icp_sealed_secret_info      : ()               -> (variant { Ok : SealedSecretInfo; Err : SealedSecretsError });
-icp_sealed_secret_set       : (text, blob)     -> (variant { Ok : nat64; Err : SealedSecretsError });
-icp_sealed_secret_unset     : (text)           -> (variant { Ok; Err : SealedSecretsError });
-icp_sealed_secret_list      : ()               -> (variant { Ok : vec SealedSecretEntry; Err : … }) query;
+icp_sealed_secret_set     : (text, blob)     -> (variant { Ok : nat64; Err : SealedSecretsError });
+icp_sealed_secret_unset   : (text)           -> (variant { Ok; Err : SealedSecretsError });
+icp_sealed_secret_list    : ()               -> (variant { Ok : vec SealedSecretEntry; Err : … }) query;
 
 // optional
-icp_sealed_secret_matches   : (text, blob)     -> (variant { Ok : bool;  Err : SealedSecretsError });
+icp_sealed_secret_matches : (text, blob)     -> (variant { Ok : bool;  Err : SealedSecretsError });
 
 // not part of the proposed standard — the worked example of USING a secret
-call_api_with_secret        : (text, text)     -> (variant { Ok : nat16; Err : SealedSecretsError });
-strip_response              : (TransformArgs)  -> (HttpRequestResult) query;
+call_api_with_secret      : (text, text)     -> (variant { Ok : nat16; Err : SealedSecretsError });
+strip_response            : (TransformArgs)  -> (HttpRequestResult) query;
 ```
 
 Install args are just `(record { key_name : text })`.
 
-`info` and `set` are the mechanism: `info` says what to encrypt to, `set` receives it.
+**`set` is the whole mechanism**, and it is the only method a sealing tool needs.
 `unset` matters because revoking a leaked credential should not require an upgrade, and
-`list` is the operational inventory — how you answer "did my upload land" and "what does
-this canister hold".
+`list` is the operational inventory — what does this canister hold, and did my write
+land.
 
-**`matches` is optional.** It answers *"is the value I hold the one you have stored?"*
-without either side disclosing it — but an operator who wants to guarantee the deployed
-value can simply `set` again: same cost, same outcome, one extra revision. It earns its
-place only where writing is not permitted, such as a monitoring probe or an auditor who is
-a controller but should not mutate. Worth having; not worth requiring.
+There is deliberately **no `info` endpoint**. The client needs nothing from the canister
+in order to seal: the context and label are constants of this standard, the public key is
+derived offline from the canister id, and the vetKD key name is something the deployer
+already knows because they chose it at install. An `info` endpoint would only turn a
+generic error into a specific one, one message earlier — and it would cost an update call
+on every seal, because the canister's public key comes from `vetkd_public_key`.
 
-- **`info` is an update**, because `public_key` comes from `vetkd_public_key` —
-  authoritative for whichever subnet the canister is actually on. It is cached, so only
-  the first call pays. Deriving it from a compiled-in master key instead would let `info`
-  be a query, at the price of an install-time `key_source` argument that silently orphans
-  every ciphertext if set wrong. Asking the subnet means one build runs anywhere with
-  nothing to configure, and it makes the client's comparison *stronger*: the canister
-  reports what the subnet says and the client checks it against an independent constant,
-  rather than the two agreeing because they share one.
+- **`set` decrypts before storing, and that is the health check.** A ciphertext sealed
+  with the wrong key name, the wrong master key table or the wrong canister id is
+  rejected here, at deploy time, in front of the operator — rather than accepted happily
+  and found unreadable at the first production call months later. It is also why there is
+  no separate `self_test`: `set` exercises `vetkd_public_key`, `vetkd_derive_key`,
+  verification and decryption, on real data.
+- **`matches` is optional.** It answers *"is the value I hold the one you have stored?"*
+  without either side disclosing it — but an operator who wants to guarantee the deployed
+  value can simply `set` again: same cost, same outcome, one extra revision. It earns its
+  place where writing is not permitted, such as a monitoring probe or an auditor who is a
+  controller but should not mutate. Worth having; not worth requiring.
 - **Errors are a typed variant**, so tooling can branch on `VetKdUnavailable` versus
   `InvalidCiphertext` rather than parsing prose.
-- **`list` is controller-gated.** It looks harmless but is not: IBE overhead is a fixed
-  136 bytes, so `ciphertext_len` reveals the exact plaintext length, and names alone
-  are useful reconnaissance.
+- **`list` is controller-gated**, because names alone (`billing_live_key`, …) are useful
+  reconnaissance.
 - **Nothing derived from a plaintext is ever exposed.** A digest of the plaintext would
-  be an offline guessing oracle for low-entropy secrets; `ciphertext_sha256` is a
-  digest of a *randomised* ciphertext, so it reveals nothing while still letting a
-  client confirm its upload landed.
+  be an offline guessing oracle for low-entropy secrets; `ciphertext_sha256` is a digest
+  of a *randomised* ciphertext, so it reveals nothing — while still letting the client
+  that produced it recognise its own upload. It cannot confirm a value is *correct*:
+  sealing the same secret twice gives different digests. That question is `matches`.
 - **There is no `get` in a default build.** No endpoint returns a plaintext. The
   `test-hooks` feature adds `secret_reveal`, which does — see
   [Seeing the plaintext](#seeing-the-plaintext) and
@@ -754,10 +758,9 @@ a controller but should not mutate. Worth having; not worth requiring.
   They are the worked example of *using* a sealed secret — see
   [Using the secret](#using-the-secret--the-point-of-all-this). A real canister writes its
   own equivalent; nothing in the standard prescribes how the secret gets used.
-- **A successful `set` already proves the canister can decrypt**, because it trial-decrypts
-  before storing. Tooling therefore never needs a read-back endpoint to confirm a seal
-  worked, and `matches` covers "is it still the right value?" — which is the same design
-  decision as "there is no `get`", seen from the other side.
+- **Discovery needs no new mechanism.** `icp canister metadata <id> candid:service`
+  returns the full interface with no update call, so tooling can check which of these a
+  canister has and say what is missing rather than calling a method that is not there.
 
 ## Security model
 
@@ -836,9 +839,11 @@ icp canister call <id> icp_sealed_secret_set --args-file sealed.args --network i
 The e2e suite covers this: *overwriting bumps the revision* and *an overwrite replaces the
 stored value rather than shadowing it*.
 
-Rotating the *vetKD key* — the epoch in the key label — is a separate thing, and is
-deferred; see [FOLLOW-UPS.md](./FOLLOW-UPS.md). It is almost never what you want. If a
-secret leaks you rotate the secret, which is the paragraph above.
+There is no separate mechanism for rotating the *key label*, and deliberately so. An
+earlier draft carried an epoch in the label so a future `rotate` could move new writes
+onto a new key. It was dropped: rotating the label is almost never what anyone wants, and
+when it is, the suite string is the version and bumping it is the break. If a secret
+leaks you rotate the secret, which is the paragraph above.
 
 ### HTTPS outcalls
 
@@ -1005,7 +1010,11 @@ rust/core/             wire format + offline key derivation. No canister APIs; h
 rust/core/tests/       golden vectors — the contract other implementations must meet.
 rust/canister/         the Rust canister: endpoints, stable store, key derivation, vetKey cache.
 rust/vectorgen/        emits motoko/vectors.json from the Rust reference.
-seed/src/              the host-side seeding script and the e2e suite.
+seed/src/index.ts      the seeding script: derives offline, encrypts, writes a
+                       Candid argument. No network, no identity.
+seed/src/preflight.ts  the subnet SEV-SNP check — a separate command, because it
+                       asks the registry and sealing asks nobody.
+seed/src/e2e.ts        the end-to-end suite, against a deployed canister.
 seed/src/declarations/ GENERATED from the .did — do not edit; `npm run bindings`.
 motoko/bls12-381/      EXPERIMENTAL, UNAUDITED BLS12-381 for Motoko.
 motoko/vetkeys/        EXPERIMENTAL, UNAUDITED vetKD layer on it — what mo:ic-vetkeys lacks.

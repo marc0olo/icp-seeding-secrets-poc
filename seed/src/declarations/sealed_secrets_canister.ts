@@ -51,9 +51,30 @@ function candid_none<T>(): [] {
 function record_opt_to_undefined<T>(arg: T | null): T | undefined {
     return arg == null ? undefined : arg;
 }
+export type Result_4 = {
+    __kind__: "Ok";
+    Ok: null;
+} | {
+    __kind__: "Err";
+    Err: SealedSecretsError;
+};
 export type Result_2 = {
     __kind__: "Ok";
-    Ok: SealedSecretInfo;
+    Ok: Array<SealedSecretEntry>;
+} | {
+    __kind__: "Err";
+    Err: SealedSecretsError;
+};
+export type Result = {
+    __kind__: "Ok";
+    Ok: bigint;
+} | {
+    __kind__: "Err";
+    Err: SealedSecretsError;
+};
+export type Result_3 = {
+    __kind__: "Ok";
+    Ok: boolean;
 } | {
     __kind__: "Err";
     Err: SealedSecretsError;
@@ -72,13 +93,39 @@ export interface HttpRequestResult {
      */
     headers: Array<HttpHeader>;
 }
-export type Result_6 = {
-    __kind__: "Ok";
-    Ok: string;
-} | {
-    __kind__: "Err";
-    Err: SealedSecretsError;
-};
+export interface SealedSecretEntry {
+    /**
+     * SHA-256 of the ciphertext that was submitted, so a client can confirm the
+     * stored value is the one *it* uploaded.
+     * 
+     * Not a way to check the value is correct: IBE is randomised, so sealing
+     * the same secret twice gives different digests. That question is
+     * `icp_sealed_secret_matches`.
+     */
+    ciphertext_sha256: Uint8Array;
+    /**
+     * The secret's name.
+     */
+    name: string;
+    /**
+     * Nanoseconds since the epoch when it was last overwritten.
+     */
+    updated_at_ns: bigint;
+    /**
+     * Nanoseconds since the epoch when this name was first set.
+     */
+    created_at_ns: bigint;
+    /**
+     * Increments on every overwrite.
+     */
+    revision: bigint;
+}
+export interface InitArgs {
+    /**
+     * vetKD key name, e.g. `key_1`.
+     */
+    key_name: string;
+}
 export type SealedSecretsError = {
     __kind__: "Internal";
     /**
@@ -86,28 +133,12 @@ export type SealedSecretsError = {
      */
     Internal: string;
 } | {
-    __kind__: "TooMany";
-    /**
-     * Storing this would exceed `max_secrets`.
-     */
-    TooMany: {
-        max: bigint;
-    };
-} | {
     __kind__: "InvalidCiphertext";
     /**
      * The blob is not a well-formed IBE ciphertext, or does not decrypt under
-     * this canister's key — most often a wrong context, epoch or key id.
+     * this canister's key — most often a wrong key name or master key table.
      */
     InvalidCiphertext: string;
-} | {
-    __kind__: "TooLarge";
-    /**
-     * Ciphertext exceeds `max_ciphertext_len`.
-     */
-    TooLarge: {
-        max: bigint;
-    };
 } | {
     __kind__: "NotFound";
     /**
@@ -139,7 +170,7 @@ export type SealedSecretsError = {
 };
 export type Result_5 = {
     __kind__: "Ok";
-    Ok: null;
+    Ok: string;
 } | {
     __kind__: "Err";
     Err: SealedSecretsError;
@@ -161,104 +192,6 @@ export interface HttpHeader {
      */
     name: string;
 }
-export interface SealedSecretInfo {
-    /**
-     * The exact vetKD `context` bytes this canister derives under.
-     */
-    context: Uint8Array;
-    /**
-     * Largest number of secrets this canister will hold.
-     */
-    max_secrets: bigint;
-    /**
-     * The 96-byte derived public key to encrypt to.
-     * 
-     * A client must treat this as a *cross-check* against its own offline
-     * derivation, never as the key to encrypt to: derive the key yourself from a
-     * master public key you ship, compare, and refuse to encrypt on a mismatch.
-     * This reply crosses boundary nodes, so trusting it would let anyone able to
-     * tamper with it substitute a key they control.
-     */
-    public_key: Uint8Array;
-    /**
-     * Largest ciphertext this canister will accept.
-     */
-    max_ciphertext_len: bigint;
-    /**
-     * The current epoch. New seals must target this value.
-     */
-    epoch: number;
-    /**
-     * The vetKD key name, e.g. `key_1`.
-     */
-    key_name: string;
-    /**
-     * The exact key-label bytes for the current epoch — the vetKD `input`,
-     * i.e. the IBE identity every secret here is sealed to.
-     */
-    key_label: Uint8Array;
-    /**
-     * Version of this interface. Currently 1.
-     */
-    standard_version: number;
-}
-export type Result_4 = {
-    __kind__: "Ok";
-    Ok: boolean;
-} | {
-    __kind__: "Err";
-    Err: SealedSecretsError;
-};
-export interface SealedSecretEntry {
-    /**
-     * SHA-256 of the ciphertext, so a client can confirm its upload landed.
-     */
-    ciphertext_sha256: Uint8Array;
-    /**
-     * Ciphertext length in bytes.
-     */
-    ciphertext_len: bigint;
-    /**
-     * The secret's name.
-     */
-    name: string;
-    /**
-     * Nanoseconds since the epoch when it was last overwritten.
-     */
-    updated_at_ns: bigint;
-    /**
-     * The epoch its ciphertext was sealed under.
-     */
-    epoch: number;
-    /**
-     * Nanoseconds since the epoch when this name was first set.
-     */
-    created_at_ns: bigint;
-    /**
-     * Increments on every overwrite.
-     */
-    revision: bigint;
-}
-export type Result = {
-    __kind__: "Ok";
-    Ok: bigint;
-} | {
-    __kind__: "Err";
-    Err: SealedSecretsError;
-};
-export type Result_3 = {
-    __kind__: "Ok";
-    Ok: Array<SealedSecretEntry>;
-} | {
-    __kind__: "Err";
-    Err: SealedSecretsError;
-};
-export interface InitArgs {
-    /**
-     * vetKD key name, e.g. `key_1`.
-     */
-    key_name: string;
-}
 export interface TransformArgs {
     /**
      * Context for response transformation
@@ -272,15 +205,14 @@ export interface TransformArgs {
 export interface sealed_secrets_canisterInterface {
     bench_ibe_decrypt(arg0: Uint8Array, arg1: Uint8Array): Promise<Result>;
     call_api_with_secret(arg0: string, arg1: string): Promise<Result_1>;
-    icp_sealed_secret_info(): Promise<Result_2>;
-    icp_sealed_secret_list(): Promise<Result_3>;
-    icp_sealed_secret_matches(arg0: string, arg1: Uint8Array): Promise<Result_4>;
+    icp_sealed_secret_list(): Promise<Result_2>;
+    icp_sealed_secret_matches(arg0: string, arg1: Uint8Array): Promise<Result_3>;
     icp_sealed_secret_set(arg0: string, arg1: Uint8Array): Promise<Result>;
-    icp_sealed_secret_unset(arg0: string): Promise<Result_5>;
-    secret_reveal(arg0: string): Promise<Result_6>;
+    icp_sealed_secret_unset(arg0: string): Promise<Result_4>;
+    secret_reveal(arg0: string): Promise<Result_5>;
     strip_response(arg0: TransformArgs): Promise<HttpRequestResult>;
 }
-import type { Result as _Result, Result_1 as _Result_1, Result_2 as _Result_2, Result_3 as _Result_3, Result_4 as _Result_4, Result_5 as _Result_5, Result_6 as _Result_6, SealedSecretEntry as _SealedSecretEntry, SealedSecretInfo as _SealedSecretInfo, SealedSecretsError as _SealedSecretsError } from "./sealed_secrets_canister.did";
+import type { Result as _Result, Result_1 as _Result_1, Result_2 as _Result_2, Result_3 as _Result_3, Result_4 as _Result_4, Result_5 as _Result_5, SealedSecretEntry as _SealedSecretEntry, SealedSecretsError as _SealedSecretsError } from "./sealed_secrets_canister.did";
 export class Sealed_secrets_canister implements sealed_secrets_canisterInterface {
     constructor(private actor: ActorSubclass<_SERVICE>){}
     async bench_ibe_decrypt(arg0: Uint8Array, arg1: Uint8Array): Promise<Result> {
@@ -291,29 +223,25 @@ export class Sealed_secrets_canister implements sealed_secrets_canisterInterface
         const result = await this.actor.call_api_with_secret(arg0, arg1);
         return from_candid_Result_1_n5(result);
     }
-    async icp_sealed_secret_info(): Promise<Result_2> {
-        const result = await this.actor.icp_sealed_secret_info();
+    async icp_sealed_secret_list(): Promise<Result_2> {
+        const result = await this.actor.icp_sealed_secret_list();
         return from_candid_Result_2_n7(result);
     }
-    async icp_sealed_secret_list(): Promise<Result_3> {
-        const result = await this.actor.icp_sealed_secret_list();
-        return from_candid_Result_3_n9(result);
-    }
-    async icp_sealed_secret_matches(arg0: string, arg1: Uint8Array): Promise<Result_4> {
+    async icp_sealed_secret_matches(arg0: string, arg1: Uint8Array): Promise<Result_3> {
         const result = await this.actor.icp_sealed_secret_matches(arg0, arg1);
-        return from_candid_Result_4_n11(result);
+        return from_candid_Result_3_n9(result);
     }
     async icp_sealed_secret_set(arg0: string, arg1: Uint8Array): Promise<Result> {
         const result = await this.actor.icp_sealed_secret_set(arg0, arg1);
         return from_candid_Result_n1(result);
     }
-    async icp_sealed_secret_unset(arg0: string): Promise<Result_5> {
+    async icp_sealed_secret_unset(arg0: string): Promise<Result_4> {
         const result = await this.actor.icp_sealed_secret_unset(arg0);
-        return from_candid_Result_5_n13(result);
+        return from_candid_Result_4_n11(result);
     }
-    async secret_reveal(arg0: string): Promise<Result_6> {
+    async secret_reveal(arg0: string): Promise<Result_5> {
         const result = await this.actor.secret_reveal(arg0);
-        return from_candid_Result_6_n15(result);
+        return from_candid_Result_5_n13(result);
     }
     async strip_response(arg0: TransformArgs): Promise<HttpRequestResult> {
         const result = await this.actor.strip_response(arg0);
@@ -335,9 +263,6 @@ function from_candid_Result_4_n11(value: _Result_4): Result_4 {
 function from_candid_Result_5_n13(value: _Result_5): Result_5 {
     return from_candid_variant_n14(value);
 }
-function from_candid_Result_6_n15(value: _Result_6): Result_6 {
-    return from_candid_variant_n16(value);
-}
 function from_candid_Result_n1(value: _Result): Result {
     return from_candid_variant_n2(value);
 }
@@ -345,12 +270,12 @@ function from_candid_SealedSecretsError_n3(value: _SealedSecretsError): SealedSe
     return from_candid_variant_n4(value);
 }
 function from_candid_variant_n10(value: {
-    Ok: Array<_SealedSecretEntry>;
+    Ok: boolean;
 } | {
     Err: _SealedSecretsError;
 }): {
     __kind__: "Ok";
-    Ok: Array<SealedSecretEntry>;
+    Ok: boolean;
 } | {
     __kind__: "Err";
     Err: SealedSecretsError;
@@ -364,12 +289,12 @@ function from_candid_variant_n10(value: {
     } : value;
 }
 function from_candid_variant_n12(value: {
-    Ok: boolean;
+    Ok: null;
 } | {
     Err: _SealedSecretsError;
 }): {
     __kind__: "Ok";
-    Ok: boolean;
+    Ok: null;
 } | {
     __kind__: "Err";
     Err: SealedSecretsError;
@@ -383,25 +308,6 @@ function from_candid_variant_n12(value: {
     } : value;
 }
 function from_candid_variant_n14(value: {
-    Ok: null;
-} | {
-    Err: _SealedSecretsError;
-}): {
-    __kind__: "Ok";
-    Ok: null;
-} | {
-    __kind__: "Err";
-    Err: SealedSecretsError;
-} {
-    return "Ok" in value ? {
-        __kind__: "Ok",
-        Ok: value.Ok
-    } : "Err" in value ? {
-        __kind__: "Err",
-        Err: from_candid_SealedSecretsError_n3(value.Err)
-    } : value;
-}
-function from_candid_variant_n16(value: {
     Ok: string;
 } | {
     Err: _SealedSecretsError;
@@ -442,15 +348,7 @@ function from_candid_variant_n2(value: {
 function from_candid_variant_n4(value: {
     Internal: string;
 } | {
-    TooMany: {
-        max: bigint;
-    };
-} | {
     InvalidCiphertext: string;
-} | {
-    TooLarge: {
-        max: bigint;
-    };
 } | {
     NotFound: null;
 } | {
@@ -466,18 +364,8 @@ function from_candid_variant_n4(value: {
     __kind__: "Internal";
     Internal: string;
 } | {
-    __kind__: "TooMany";
-    TooMany: {
-        max: bigint;
-    };
-} | {
     __kind__: "InvalidCiphertext";
     InvalidCiphertext: string;
-} | {
-    __kind__: "TooLarge";
-    TooLarge: {
-        max: bigint;
-    };
 } | {
     __kind__: "NotFound";
     NotFound: null;
@@ -497,15 +385,9 @@ function from_candid_variant_n4(value: {
     return "Internal" in value ? {
         __kind__: "Internal",
         Internal: value.Internal
-    } : "TooMany" in value ? {
-        __kind__: "TooMany",
-        TooMany: value.TooMany
     } : "InvalidCiphertext" in value ? {
         __kind__: "InvalidCiphertext",
         InvalidCiphertext: value.InvalidCiphertext
-    } : "TooLarge" in value ? {
-        __kind__: "TooLarge",
-        TooLarge: value.TooLarge
     } : "NotFound" in value ? {
         __kind__: "NotFound",
         NotFound: value.NotFound
@@ -540,12 +422,12 @@ function from_candid_variant_n6(value: {
     } : value;
 }
 function from_candid_variant_n8(value: {
-    Ok: _SealedSecretInfo;
+    Ok: Array<_SealedSecretEntry>;
 } | {
     Err: _SealedSecretsError;
 }): {
     __kind__: "Ok";
-    Ok: SealedSecretInfo;
+    Ok: Array<SealedSecretEntry>;
 } | {
     __kind__: "Err";
     Err: SealedSecretsError;

@@ -17,56 +17,22 @@ fn suite_label_is_pinned() {
 }
 
 #[test]
-fn context_golden_vectors() {
+fn context_and_key_label_golden_vectors() {
     assert_eq!(
-        hex::encode(sealed_secrets_context("").unwrap()),
-        "01156963702d7365616c65642d736563726574732d763100"
+        hex::encode(CONTEXT),
+        "6963702d7365616c65642d736563726574732d7631"
     );
     assert_eq!(
-        hex::encode(sealed_secrets_context("demo").unwrap()),
-        "01156963702d7365616c65642d736563726574732d76310464656d6f"
-    );
-}
-
-#[test]
-fn identity_golden_vectors() {
-    assert_eq!(
-        hex::encode(sealed_secrets_key_label(0)),
-        "01156963702d7365616c65642d736563726574732d763100000000"
-    );
-    assert_eq!(
-        hex::encode(sealed_secrets_key_label(1)),
-        "01156963702d7365616c65642d736563726574732d763100000001"
-    );
-    assert_eq!(
-        hex::encode(sealed_secrets_key_label(u32::MAX)),
-        "01156963702d7365616c65642d736563726574732d7631ffffffff"
+        hex::encode(KEY_LABEL),
+        "6963702d7365616c65642d736563726574732d76312e6b657973"
     );
 }
 
-/// Length prefixes exist so that no two distinct inputs collide. Without them,
-/// a suite of `"ab"` with separator `"c"` and a suite of `"abc"` with an empty
-/// separator would encode identically.
+/// The two select different things — the context selects the keypair, the label
+/// selects a key within it — so they must never be the same bytes.
 #[test]
-fn context_encoding_is_unambiguous() {
-    let a = sealed_secrets_context("x").unwrap();
-    let b = sealed_secrets_context("").unwrap();
-    assert_ne!(a, b);
-    assert_eq!(a.len(), b.len() + 1);
-}
-
-#[test]
-fn app_separator_length_is_bounded() {
-    let ok = "a".repeat(MAX_APP_SEPARATOR_LEN);
-    assert!(sealed_secrets_context(&ok).is_ok());
-
-    let too_long = "a".repeat(MAX_APP_SEPARATOR_LEN + 1);
-    assert_eq!(
-        sealed_secrets_context(&too_long),
-        Err(FormatError::AppSeparatorTooLong {
-            len: MAX_APP_SEPARATOR_LEN + 1
-        })
-    );
+fn context_and_key_label_differ() {
+    assert_ne!(CONTEXT, KEY_LABEL);
 }
 
 #[test]
@@ -108,7 +74,7 @@ fn test_canister() -> Principal {
 
 #[test]
 fn public_key_derivation_is_deterministic() {
-    let ctx = sealed_secrets_context("").unwrap();
+    let ctx = CONTEXT.to_vec();
     let a = derive_public_key(
         MasterKeySource::Mainnet,
         &key_id("key_1"),
@@ -135,7 +101,7 @@ fn public_key_derivation_is_deterministic() {
 /// `ic-vetkeys`' `management_canister::compute_vrf` selects by name today.
 #[test]
 fn same_key_name_differs_across_master_key_sources() {
-    let ctx = sealed_secrets_context("").unwrap();
+    let ctx = CONTEXT.to_vec();
     let mainnet = derive_public_key(
         MasterKeySource::Mainnet,
         &key_id("key_1"),
@@ -155,7 +121,7 @@ fn same_key_name_differs_across_master_key_sources() {
 
 #[test]
 fn unknown_key_name_is_reported() {
-    let ctx = sealed_secrets_context("").unwrap();
+    let ctx = CONTEXT.to_vec();
     let err = derive_public_key(
         MasterKeySource::Mainnet,
         &key_id("no_such_key"),
@@ -172,110 +138,60 @@ fn unknown_key_name_is_reported() {
     );
 }
 
+/// Each of these is a way a client could end up deriving a key the canister
+/// cannot decrypt with. None can be caught by inspection — they all produce a
+/// perfectly well-formed key — so what matters is that each yields a *different*
+/// key, which is why `set` decrypts before storing rather than trusting the
+/// blob it was handed.
 #[test]
-fn verification_accepts_a_matching_key() {
-    let ctx = sealed_secrets_context("").unwrap();
-    let derived = derive_public_key(
-        MasterKeySource::Mainnet,
-        &key_id("key_1"),
-        &test_canister(),
-        &ctx,
-    )
-    .unwrap();
-
-    assert!(verify_reported_public_key(
-        MasterKeySource::Mainnet,
-        &key_id("key_1"),
-        &test_canister(),
-        &ctx,
-        &derived.serialize(),
-    )
-    .is_ok());
-}
-
-/// Each of these is a way a client could end up encrypting to a key the canister
-/// cannot decrypt with. All must be caught before any ciphertext is produced.
-#[test]
-fn verification_rejects_every_mismatch() {
-    let ctx = sealed_secrets_context("").unwrap();
-    let other_ctx = sealed_secrets_context("different").unwrap();
+fn every_mismatch_yields_a_different_key() {
     let other_canister = Principal::from_text("bd3sg-teaaa-aaaaa-qaaba-cai").unwrap();
 
-    let reported = derive_public_key(
+    let correct = derive_public_key(
         MasterKeySource::Mainnet,
         &key_id("key_1"),
         &test_canister(),
-        &ctx,
+        CONTEXT,
     )
     .unwrap()
     .serialize();
 
-    /// One way a client could derive a key the canister cannot decrypt with.
-    struct Case {
-        label: &'static str,
-        source: MasterKeySource,
-        key_name: &'static str,
-        canister: Principal,
-        context: Vec<u8>,
-        reported: Vec<u8>,
-    }
-
-    let cases = vec![
-        Case {
-            label: "wrong context",
-            source: MasterKeySource::Mainnet,
-            key_name: "key_1",
-            canister: test_canister(),
-            context: other_ctx,
-            reported: reported.clone(),
-        },
-        Case {
-            label: "wrong canister",
-            source: MasterKeySource::Mainnet,
-            key_name: "key_1",
-            canister: other_canister,
-            context: ctx.clone(),
-            reported: reported.clone(),
-        },
-        Case {
-            label: "wrong master key table",
-            source: MasterKeySource::PocketIc,
-            key_name: "key_1",
-            canister: test_canister(),
-            context: ctx.clone(),
-            reported: reported.clone(),
-        },
-        Case {
-            label: "wrong key name",
-            source: MasterKeySource::Mainnet,
-            key_name: "test_key_1",
-            canister: test_canister(),
-            context: ctx.clone(),
-            reported: reported.clone(),
-        },
-        Case {
-            label: "truncated key",
-            source: MasterKeySource::Mainnet,
-            key_name: "key_1",
-            canister: test_canister(),
-            context: ctx.clone(),
-            reported: reported[..95].to_vec(),
-        },
+    let cases: Vec<(&str, MasterKeySource, &str, Principal, &[u8])> = vec![
+        (
+            "wrong context",
+            MasterKeySource::Mainnet,
+            "key_1",
+            test_canister(),
+            KEY_LABEL,
+        ),
+        (
+            "wrong canister",
+            MasterKeySource::Mainnet,
+            "key_1",
+            other_canister,
+            CONTEXT,
+        ),
+        (
+            "wrong master key table",
+            MasterKeySource::PocketIc,
+            "key_1",
+            test_canister(),
+            CONTEXT,
+        ),
+        (
+            "wrong key name",
+            MasterKeySource::Mainnet,
+            "test_key_1",
+            test_canister(),
+            CONTEXT,
+        ),
     ];
 
-    for case in cases {
-        assert_eq!(
-            verify_reported_public_key(
-                case.source,
-                &key_id(case.key_name),
-                &case.canister,
-                &case.context,
-                &case.reported,
-            ),
-            Err(FormatError::PublicKeyMismatch),
-            "{} was not rejected",
-            case.label
-        );
+    for (label, source, key_name, canister, context) in cases {
+        let derived = derive_public_key(source, &key_id(key_name), &canister, context)
+            .unwrap()
+            .serialize();
+        assert_ne!(derived, correct, "{label} produced the same key");
     }
 }
 

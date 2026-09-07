@@ -10,6 +10,7 @@
   "scripts": {
     "build": "tsc",
     "seal": "tsx src/index.ts",
+    "preflight": "tsx src/preflight.ts",
     "test": "tsx --test src/format.test.ts",
     "typecheck": "tsc --noEmit",
     "e2e": "tsx src/e2e.ts",

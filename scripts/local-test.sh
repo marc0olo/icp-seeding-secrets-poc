@@ -76,8 +76,7 @@ authorise_e2e() {
 # Pass "verify" as $5 to ask matches() instead of storing.
 #   $1 canister name  $2 canister id  $3 secret name  $4 value  [$5 "verify"]
 seal() {
-  local flags=(--canister "$2" --name "$3" --host "$HOST" --source pocketic --local
-               --out "$ARGS_FILE")
+  local flags=(--canister "$2" --name "$3" --source pocketic --out "$ARGS_FILE")
   local method=icp_sealed_secret_set
   if [ "${5:-}" = verify ]; then
     flags+=(--verify)
@@ -171,14 +170,19 @@ echo "  canister: $CID"
 phase_rust() {
   CID=$(resolve_cid "$CANISTER")
   ensure_client
-say "6. seal a secret — which is also the health check"
+say "6. preflight — is this subnet SEV-SNP?"
+# Locally it cannot be, so this only exercises the code path. On mainnet it is
+# the check the whole security argument rests on.
+npm --prefix seed run --silent preflight -- --canister "$CID" --host "$HOST" --local
+
+say "7. seal a secret — which is also the health check"
 # There is no separate health-check endpoint. set() derives the vetKey, verifies
 # it and decrypts, so a subnet that cannot serve vetKD, a wrong key name or a
 # mis-derived key all fail right here. And the seeder refuses to encrypt at all
 # unless its own offline derivation matches what the canister reports."
 seal "$CANISTER" "$CID" "$SECRET_NAME" "$SECRET_VALUE"
 
-say "7. read it back IN THE CLEAR (test-hooks build only)"
+say "8. read it back IN THE CLEAR (test-hooks build only)"
 REVEALED=$(icp canister call "$CANISTER" secret_reveal "(\"$SECRET_NAME\")" -e "$ENV" 2>/dev/null \
   | tr -d '\n' | sed -n 's/.*= "\(.*\)".*/\1/p')
 echo "  sealed:   $SECRET_VALUE"
@@ -186,7 +190,7 @@ echo "  revealed: $REVEALED"
 [ "$REVEALED" = "$SECRET_VALUE" ] || fail "the canister did not recover the plaintext"
 echo "  ok — byte-for-byte match"
 
-say "8. an operator can confirm the right value WITHOUT revealing it"
+say "9. an operator can confirm the right value WITHOUT revealing it"
 # This is the production-safe check: seal the expected value and ask the canister
 # whether it matches. One bit back, nothing disclosed in either direction.
 SEALED_MATCHES=$(icp canister call "$CANISTER" icp_sealed_secret_matches \
@@ -196,7 +200,7 @@ grep -q "InvalidCiphertext" <<<"$SEALED_MATCHES" \
   || fail "matches() did not reject a malformed candidate"
 echo "  ok — matches() validates its input"
 
-say "9. the actual use case: an authenticated HTTPS outcall"
+say "10. the actual use case: an authenticated HTTPS outcall"
 # The point of the whole exercise. The canister reads the plaintext, puts it in
 # an Authorization header, calls out, and returns only the status code — never
 # the body, which on an echoing endpoint would hand the header straight back.
@@ -227,14 +231,14 @@ if [[ "$GOOD_STATUS" == *"Ok=200"* ]]; then
   seal_secret "$OUTCALL_GOOD"
 fi
 
-say "10. it survives an upgrade with no re-seeding"
+say "11. it survives an upgrade with no re-seeding"
 icp deploy -e "$ENV" --yes >/dev/null
 AFTER=$(icp canister call "$CANISTER" secret_reveal "(\"$SECRET_NAME\")" -e "$ENV" 2>/dev/null \
   | tr -d '\n' | sed -n 's/.*= "\(.*\)".*/\1/p')
 [ "$AFTER" = "$SECRET_VALUE" ] || fail "the secret did not survive the upgrade"
 echo "  ok — still readable after upgrade, the secret lives in stable memory"
 
-say "11. the negative cases"
+say "12. the negative cases"
 authorise_e2e "$CANISTER"
 npm --prefix seed run --silent e2e -- --canister "$CID" --host "$HOST" --source pocketic
 
@@ -242,7 +246,7 @@ npm --prefix seed run --silent e2e -- --canister "$CID" --host "$HOST" --source 
 
 phase_motoko() {
   ensure_client
-say "12. the same round trip against the Motoko canister"
+say "13. the same round trip against the Motoko canister"
 # The point of this step is that nothing below is Motoko-specific except the
 # canister name. The same seeding script, the same wire format, the same
 # interface — driven against a canister whose decryption runs on this repo's
@@ -294,12 +298,12 @@ case "$MO_AFTER" in
   *)          fail "the Motoko canister lost its secret across an upgrade: $MO_AFTER" ;;
 esac
 
-# The same 17 assertions step 11 runs against the Rust canister, with nothing
+# The same 17 assertions step 12 runs against the Rust canister, with nothing
 # changed but the canister id. That is the claim this repo makes -- one wire
 # format, one client, two implementations -- and running the suite twice is what
 # tests it. It needs no test hooks, which is why the Motoko canister can pass it
 # without shipping an endpoint that discloses a secret.
-say "13. the full negative-case suite against the Motoko canister"
+say "14. the full negative-case suite against the Motoko canister"
 authorise_e2e "$MO_CANISTER"
 npm --prefix seed run --silent e2e -- --canister "$MO_CID" --host "$HOST" --source pocketic
 
