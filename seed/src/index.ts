@@ -1,31 +1,22 @@
 /**
- * Encrypts a secret for a canister, and prints the argument that sends it.
+ * Encrypts a secret for a canister and writes the Candid argument that sends it.
  *
- * Two steps, and the first is the one that matters:
+ *   1. Derive the canister's public key OFFLINE — a master public key shipped in
+ *      the vetKeys library, plus the canister id, plus the context. Pure
+ *      arithmetic: no network call, nothing to trust.
+ *   2. Encrypt the secret to it.
  *
- *   1. Derive the canister's public key OFFLINE. Start from a master public key
- *      shipped in the vetKeys library, mix in the canister id, mix in the
- *      context. Pure arithmetic — no network call, nothing to trust.
- *   2. Encrypt the secret to that key.
+ * Then it stops, because sending is a separate concern with a separate
+ * requirement. Nothing here needs your identity: no key of yours goes into a
+ * ciphertext, so anyone can produce one for this canister and only the canister
+ * can open it. The call that follows is what needs a signature, from a
+ * controller. `scripts/seal` runs both steps.
  *
- * Then it stops. Sending the result is an ordinary canister call, and icp-cli
- * already knows how to make one:
+ * Run it twice and you get different bytes — IBE is randomised — but both open
+ * to the same secret.
  *
- *   DUMMY_SECRET=super-secret-value npm run seal -- --canister <id> --out /tmp/arg.did
- *   icp canister call dummy-secret-rust set_dummy_secret --args-file /tmp/arg.did -e local
- *
- * That split is deliberate. **Nothing here needs your identity.** Deriving a
- * public key and encrypting to it are pure computation: no key of yours goes in,
- * so anyone can produce a valid ciphertext for this canister. (Each one differs,
- * because IBE is randomised — but they all open to the same secret.)
- *
- * Only the call needs a signature, and what it needs is a *controller of the
- * canister*: any identity that controls it, from any client. Using icp-cli is
- * simply convenient, because you already have it and it already holds one. So
- * no private key is ever exported to a file for this PoC to work.
- *
- * The value is read from the environment, never from argv: argv is visible to
- * anyone who can run `ps`, lands in shell history, and is echoed into CI logs.
+ * The value comes from the environment, never argv: argv is visible to anyone
+ * who can run `ps`, lands in shell history, and is echoed into CI logs.
  */
 
 import { Principal } from "@icp-sdk/core/principal";
@@ -71,8 +62,11 @@ Encrypt a secret for a canister, and print the call argument.
                     NOT inferable from the key name: both networks have a
                     key_1, backed by different master keys.
 
-Then send it as a controller of the canister — icp-cli already holds an
-identity, so there is nothing to export:
+Then send it as a controller of the canister. scripts/seal does both steps:
+
+  DUMMY_SECRET=<value> ./scripts/seal dummy-secret-rust
+
+Or by hand:
 
   icp canister call <canister> set_dummy_secret --args-file <path> -e local
 `.trim();

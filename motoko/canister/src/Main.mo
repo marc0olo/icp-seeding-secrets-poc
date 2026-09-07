@@ -4,7 +4,7 @@
 /// same seeding script drives either one. It decrypts using this repo's
 /// **experimental, unaudited** BLS12-381 implementation — see `../README.md`.
 ///
-///   setDummySecret(ciphertext)  ask the subnet for our private key, decrypt
+///   setDummySecret(ciphertext)  have our private key derived, then decrypt
 ///   getDummySecret()            hand the plaintext back so you can see it worked
 ///
 /// One file on purpose: the point of this PoC is that a person can read it

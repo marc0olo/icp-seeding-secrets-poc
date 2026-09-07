@@ -19,7 +19,7 @@ path is meant to be read start to finish:
 | --- | --- |
 | [`rust/canister/src/lib.rs`](./rust/canister/src/lib.rs) | 159 lines |
 | [`motoko/canister/src/Main.mo`](./motoko/canister/src/Main.mo) | 173 lines |
-| [`seed/src/index.ts`](./seed/src/index.ts)                     | 165 lines |
+| [`seed/src/index.ts`](./seed/src/index.ts)                     | 159 lines |
 
 > A fuller version of this — a proposed standard interface, subnet preflight
 > checks, rotation, key-diffing, an HTTPS-outcall example, and the reasoning
@@ -40,16 +40,19 @@ private either — `raw_rand` is derived from the round's random tape, a thresho
 signature the subnet produces and every node holds. There is nowhere to put a
 private key that the subnet cannot see.
 
-**vetKD supplies the missing half.** The subnet collectively holds a master
-secret, split across its nodes so no single node has it. From that:
+**vetKD supplies the missing half.** Subnets that hold a vetKD key hold a master
+secret, split across their nodes so no single node has it. From that:
 
 - **anyone** can compute, offline, the _public_ key for a given (canister,
   context) pair — no network call, no permission;
-- **only that canister** can ask the subnet to reconstruct the matching private
-  key, via `vetkd_derive_key`, with each node contributing a share.
+- **only that canister** can have the matching private key reconstructed, by
+  calling `vetkd_derive_key` on the management canister.
 
 That is a real keypair for a canister, which is the thing that did not exist
-before.
+before. The call is routed like any other chain-key request, to a subnet enabled
+for that key — which need not be the calling canister's own. What binds the key
+to *your* canister is not which subnet serves it, but that the derivation takes
+the **caller's** canister id as an input.
 
 ## The flow
 
@@ -93,14 +96,12 @@ the canister can open it. The call is what needs a signature, from a controller.
 ## What the canister actually receives
 
 Not a key. An `EncryptedVetKey` — three curve points — which it unwraps itself.
-Three things are worth knowing about that, because none is obvious from the
-call.
+Three things about that are not obvious from the call.
 
-**The vetKey is a BLS signature.** This is the piece that makes the rest make
-sense. The derived public key is an IBE *master* public key, and the private key
-for an identity is the **signature over that identity** under the matching
-secret. "Derive a key for this identity" and "sign this identity" are the same
-operation.
+**The vetKey is a BLS signature**, and the rest follows from that. The derived
+public key is an IBE *master* public key, and the private key for an identity is
+the **signature over that identity** under the matching secret. "Derive a key for
+this identity" and "sign this identity" are the same operation.
 
 **It arrives encrypted because it can never exist in the clear.** A reply travels
 through replicated state: every node of the receiving subnet sees it, and it is
@@ -223,11 +224,9 @@ This PoC does not check whether it is on such a subnet. A real deployment must.
 
 **Whoever deploys is the controller**, and both endpoints accept only the
 controller. Nothing here creates or exports an identity — any client holding a
-controller identity can make the call, and `icp-cli` already holds one. One
-caveat: on a fresh machine with no identity configured, that is the *anonymous*
-principal, which deploys fine and so becomes the controller — but the check is
-then vacuous, because anyone can call as anonymous. Harmless for a local run;
-not a deployment posture.
+controller identity can make the call. On a machine with none configured that is
+the *anonymous* principal, which deploys fine but makes the check vacuous, since
+anyone can call as anonymous.
 
 **Also does not protect against the controller.** They can install code that
 decrypts the secret — vetKD binds the key to the _canister id_, not the module
