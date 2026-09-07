@@ -1,6 +1,6 @@
 # Seeding a canister with a secret, via vetKeys
 
-A minimal proof of concept: get a secret — an API key, a token, a private key,
+A minimal proof of concept: get secrets — an API key, a token, a private key,
 anything — into a **deployed** canister without the plaintext ever appearing in
 an ingress message, a manifest, a shell history, or a CI log.
 
@@ -9,7 +9,7 @@ in an ordinary update call, and only the target canister can recover the
 plaintext.
 
 ```bash
-DUMMY_SECRET=super-secret-value ./scripts/seal dummy-secret-rust
+DUMMY_SECRET=super-secret-value ./scripts/seal dummy-secret-rust api-token
 ```
 
 Two endpoints, two implementations of them, and one script. Everything on the
@@ -17,9 +17,9 @@ path is meant to be read start to finish:
 
 | file | size |
 | --- | --- |
-| [`rust/canister/src/lib.rs`](./rust/canister/src/lib.rs) | 159 lines |
-| [`motoko/canister/src/Main.mo`](./motoko/canister/src/Main.mo) | 173 lines |
-| [`seed/src/index.ts`](./seed/src/index.ts)                     | 159 lines |
+| [`rust/canister/src/lib.rs`](./rust/canister/src/lib.rs) | 194 lines |
+| [`motoko/canister/src/Main.mo`](./motoko/canister/src/Main.mo) | 202 lines |
+| [`seed/src/index.ts`](./seed/src/index.ts)                     | 164 lines |
 
 > A fuller version of this — a proposed standard interface, subnet preflight
 > checks, rotation, key-diffing, an HTTPS-outcall example, and the reasoning
@@ -71,7 +71,7 @@ sequenceDiagram
     Script->>Script: 2. encrypt the secret to it
     Script-->>Dev: the ciphertext, as a call argument
 
-    Dev->>Can: 3. set_dummy_secret(ciphertext)
+    Dev->>Can: 3. set_dummy_secret(name, ciphertext)
     Note over Dev,Can: an ordinary update call — opaque to<br/>boundary nodes, and bound to THIS canister id
     Can->>Can: is_controller(caller)?
 
@@ -130,8 +130,8 @@ c3 = vetKey + tpk·r   the key, blinded      (tpk = g1·tsk)
                    = (vetKey + g1·tsk·r) − g1·r·tsk
                    = vetKey                     the blinding cancels exactly
 
-3. verify        e(k, -g2) · e(H(dpk ‖ SECRET_NAME), dpk) == 1
-                 k really is a BLS signature over SECRET_NAME under dpk
+3. verify        e(k, -g2) · e(H(dpk ‖ KEY_LABEL), dpk) == 1
+                 k really is a BLS signature over KEY_LABEL under dpk
 ```
 
 Step 3 is the one that matters. Without it the canister accepts whatever the
@@ -143,6 +143,33 @@ recovering the plaintext it recomputes the scalar the ciphertext commits to and
 checks it matches, so a wrong key gives an error rather than plausible-looking
 garbage.
 
+## Storing more than one secret
+
+Costs exactly one derivation, no matter how many. Every secret is sealed to the
+same **label** — `KEY_LABEL`, the IBE identity — and one derived key opens every
+ciphertext sealed to it. The per-secret names are map keys in the canister's own
+storage; they are not part of any derivation and never reach vetKD.
+
+```text
+caller  = your canister id      the replica fills this in; cannot be forged
+context = "dummy-secret-poc"    your namespace
+label   = "dummy-secret"        one key, derived once and cached
+
+   ├── secrets["api-token"]     ciphertexts, all sealed to that one key
+   └── secrets["db-password"]
+```
+
+Giving each secret its own label would cost a separate `vetkd_derive_key` — 26
+billion cycles each — and buy nothing, because there is no privilege boundary
+inside a canister to enforce: the code can derive any label's key whenever it
+likes. Distinct labels earn their cost when the *recipients* differ, as in a
+per-user design where one user's key must not open another's data.
+
+The key is cached after first use. It is safe to hold: derivation is
+deterministic in `(caller, context, label, key_id)`, none of which depends on the
+secrets, so the cache can never go stale. Without it every write would pay a
+derivation and a round through consensus for a key that never changes.
+
 ## Try it
 
 Needs [icp-cli](https://github.com/dfinity/icp-cli), a Rust toolchain with the
@@ -152,28 +179,30 @@ Needs [icp-cli](https://github.com/dfinity/icp-cli), a Rust toolchain with the
 ./scripts/local-test.sh
 ```
 
-That starts a local network, deploys both canisters, seals a secret into each,
-reads it back, and checks it matches. To do it by hand:
+That starts a local network, deploys both canisters, seals two secrets into
+each, reads them back, and checks they match. To do it by hand:
 
 ```bash
 icp network start local --background
 icp deploy -e local --yes
 
-DUMMY_SECRET=super-secret-value ./scripts/seal dummy-secret-rust
+DUMMY_SECRET=super-secret-value ./scripts/seal dummy-secret-rust api-token
+DUMMY_SECRET=another-value      ./scripts/seal dummy-secret-rust db-password
 
-icp canister call dummy-secret-rust get_dummy_secret '()' -e local
+icp canister call dummy-secret-rust get_dummy_secret '("api-token")' -e local
 # (variant { Ok = opt "super-secret-value" })
 ```
 
-`scripts/seal` is a wrapper over two steps that are worth seeing apart, because
-only one of them involves you:
+The second seal costs no derivation — the canister cached the key from the
+first. `scripts/seal` wraps two steps that are worth seeing apart, because only
+one of them involves you:
 
 ```bash
 CID=$(icp canister status dummy-secret-rust -e local -i)
 
 # 1. encrypt — offline, and with no identity involved
 DUMMY_SECRET=super-secret-value npm --prefix seed run seal -- \
-  --canister "$CID" --out /tmp/arg.did
+  --canister "$CID" --name api-token --out /tmp/arg.did
 
 # 2. send it — an ordinary call, made by a controller of the canister
 icp canister call dummy-secret-rust set_dummy_secret --args-file /tmp/arg.did -e local

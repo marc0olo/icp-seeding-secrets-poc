@@ -57,6 +57,9 @@ Encrypt a secret for a canister, and print the call argument.
   DUMMY_SECRET=<value> npm run seal -- --canister <id> [options]
 
   --canister <id>   Target canister id.
+  --name <name>     Which secret to store it under. Default dummy-secret.
+                    A map key in the canister — it is NOT part of any key
+                    derivation and never reaches vetKD.
   --out <path>      Write the Candid argument here instead of stdout.
   --key-name <n>    vetKD key. Default key_1
   --source <which>  mainnet | pocketic. Default pocketic.
@@ -106,10 +109,10 @@ function derivePublicKey(source: string, keyName: string, canisterId: Principal)
   return master.deriveCanisterKey(canisterId.toUint8Array()).deriveSubKey(CONTEXT);
 }
 
-/** Candid text for a blob: every byte escaped, so quoting can never surprise. */
-function candidBlob(bytes: Uint8Array): string {
+/** Candid text for (name, blob): every byte escaped, so quoting cannot surprise. */
+function candidArgs(name: string, bytes: Uint8Array): string {
   const escaped = Array.from(bytes, (b) => `\\${b.toString(16).padStart(2, "0")}`).join("");
-  return `(blob "${escaped}")`;
+  return `("${name}", blob "${escaped}")`;
 }
 
 function main() {
@@ -122,6 +125,7 @@ function main() {
   const keyName = arg("--key-name", "key_1");
   const source = arg("--source", "pocketic");
   const out = arg("--out", "");
+  const name = arg("--name", "dummy-secret");
 
   const secret = process.env.DUMMY_SECRET;
   if (!secret) {
@@ -145,12 +149,12 @@ function main() {
     IbeSeed.random(),
   ).serialize();
 
-  const candid = candidBlob(ciphertext);
+  const candid = candidArgs(name, ciphertext);
   if (out) {
     writeFileSync(out, candid);
     console.error(
       `derived ${source}:${keyName} key for ${canisterId.toText()} offline, ` +
-        `encrypted ${secret.length} bytes -> ${ciphertext.length}, wrote ${out}`,
+        `encrypted ${secret.length} bytes -> ${ciphertext.length} as "${name}", wrote ${out}`,
     );
   } else {
     console.log(candid);

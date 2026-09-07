@@ -1,9 +1,9 @@
-//! A canister that receives one secret, encrypted with vetKD IBE.
+//! A canister that receives secrets, encrypted with vetKD IBE.
 //!
 //! The whole mechanism, in two endpoints:
 //!
-//!   set_dummy_secret(ciphertext)  have our private key derived, then decrypt
-//!   get_dummy_secret()            hand the plaintext back so you can see it worked
+//!   set_dummy_secret(name, ciphertext)  decrypt and store under that name
+//!   get_dummy_secret(name)              hand the plaintext back so you can see it worked
 //!
 //! The client encrypts to a public key it derives **offline** — no network call,
 //! nothing to trust — and only this canister can have the matching private key
@@ -14,42 +14,56 @@ use ic_cdk_management_canister::{
     raw_rand, vetkd_derive_key, vetkd_public_key, VetKDCurve, VetKDDeriveKeyArgs, VetKDKeyId,
     VetKDPublicKeyArgs,
 };
-use ic_vetkeys::{DerivedPublicKey, EncryptedVetKey, IbeCiphertext, TransportSecretKey};
+use ic_vetkeys::{DerivedPublicKey, EncryptedVetKey, IbeCiphertext, TransportSecretKey, VetKey};
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 
 /// The vetKD **context**: what selects the *keypair*.
 ///
-/// The derivation is master key -> canister id -> context, so changing this byte
-/// for byte gives this canister an entirely different keypair. One context per
-/// purpose: a canister using vetKD for two unrelated things gives each its own,
-/// and neither can open the other's ciphertext.
+/// The derivation is caller -> context, so changing this byte for byte gives
+/// this canister an entirely different keypair. One context per purpose: a
+/// canister using vetKD for two unrelated things gives each its own, and neither
+/// can open the other's ciphertext.
 const CONTEXT: &[u8] = b"dummy-secret-poc";
 
-/// Which secret this is: a label, not a key and not the value.
+/// The label under which every secret here is sealed — in vetKD terms the **IBE
+/// identity**, and the `input` to `vetkd_derive_key`.
 ///
-/// In vetKD terms it is the **IBE identity**, and it goes out as the `input` to
-/// `vetkd_derive_key`. The context fixes a keypair; this picks one of the
-/// infinitely many keys under it. The client seals to the same label, and a
-/// different one would derive a different key that cannot open the ciphertext.
+/// Not a key, and not a secret's name. `(caller, context)` fixes a keypair; this
+/// picks one of the infinitely many keys under it, and one key opens every
+/// ciphertext sealed to it. That is why storing many secrets costs exactly one
+/// derivation: they all share this label, and the per-secret names below are
+/// just map keys that never reach vetKD.
 ///
-/// One label here, because there is one secret. Holding several, you could give
-/// each its own — but inside a single canister that buys nothing and costs real
-/// money: each distinct label is a separate `vetkd_derive_key` at 26 billion
-/// cycles, and there is no privilege boundary to enforce, since this canister's
-/// code can derive any label's key whenever it likes.
-const SECRET_NAME: &[u8] = b"dummy-secret";
+/// Giving each secret its own label would cost a separate `vetkd_derive_key` —
+/// 26 billion cycles each — and buy nothing, because there is no privilege
+/// boundary inside a canister to enforce: this code can derive any label's key
+/// whenever it likes.
+const KEY_LABEL: &[u8] = b"dummy-secret";
 
 /// The vetKD key to use. `key_1` exists on mainnet and on a local network, so
-/// one constant covers both. A canister that needed another would
-/// change this line — deliberately not an install argument, because `#[init]`
-/// does not re-run on upgrade and an empty key name fails with a message that
-/// does not point at the cause.
+/// one constant covers both. Deliberately not an install argument, because
+/// `#[init]` does not re-run on upgrade and an empty key name fails with a
+/// message that does not point at the cause.
 const KEY_NAME: &str = "key_1";
 
 thread_local! {
-    /// The decrypted secret. Deliberately not persisted across upgrades: a PoC
-    /// should make you re-seal and watch it work again.
-    static SECRET: RefCell<Option<String>> = const { RefCell::new(None) };
+    /// The derived private key, cached after the first use.
+    ///
+    /// Safe to hold forever: derivation is deterministic in
+    /// `(caller, context, input, key_id)`, none of which depends on the secrets,
+    /// so this can never go stale. Without it every write would pay a
+    /// `vetkd_derive_key` — 26 billion cycles and a round through consensus —
+    /// for a key that never changes.
+    ///
+    /// Lost on upgrade, because this is the heap and nothing serialises it; the
+    /// first write afterwards re-derives. The Motoko canister keeps its cache
+    /// across upgrades, since orthogonal persistence gives that for free.
+    static VETKEY: RefCell<Option<VetKey>> = const { RefCell::new(None) };
+
+    /// The decrypted secrets, by name. The name is bookkeeping only — it is not
+    /// part of any derivation and never leaves this canister.
+    static SECRETS: RefCell<BTreeMap<String, String>> = const { RefCell::new(BTreeMap::new()) };
 }
 
 fn key_id() -> VetKDKeyId {
@@ -59,36 +73,37 @@ fn key_id() -> VetKDKeyId {
     }
 }
 
-/// Stores a secret that was encrypted to this canister's public key.
+/// This canister's private key for `KEY_LABEL`, deriving it once.
 ///
-/// Everything interesting happens here. The canister does not hold a private
-/// key — it has nowhere to hide one, since its whole memory is replicated — so
-/// it has one reconstructed on demand, uses it once, and lets it go.
-#[update]
-async fn set_dummy_secret(ciphertext: Vec<u8>) -> Result<(), String> {
-    // Whoever seeds the secret should be whoever controls the canister.
-    // Ungated, anyone could overwrite it with a value of their choosing.
-    if !ic_cdk::api::is_controller(&ic_cdk::api::msg_caller()) {
-        return Err("only a controller may set the secret".to_string());
+/// Two concurrent callers on a cold cache will both derive. That is accepted
+/// rather than prevented: derivation is deterministic, so both get the identical
+/// key and the only cost is a duplicate fee. Rejecting the second is bad UX on a
+/// write path, and making it wait is not implementable — they are separate
+/// message executions and neither can await the other.
+async fn vetkey() -> Result<VetKey, String> {
+    // Read and drop the borrow before any await; holding one across a call
+    // would panic when the canister re-enters.
+    if let Some(cached) = VETKEY.with_borrow(|v| v.clone()) {
+        return Ok(cached);
     }
 
-    // 1. A single-use transport keypair. The private key never leaves here; the
-    //    public half goes out with the request.
+    // 1. A single-use transport keypair. The private half never leaves here.
     //
     //    This is what keeps the vetKey off the wire and out of replicated state:
     //    the nodes do not reconstruct it and then encrypt it, they compute their
-    //    shares ALREADY encrypted under this public key. The plaintext key
+    //    shares ALREADY encrypted under the public half. The plaintext key
     //    therefore exists nowhere until step 3 unwraps it, here.
     let seed = raw_rand().await.map_err(|e| format!("raw_rand: {e}"))?;
     let tsk = TransportSecretKey::from_seed(seed).map_err(|e| format!("transport key: {e}"))?;
 
-    // 2. Ask for the private key belonging to (this canister, CONTEXT, SECRET_NAME).
+    // 2. Ask for the private key belonging to (this canister, CONTEXT, KEY_LABEL).
     //    The management canister routes this to a subnet holding the key — not
     //    necessarily our own — where each node contributes a share and none ever
-    //    holds the whole key. What binds the result to us is the caller's
-    //    canister id being an input to the derivation.
+    //    holds the whole key. What binds the result to us is that the caller's
+    //    canister id is an input to the derivation, and `vetkd_derive_key` has no
+    //    field for naming a different one.
     let reply = vetkd_derive_key(&VetKDDeriveKeyArgs {
-        input: SECRET_NAME.to_vec(),
+        input: KEY_LABEL.to_vec(),
         context: CONTEXT.to_vec(),
         key_id: key_id(),
         transport_public_key: tsk.public_key(),
@@ -100,7 +115,7 @@ async fn set_dummy_secret(ciphertext: Vec<u8>) -> Result<(), String> {
     //
     //    `decrypt_and_verify` does three things: rejects a malformed reply whose
     //    two halves disagree, strips the transport blinding, and then verifies
-    //    the result is a valid BLS signature over SECRET_NAME under `dpk`. That
+    //    the result is a valid BLS signature over KEY_LABEL under `dpk`. That
     //    last step is what makes a forged reply useless.
     //
     //    It needs the matching public key, and asking the same place we just
@@ -121,22 +136,42 @@ async fn set_dummy_secret(ciphertext: Vec<u8>) -> Result<(), String> {
 
     let vetkey = EncryptedVetKey::deserialize(&reply.encrypted_key)
         .map_err(|e| format!("bad encrypted key: {e}"))?
-        .decrypt_and_verify(&tsk, &dpk, SECRET_NAME)
+        .decrypt_and_verify(&tsk, &dpk, KEY_LABEL)
         .map_err(|e| format!("the subnet returned a key we cannot verify: {e}"))?;
 
-    // 4. Decrypt. Failing here means the ciphertext was sealed to a different
-    //    key — wrong canister id, wrong context, or the wrong master key table.
+    VETKEY.with_borrow_mut(|v| *v = Some(vetkey.clone()));
+    Ok(vetkey)
+}
+
+/// Stores a secret that was encrypted to this canister's public key.
+///
+/// Decrypting here rather than storing the blob is deliberate: a ciphertext
+/// sealed under the wrong context, label or key fails now, in front of whoever
+/// is seeding it, instead of being accepted and found unreadable later.
+///
+/// Storing several secrets costs one derivation in total, not one each — they
+/// all share `KEY_LABEL`, so the cached key opens every one of them.
+#[update]
+async fn set_dummy_secret(name: String, ciphertext: Vec<u8>) -> Result<(), String> {
+    // Whoever seeds a secret should be whoever controls the canister.
+    // Ungated, anyone could overwrite one with a value of their choosing.
+    if !ic_cdk::api::is_controller(&ic_cdk::api::msg_caller()) {
+        return Err("only a controller may set a secret".to_string());
+    }
+
+    let vetkey = vetkey().await?;
+
     let plaintext = IbeCiphertext::deserialize(&ciphertext)
         .map_err(|e| format!("not an IBE ciphertext: {e}"))?
         .decrypt(&vetkey)
         .map_err(|_| "ciphertext was not sealed to this canister's key".to_string())?;
 
     let text = String::from_utf8(plaintext).map_err(|_| "secret is not UTF-8".to_string())?;
-    SECRET.set(Some(text));
+    SECRETS.with_borrow_mut(|s| s.insert(name, text));
     Ok(())
 }
 
-/// Returns the decrypted secret **in the clear**.
+/// Returns a decrypted secret **in the clear**.
 ///
 /// # This exists only so you can see that decryption worked
 ///
@@ -149,11 +184,11 @@ async fn set_dummy_secret(ciphertext: Vec<u8>) -> Result<(), String> {
 /// code that reads the secret anyway) but keeps the PoC from being an open
 /// oracle while it is deployed.
 #[query]
-fn get_dummy_secret() -> Result<Option<String>, String> {
+fn get_dummy_secret(name: String) -> Result<Option<String>, String> {
     if !ic_cdk::api::is_controller(&ic_cdk::api::msg_caller()) {
-        return Err("only a controller may read the secret".to_string());
+        return Err("only a controller may read a secret".to_string());
     }
-    Ok(SECRET.with_borrow(|s| s.clone()))
+    Ok(SECRETS.with_borrow(|s| s.get(&name).cloned()))
 }
 
 ic_cdk::export_candid!();

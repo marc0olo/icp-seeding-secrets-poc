@@ -3,7 +3,8 @@
 # Encrypt a secret for a canister and send it.
 #
 #   DUMMY_SECRET=super-secret-value ./scripts/seal dummy-secret-rust
-#   DUMMY_SECRET=super-secret-value ./scripts/seal dummy-secret-rust ic
+#   DUMMY_SECRET=super-secret-value ./scripts/seal dummy-secret-rust api-token
+#   DUMMY_SECRET=super-secret-value ./scripts/seal dummy-secret-rust api-token ic
 #
 # Two steps behind one command, and they are worth knowing apart:
 #
@@ -19,9 +20,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 CANISTER=${1:-}
-ENV=${2:-local}
+NAME=${2:-dummy-secret}
+ENV=${3:-local}
 if [ -z "$CANISTER" ] || [ -z "${DUMMY_SECRET:-}" ]; then
-  echo "usage: DUMMY_SECRET=<value> $0 <canister-name> [environment]" >&2
+  echo "usage: DUMMY_SECRET=<value> $0 <canister-name> [secret-name] [environment]" >&2
   echo "       e.g. DUMMY_SECRET=super-secret-value $0 dummy-secret-rust" >&2
   exit 1
 fi
@@ -41,5 +43,6 @@ trap 'rm -f "$ARG"' EXIT
 ( cd seed && [ -d node_modules ] || npm install --silent >/dev/null 2>&1 )
 
 CID=$(icp canister status "$CANISTER" -e "$ENV" -i)
-npm --prefix seed run --silent seal -- --canister "$CID" --source "$SOURCE" --out "$ARG"
+npm --prefix seed run --silent seal -- \
+  --canister "$CID" --source "$SOURCE" --name "$NAME" --out "$ARG"
 icp canister call "$CANISTER" "$METHOD" --args-file "$ARG" -e "$ENV"

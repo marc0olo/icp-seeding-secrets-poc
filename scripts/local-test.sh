@@ -39,22 +39,36 @@ icp deploy -e "$ENV" --yes >/dev/null
 
 # Everything below runs identically against both canisters. That is the point:
 # one wire format, one client, two implementations.
+#
+# Two secrets, seeded independently, to show what the shared key label buys: the
+# canister derives its vetKey once and that one key opens both. Adding a third
+# would cost nothing further.
 for canister in dummy-secret-rust dummy-secret-motoko; do
-  # Deliberately the same command the README tells you to run, so the
-  # documented path is the tested one.
-  say "2. seal a secret into $canister"
-  DUMMY_SECRET="$SECRET" ./scripts/seal "$canister" "$ENV" >/dev/null
-
-  say "3. read it back out of $canister"
   GETTER=get_dummy_secret
   [ "$canister" = dummy-secret-motoko ] && GETTER=getDummySecret
-  GOT=$(icp canister call "$canister" "$GETTER" '()' -e "$ENV" 2>/dev/null \
-    | tr -d '\n' | sed -n 's/.*opt "\([^"]*\)".*/\1/p')
 
-  [ "$GOT" = "$SECRET" ] || fail "$canister returned '$GOT', expected '$SECRET'"
-  echo "  sent:     $SECRET"
-  echo "  returned: $GOT"
-  echo "  ok — the canister decrypted exactly what the client encrypted"
+  for name in api-token db-password; do
+    # Deliberately the same command the README tells you to run, so the
+    # documented path is the tested one.
+    say "2. seal '$name' into $canister"
+    DUMMY_SECRET="$SECRET-$name" ./scripts/seal "$canister" "$name" "$ENV" >/dev/null
+
+    say "3. read '$name' back out of $canister"
+    GOT=$(icp canister call "$canister" "$GETTER" "(\"$name\")" -e "$ENV" 2>/dev/null \
+      | tr -d '\n' | sed -n 's/.*opt "\([^"]*\)".*/\1/p')
+
+    [ "$GOT" = "$SECRET-$name" ] || fail "$canister returned '$GOT', expected '$SECRET-$name'"
+    echo "  sent:     $SECRET-$name"
+    echo "  returned: $GOT"
+    echo "  ok — the canister decrypted exactly what the client encrypted"
+  done
+
+  # Both were sealed to the same label, so the second used the cached key.
+  say "4. $canister still holds the first secret after the second was set"
+  FIRST=$(icp canister call "$canister" "$GETTER" '("api-token")' -e "$ENV" 2>/dev/null \
+    | tr -d '\n' | sed -n 's/.*opt "\([^"]*\)".*/\1/p')
+  [ "$FIRST" = "$SECRET-api-token" ] || fail "$canister lost 'api-token': got '$FIRST'"
+  echo "  ok — two secrets, independently set, one derived key"
 done
 
 say "done"
