@@ -66,6 +66,12 @@ fn key_id() -> VetKDKeyId {
 /// it asks the subnet to reconstruct one, use it once, and lets it go.
 #[update]
 async fn set_dummy_secret(ciphertext: Vec<u8>) -> Result<(), String> {
+    // Whoever seeds the secret should be whoever controls the canister.
+    // Ungated, anyone could overwrite it with a value of their choosing.
+    if !ic_cdk::api::is_controller(&ic_cdk::api::msg_caller()) {
+        return Err("only a controller may set the secret".to_string());
+    }
+
     // 1. A single-use transport key, so the subnet's reply is encrypted to us
     //    rather than sent in the clear where every node could read it.
     let seed = raw_rand().await.map_err(|e| format!("raw_rand: {e}"))?;

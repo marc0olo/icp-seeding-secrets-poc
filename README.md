@@ -8,8 +8,11 @@ The client encrypts to a public key it derives **offline**, sends the ciphertext
 in an ordinary update call, and only the target canister can recover the
 plaintext.
 
-```
-DUMMY_SECRET=hunter2 npm run seal -- --canister <id>
+```bash
+# encrypt, offline — no identity needed
+DUMMY_SECRET=hunter2 npm run seal -- --canister <id> --out arg.did
+# send it, signed by the identity icp-cli already holds
+icp canister call <canister> set_dummy_secret --args-file arg.did
 ```
 
 Two endpoints, two implementations of them, and one script. Everything on the
@@ -17,9 +20,9 @@ path is meant to be read start to finish:
 
 |                                                                |           |
 | -------------------------------------------------------------- | --------- |
-| [`rust/canister/src/lib.rs`](./rust/canister/src/lib.rs)       | 124 lines |
-| [`motoko/canister/src/Main.mo`](./motoko/canister/src/Main.mo) | 161 lines |
-| [`seed/src/index.ts`](./seed/src/index.ts)                     | 170 lines |
+| [`rust/canister/src/lib.rs`](./rust/canister/src/lib.rs)       | 144 lines |
+| [`motoko/canister/src/Main.mo`](./motoko/canister/src/Main.mo) | 160 lines |
+| [`seed/src/index.ts`](./seed/src/index.ts)                     | 159 lines |
 
 > A fuller version of this — a proposed standard interface, subnet preflight
 > checks, rotation, key-diffing, an HTTPS-outcall example, and the reasoning
@@ -58,16 +61,20 @@ sequenceDiagram
     autonumber
     actor Dev as You
     participant Script as seed/src/index.ts
+    participant Cli as icp-cli
     participant Can as the canister
     participant Subnet as the subnet
 
     Note over Script: 1. derive the public key OFFLINE
     Script->>Script: master key (shipped) + canister id + context
-    Note over Script: no network call, nothing to trust
+    Note over Script: no network call, no identity,<br/>nothing to trust
 
     Script->>Script: 2. encrypt the secret to it
-    Script->>Can: 3. set_dummy_secret(ciphertext)
-    Note over Script,Can: opaque to boundary nodes,<br/>and bound to THIS canister id
+    Script-->>Dev: the ciphertext, as a call argument
+
+    Dev->>Cli: 3. icp canister call set_dummy_secret
+    Cli->>Can: signed with the identity icp-cli already holds
+    Note over Cli,Can: opaque to boundary nodes,<br/>and bound to THIS canister id
 
     Can->>Subnet: raw_rand, then vetkd_derive_key
     Note over Can,Subnet: each node contributes a share —<br/>the reply is encrypted to a<br/>single-use transport key
@@ -76,10 +83,16 @@ sequenceDiagram
     Can-->>Dev: Ok
 ```
 
-The step that carries the weight is the first one. The client derives the key
-**itself**, from a master public key shipped in the vetKeys library. It never
-asks the canister what to encrypt to — if it did, anyone able to tamper with
-that reply could hand it a key they control.
+Two things worth noticing. The client derives the key **itself**, from a master
+public key shipped in the vetKeys library — it never asks the canister what to
+encrypt to, because anyone able to tamper with that reply could hand it a key
+they control.
+
+And **the encrypting half needs no identity at all.** Deriving a public key and
+encrypting to it are pure computation. Only the call needs a signature, and
+icp-cli makes it with the identity it already holds — so nothing here asks you
+to export a private key to a file.
+
 
 ## Try it
 
@@ -98,17 +111,20 @@ icp network start local --background
 icp deploy -e local --yes
 
 CID=$(icp canister status dummy-secret-rust -e local --json | jq -r .id)
-icp identity export "$(icp identity default)" > /tmp/id.pem
 
-SEAL_IDENTITY_PEM=/tmp/id.pem DUMMY_SECRET=hunter2 \
-  npm --prefix seed run seal -- --canister "$CID" --source pocketic
+# encrypt — offline, and with no identity involved
+DUMMY_SECRET=hunter2 npm --prefix seed run seal -- \
+  --canister "$CID" --source pocketic --out /tmp/arg.did
+
+# send it — icp-cli signs with the identity it already has
+icp canister call dummy-secret-rust set_dummy_secret --args-file /tmp/arg.did -e local
 
 icp canister call dummy-secret-rust get_dummy_secret '()' -e local
 # (variant { Ok = opt "hunter2" })
 ```
 
-For the Motoko canister, add `--motoko` to the seal command and call
-`getDummySecret` — each follows its own language's naming convention.
+For the Motoko canister, call `setDummySecret` and `getDummySecret` — each
+follows its own language's naming convention.
 
 ### `--source` is not optional, and not guessable
 

@@ -70,7 +70,11 @@ persistent actor DummySecret {
   /// The canister holds no private key — it has nowhere to hide one, since its
   /// whole memory is replicated — so it asks the subnet to reconstruct one, uses
   /// it once, and lets it go.
-  public func setDummySecret(ciphertext : Blob) : async Result<()> {
+  public shared ({ caller }) func setDummySecret(ciphertext : Blob) : async Result<()> {
+    // Whoever seeds the secret should be whoever controls the canister.
+    // Ungated, anyone could overwrite it with a value of their choosing.
+    if (not caller.isController()) { return #Err("only a controller may set the secret") };
+
     // 1. A single-use transport key, so the subnet's reply comes back encrypted
     //    to us rather than readable by every node that helped produce it.
     let seed = try { await ic.raw_rand() } catch (e) {

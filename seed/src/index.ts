@@ -1,24 +1,28 @@
 /**
- * Seals a secret for a canister and sends it.
+ * Encrypts a secret for a canister, and prints the argument that sends it.
  *
- * Three steps, and the first is the one that matters:
+ * Two steps, and the first is the one that matters:
  *
  *   1. Derive the canister's public key OFFLINE. Start from a master public key
- *      shipped in this library, mix in the canister id, mix in the context.
- *      Pure arithmetic — no network call, nothing to trust.
+ *      shipped in the vetKeys library, mix in the canister id, mix in the
+ *      context. Pure arithmetic — no network call, nothing to trust.
  *   2. Encrypt the secret to that key.
- *   3. Send the ciphertext in an ordinary update call.
  *
- * Step 1 is why this is worth doing. The ciphertext can only be opened by a key
- * that the target canister, on its own subnet, can ask the subnet to
- * reconstruct. Nobody else can — not the boundary node that relays the call,
- * not whoever is reading the CI log.
+ * Then it stops. Sending the result is an ordinary canister call, and icp-cli
+ * already knows how to make one:
+ *
+ *   DUMMY_SECRET=hunter2 npm run seal -- --canister <id> --out /tmp/arg.did
+ *   icp canister call dummy-secret-rust set_dummy_secret --args-file /tmp/arg.did -e local
+ *
+ * That split is deliberate. **Nothing here needs your identity.** Deriving a
+ * public key and encrypting to it are pure computation; only the call needs a
+ * signature, and icp-cli makes it with the identity it already holds. So no
+ * private key is ever exported to a file for this PoC to work.
  *
  * The value is read from the environment, never from argv: argv is visible to
  * anyone who can run `ps`, lands in shell history, and is echoed into CI logs.
  */
 
-import { HttpAgent, Actor } from "@icp-sdk/core/agent";
 import { Principal } from "@icp-sdk/core/principal";
 import {
   IbeCiphertext,
@@ -28,33 +32,7 @@ import {
   MasterPublicKeyId,
   PocketIcMasterPublicKeyId,
 } from "@icp-sdk/vetkeys";
-
-import { IDL } from "@icp-sdk/core/candid";
-
-import { identityFromPemFile } from "./identity.js";
-
-/**
- * The canister interface, written out rather than generated.
- *
- * Two methods is small enough to read, and writing it here lets one script
- * drive both canisters: the Rust one exports `set_dummy_secret`, the Motoko one
- * `setDummySecret`, because each follows its language's convention. A generated
- * binding would be tied to one of them.
- *
- * `local-test.sh` calls both on every run, so a drift between this and either
- * canister fails immediately rather than silently.
- */
-const Result = IDL.Variant({ Ok: IDL.Null, Err: IDL.Text });
-const idlFactory = () =>
-  IDL.Service({
-    set_dummy_secret: IDL.Func([IDL.Vec(IDL.Nat8)], [Result], []),
-    setDummySecret: IDL.Func([IDL.Vec(IDL.Nat8)], [Result], []),
-  });
-
-interface Service {
-  set_dummy_secret: (ct: Uint8Array) => Promise<{ Ok: null } | { Err: string }>;
-  setDummySecret: (ct: Uint8Array) => Promise<{ Ok: null } | { Err: string }>;
-}
+import { writeFileSync } from "node:fs";
 
 /**
  * The two constants that must match the canister byte for byte.
@@ -77,20 +55,20 @@ const CONTEXT = new TextEncoder().encode("dummy-secret-poc");
 const IDENTITY = new TextEncoder().encode("dummy-secret");
 
 const USAGE = `
-Seal a secret and send it to the canister.
+Encrypt a secret for a canister, and print the call argument.
 
   DUMMY_SECRET=<value> npm run seal -- --canister <id> [options]
 
   --canister <id>   Target canister id.
-  --host <url>      Replica URL. Default http://127.0.0.1:8010
-  --pem <path>      Controller identity PEM. Default $SEAL_IDENTITY_PEM
-                    Produce one with: icp identity export <name> > id.pem
-  --motoko          Call setDummySecret instead of set_dummy_secret.
-                    The two canisters follow their own language's naming.
+  --out <path>      Write the Candid argument here instead of stdout.
   --key-name <n>    vetKD key. Default key_1
   --source <which>  mainnet | pocketic. Default pocketic.
                     NOT inferable from the key name: both networks have a
                     key_1, backed by different master keys.
+
+Then send it with icp-cli, which signs with the identity it already has:
+
+  icp canister call <canister> set_dummy_secret --args-file <path> -e local
 `.trim();
 
 function arg(flag: string, fallback?: string): string {
@@ -106,10 +84,11 @@ function arg(flag: string, fallback?: string): string {
 /**
  * Step 1: the canister's public key, computed here, offline.
  *
- * `--source` cannot be inferred from the key name. Mainnet and PocketIC each
- * have a key called `key_1` backed by a *different* master key — necessarily, a
- * local network cannot hold mainnet's master secret. Guess wrong and you get a
- * ciphertext nobody can ever open, with no error until the canister tries.
+ * `--source` cannot be inferred from the key name. Mainnet and a local network
+ * each have a key called `key_1` backed by a *different* master key —
+ * necessarily, since a local network cannot hold mainnet's master secret. Guess
+ * wrong and you get a ciphertext nobody can ever open, with no error until the
+ * canister tries.
  */
 function derivePublicKey(source: string, keyName: string, canisterId: Principal) {
   const master =
@@ -126,17 +105,22 @@ function derivePublicKey(source: string, keyName: string, canisterId: Principal)
   return master.deriveCanisterKey(canisterId.toUint8Array()).deriveSubKey(CONTEXT);
 }
 
-async function main() {
+/** Candid text for a blob: every byte escaped, so quoting can never surprise. */
+function candidBlob(bytes: Uint8Array): string {
+  const escaped = Array.from(bytes, (b) => `\\${b.toString(16).padStart(2, "0")}`).join("");
+  return `(blob "${escaped}")`;
+}
+
+function main() {
   if (process.argv.includes("--help")) {
     console.log(USAGE);
     return;
   }
 
   const canisterId = Principal.fromText(arg("--canister"));
-  const host = arg("--host", "http://127.0.0.1:8010");
   const keyName = arg("--key-name", "key_1");
   const source = arg("--source", "pocketic");
-  const pem = arg("--pem", process.env.SEAL_IDENTITY_PEM ?? "");
+  const out = arg("--out", "");
 
   const secret = process.env.DUMMY_SECRET;
   if (!secret) {
@@ -149,15 +133,8 @@ async function main() {
     process.exit(1);
   }
 
-  const agent = await HttpAgent.create({ host, identity: identityFromPemFile(pem) });
-  // A local replica has its own root key, which the agent has to be told.
-  if (!host.includes("icp-api.io") && !host.includes("ic0.app")) {
-    await agent.fetchRootKey();
-  }
-
-  // 1. offline
+  // 1. offline — no network call, no identity
   const publicKey = derivePublicKey(source, keyName, canisterId);
-  console.log(`derived ${source}:${keyName} key for ${canisterId.toText()} — no network call`);
 
   // 2. encrypt
   const ciphertext = IbeCiphertext.encrypt(
@@ -166,21 +143,17 @@ async function main() {
     new TextEncoder().encode(secret),
     IbeSeed.random(),
   ).serialize();
-  console.log(`encrypted ${secret.length} bytes -> ${ciphertext.length} bytes`);
 
-  // 3. send
-  const actor = Actor.createActor<Service>(idlFactory, { agent, canisterId });
-  const result = process.argv.includes("--motoko")
-    ? await actor.setDummySecret(ciphertext)
-    : await actor.set_dummy_secret(ciphertext);
-  if ("Err" in result) {
-    console.error(`the canister could not decrypt it: ${result.Err}`);
-    process.exit(1);
+  const candid = candidBlob(ciphertext);
+  if (out) {
+    writeFileSync(out, candid);
+    console.error(
+      `derived ${source}:${keyName} key for ${canisterId.toText()} offline, ` +
+        `encrypted ${secret.length} bytes -> ${ciphertext.length}, wrote ${out}`,
+    );
+  } else {
+    console.log(candid);
   }
-  console.log("sealed — the canister decrypted it and kept the plaintext");
 }
 
-main().catch((e) => {
-  console.error(`error: ${e instanceof Error ? e.message : String(e)}`);
-  process.exit(1);
-});
+main();
