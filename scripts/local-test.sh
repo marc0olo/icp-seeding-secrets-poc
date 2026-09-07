@@ -51,7 +51,7 @@ for canister in dummy-secret-rust dummy-secret-motoko; do
     # Deliberately the same command the README tells you to run, so the
     # documented path is the tested one.
     say "2. seal '$name' into $canister"
-    DUMMY_SECRET="$SECRET-$name" ./scripts/seal "$canister" "$name" "$ENV" >/dev/null
+    DUMMY_SECRET="$SECRET-$name" ./scripts/seal.sh "$canister" "$name" "$ENV" >/dev/null
 
     say "3. read '$name' back out of $canister"
     GOT=$(icp canister call "$canister" "$GETTER" "(\"$name\")" -e "$ENV" 2>/dev/null \

@@ -2,9 +2,8 @@
 #
 # Encrypt a secret for a canister and send it.
 #
-#   DUMMY_SECRET=super-secret-value ./scripts/seal dummy-secret-rust
-#   DUMMY_SECRET=super-secret-value ./scripts/seal dummy-secret-rust api-token
-#   DUMMY_SECRET=super-secret-value ./scripts/seal dummy-secret-rust api-token ic
+#   DUMMY_SECRET=super-secret-value ./scripts/seal.sh dummy-secret-rust api-token
+#   DUMMY_SECRET=super-secret-value ./scripts/seal.sh dummy-secret-rust api-token ic
 #
 # Two steps behind one command, and they are worth knowing apart:
 #
@@ -20,11 +19,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 CANISTER=${1:-}
-NAME=${2:-dummy-secret}
+NAME=${2:-}
 ENV=${3:-local}
-if [ -z "$CANISTER" ] || [ -z "${DUMMY_SECRET:-}" ]; then
-  echo "usage: DUMMY_SECRET=<value> $0 <canister-name> [secret-name] [environment]" >&2
-  echo "       e.g. DUMMY_SECRET=super-secret-value $0 dummy-secret-rust" >&2
+if [ -z "$CANISTER" ] || [ -z "$NAME" ] || [ -z "${DUMMY_SECRET:-}" ]; then
+  echo "usage: DUMMY_SECRET=<value> $0 <canister-name> <secret-name> [environment]" >&2
+  echo "       e.g. DUMMY_SECRET=super-secret-value $0 dummy-secret-rust api-token" >&2
   exit 1
 fi
 

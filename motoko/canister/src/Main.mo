@@ -48,7 +48,7 @@ persistent actor DummySecret {
   /// every ciphertext sealed to it. That is why storing many secrets costs
   /// exactly one derivation: they share this label, and the per-secret names
   /// below are map keys that never reach vetKD.
-  transient let KEY_LABEL : Blob = Text.encodeUtf8("dummy-secret");
+  transient let KEY_LABEL : Blob = Text.encodeUtf8("dummy-secrets");
 
   /// Turns 32 random bytes into a transport scalar. Nothing interoperates with
   /// this value — the subnet only ever sees the matching public key.
@@ -66,6 +66,11 @@ persistent actor DummySecret {
   ///
   /// Unlike the Rust canister's, this survives upgrades — orthogonal
   /// persistence gives that for free, so a redeploy costs no re-derivation.
+  ///
+  /// The one thing that DOES invalidate it is a code change: edit `CONTEXT` or
+  /// `KEY_LABEL` and this cache still holds the key for the old ones, silently,
+  /// until the canister is reinstalled. Nothing at runtime can go stale, but
+  /// that is not the same as nothing at all.
   var vetkey : ?G1.Affine = null;
 
   /// The decrypted secrets, by name. The name is bookkeeping only — it is not

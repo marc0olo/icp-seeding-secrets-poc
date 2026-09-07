@@ -39,7 +39,7 @@ const CONTEXT: &[u8] = b"dummy-secret-poc";
 /// 26 billion cycles each — and buy nothing, because there is no privilege
 /// boundary inside a canister to enforce: this code can derive any label's key
 /// whenever it likes.
-const KEY_LABEL: &[u8] = b"dummy-secret";
+const KEY_LABEL: &[u8] = b"dummy-secrets";
 
 /// The vetKD key to use. `key_1` exists on mainnet and on a local network, so
 /// one constant covers both. Deliberately not an install argument, because
@@ -58,7 +58,9 @@ thread_local! {
     ///
     /// Lost on upgrade, because this is the heap and nothing serialises it; the
     /// first write afterwards re-derives. The Motoko canister keeps its cache
-    /// across upgrades, since orthogonal persistence gives that for free.
+    /// across upgrades, since orthogonal persistence gives that for free — which
+    /// means editing `CONTEXT` or `KEY_LABEL` there needs a reinstall, not an
+    /// upgrade, or it keeps serving the key for the old ones.
     static VETKEY: RefCell<Option<VetKey>> = const { RefCell::new(None) };
 
     /// The decrypted secrets, by name. The name is bookkeeping only — it is not

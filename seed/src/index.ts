@@ -10,7 +10,7 @@
  * requirement. Nothing here needs your identity: no key of yours goes into a
  * ciphertext, so anyone can produce one for this canister and only the canister
  * can open it. The call that follows is what needs a signature, from a
- * controller. `scripts/seal` runs both steps.
+ * controller. `scripts/seal.sh` runs both steps.
  *
  * Run it twice and you get different bytes — IBE is randomised — but both open
  * to the same secret.
@@ -37,10 +37,10 @@ import { writeFileSync } from "node:fs";
  * -> context, so a different context is a different keypair entirely. One per
  * purpose: a canister using vetKD for two unrelated things gives each its own.
  *
- * `SECRET_NAME` names which secret this is — a label, not a key and not the
- * value. In vetKD terms it is the IBE identity the secret is sealed to, and the
- * `input` the canister passes to `vetkd_derive_key`. One label here, because
- * there is one secret.
+ * `KEY_LABEL` is the label every secret is sealed to — in vetKD terms the IBE
+ * identity, and the `input` the canister passes to `vetkd_derive_key`. Not a
+ * key, and not a secret's name: one derived key opens every ciphertext sealed to
+ * this label, which is why N secrets cost one derivation rather than N.
  *
  * Get either wrong and encryption still succeeds. You find out when the canister
  * cannot decrypt, which is why `set_dummy_secret` decrypts immediately rather
@@ -49,7 +49,7 @@ import { writeFileSync } from "node:fs";
  * See rust/canister/src/lib.rs.
  */
 const CONTEXT = new TextEncoder().encode("dummy-secret-poc");
-const SECRET_NAME = new TextEncoder().encode("dummy-secret");
+const KEY_LABEL = new TextEncoder().encode("dummy-secrets");
 
 const USAGE = `
 Encrypt a secret for a canister, and print the call argument.
@@ -57,7 +57,7 @@ Encrypt a secret for a canister, and print the call argument.
   DUMMY_SECRET=<value> npm run seal -- --canister <id> [options]
 
   --canister <id>   Target canister id.
-  --name <name>     Which secret to store it under. Default dummy-secret.
+  --name <name>     Which secret to store it under. Required.
                     A map key in the canister — it is NOT part of any key
                     derivation and never reaches vetKD.
   --out <path>      Write the Candid argument here instead of stdout.
@@ -66,9 +66,9 @@ Encrypt a secret for a canister, and print the call argument.
                     NOT inferable from the key name: both networks have a
                     key_1, backed by different master keys.
 
-Then send it as a controller of the canister. scripts/seal does both steps:
+Then send it as a controller of the canister. scripts/seal.sh does both steps:
 
-  DUMMY_SECRET=<value> ./scripts/seal dummy-secret-rust
+  DUMMY_SECRET=<value> ./scripts/seal.sh dummy-secret-rust
 
 Or by hand:
 
@@ -125,7 +125,7 @@ function main() {
   const keyName = arg("--key-name", "key_1");
   const source = arg("--source", "pocketic");
   const out = arg("--out", "");
-  const name = arg("--name", "dummy-secret");
+  const name = arg("--name");
 
   const secret = process.env.DUMMY_SECRET;
   if (!secret) {
@@ -144,7 +144,7 @@ function main() {
   // 2. encrypt
   const ciphertext = IbeCiphertext.encrypt(
     publicKey,
-    IbeIdentity.fromBytes(SECRET_NAME),
+    IbeIdentity.fromBytes(KEY_LABEL),
     new TextEncoder().encode(secret),
     IbeSeed.random(),
   ).serialize();

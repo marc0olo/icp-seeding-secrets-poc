@@ -9,7 +9,7 @@ in an ordinary update call, and only the target canister can recover the
 plaintext.
 
 ```bash
-DUMMY_SECRET=super-secret-value ./scripts/seal dummy-secret-rust api-token
+DUMMY_SECRET=super-secret-value ./scripts/seal.sh dummy-secret-rust api-token
 ```
 
 Two endpoints, two implementations of them, and one script. Everything on the
@@ -186,15 +186,15 @@ each, reads them back, and checks they match. To do it by hand:
 icp network start local --background
 icp deploy -e local --yes
 
-DUMMY_SECRET=super-secret-value ./scripts/seal dummy-secret-rust api-token
-DUMMY_SECRET=another-value      ./scripts/seal dummy-secret-rust db-password
+DUMMY_SECRET=super-secret-value ./scripts/seal.sh dummy-secret-rust api-token
+DUMMY_SECRET=another-value      ./scripts/seal.sh dummy-secret-rust db-password
 
 icp canister call dummy-secret-rust get_dummy_secret '("api-token")' -e local
 # (variant { Ok = opt "super-secret-value" })
 ```
 
 The second seal costs no derivation — the canister cached the key from the
-first. `scripts/seal` wraps two steps that are worth seeing apart, because only
+first. `scripts/seal.sh` wraps two steps that are worth seeing apart, because only
 one of them involves you:
 
 ```bash
@@ -268,7 +268,7 @@ fine: the controller is whoever seeded the secret, and already knows it.
 rust/canister/         the Rust canister — the reference implementation
 motoko/canister/       the same thing in Motoko
 seed/src/index.ts      the seeding script
-scripts/seal           encrypt a secret and send it, one command
+scripts/seal.sh        encrypt a secret and send it, one command
 scripts/local-test.sh  the round trip, both canisters
 
 motoko/bls12-381/      EXPERIMENTAL, UNAUDITED BLS12-381 for Motoko
