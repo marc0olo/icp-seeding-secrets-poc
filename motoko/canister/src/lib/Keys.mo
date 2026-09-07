@@ -2,11 +2,15 @@
 ///
 /// # What is cached, and why
 ///
-/// Only vetKeys. There is no plaintext cache, because records hold the
-/// decrypted secret (see `Store.SealedRecord`) — reading one is a map lookup.
-/// Decryption happens only where a caller hands the canister a ciphertext:
-/// `set`, which trial-decrypts before storing, and `matches`, which decrypts the
-/// candidate it is asked to compare.
+/// The vetKey, and nothing else. There is no plaintext cache, because records
+/// hold the decrypted secret (see `Store.SealedRecord`) — reading one is a map
+/// lookup. Decryption happens only where a caller hands the canister a
+/// ciphertext: `set`, which decrypts before storing, and `matches`, which
+/// decrypts the candidate it is asked to compare.
+///
+/// The public key is not cached either. It exists only to verify a freshly
+/// derived vetKey, so it is fetched on the same path that fills the vetKey cache
+/// and never read again once that path succeeds.
 ///
 /// **The vetKey cache persists across upgrades, and that is a cost decision, not
 /// a security one.** Worth stating plainly, because it is easy to assume
@@ -97,14 +101,19 @@ module {
     name;
   };
 
-  /// The persisted caches.
+  /// The persisted cache.
   ///
   /// `Main` owns this and does *not* mark it `transient`, so it survives
   /// upgrades — see the module comment for why that is the right call in Motoko
   /// and the wrong one in Rust. Every field is a stable type.
+  ///
+  /// One field, and it stays a record so that a write here is seen by the actor
+  /// rather than made against a copy. The public key is deliberately not cached
+  /// alongside it: it is needed only to verify a freshly derived vetKey, so it
+  /// is fetched on exactly the path that fills this and never read again once
+  /// that path succeeds. Caching it would mean persisted state, migrated
+  /// forever, to save one call on a retry after a failed derive.
   public type Caches = {
-    /// The derived public key the subnet reports, after the first call.
-    var dpk : ?G2.Affine;
     /// The vetKey. One of them, because one label serves every secret — which is
     /// the point of the label being a constant. Filling it costs one
     /// `vetkd_derive_key`: the call, its fee, and a round of consensus. This is
@@ -113,7 +122,6 @@ module {
   };
 
   public func emptyCaches() : Caches = {
-    var dpk = null;
     var vetkey = null;
   };
 
@@ -134,16 +142,14 @@ module {
   ///
   /// Asking the subnet rather than deriving from a compiled-in constant is what
   /// lets one build run against a local network and mainnet with no
-  /// configuration saying which. The trade is an inter-canister call, which is
-  /// why `info` is an update rather than a query.
+  /// configuration saying which. The trade is an inter-canister call, paid once
+  /// per vetKey derivation.
   ///
   /// Verifying against this is admittedly circular — a subnet that would lie
-  /// about its public key already holds the master key. The check that matters
-  /// is on the client, which derives the key offline and refuses to encrypt if
-  /// the canister disagrees.
+  /// about its public key already holds the master key and could decrypt
+  /// everything anyway. The non-circular check is the client's, which derives
+  /// the key offline from a master key it ships.
   public func publicKey(ctx : Context) : async* Types.Result<G2.Affine> {
-    switch (ctx.caches.dpk) { case (?k) { return #Ok(k) }; case null {} };
-
     let reported = try {
       await IC.vetkd_public_key({
         canister_id = null;
@@ -155,7 +161,7 @@ module {
     };
 
     switch (G2.fromCompressed(reported.public_key)) {
-      case (?k) { ctx.caches.dpk := ?k; #Ok(k) };
+      case (?k) #Ok(k);
       case null #Err(#Internal("subnet returned a malformed public key"));
     };
   };

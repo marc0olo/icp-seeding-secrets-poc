@@ -34,35 +34,15 @@ use crate::store;
 use crate::types::SealedSecretsError;
 
 thread_local! {
-    /// This canister's derived public key. One `vetkd_public_key` call on the
-    /// first miss after a cold start, then free.
-    static DPK_CACHE: RefCell<Option<DerivedPublicKey>> = const { RefCell::new(None) };
-
-    /// The vetKey. One entry, because one label serves every secret — which is
+    /// The vetKey. One of them, because one label serves every secret — which is
     /// the point of the label being a constant. Filling it costs one
     /// `vetkd_derive_key`: 26_153_846_153 cycles for `key_1`, 10_000_000_000 for
     /// `test_key_1`, the same locally and on mainnet. Hence the cache.
+    ///
+    /// The public key is deliberately *not* cached alongside it. It is needed
+    /// only to verify a freshly derived vetKey, so it is fetched on exactly the
+    /// path that fills this cache and never read again once that path succeeds.
     static VETKEY_CACHE: RefCell<Option<Rc<VetKey>>> = const { RefCell::new(None) };
-}
-
-/// This canister's public key, as reported by the subnet, cached after the first
-/// call.
-///
-/// Asking the subnet rather than deriving from a compiled-in constant is what
-/// lets one build run against both a local network and mainnet with no
-/// configuration saying which. The trade is that answering costs an
-/// inter-canister call, which is why it is cached.
-pub async fn public_key() -> Result<DerivedPublicKey, SealedSecretsError> {
-    if let Some(cached) = DPK_CACHE.with_borrow(|c| c.clone()) {
-        return Ok(cached);
-    }
-
-    let bytes = reported_public_key().await?;
-    let dpk = DerivedPublicKey::deserialize(&bytes)
-        .map_err(|e| SealedSecretsError::Internal(format!("malformed public key: {e:?}")))?;
-
-    DPK_CACHE.with_borrow_mut(|c| *c = Some(dpk.clone()));
-    Ok(dpk)
 }
 
 /// Obtains this canister's vetKey, deriving it if it is not cached.
@@ -82,7 +62,13 @@ pub async fn vetkey() -> Result<Rc<VetKey>, SealedSecretsError> {
     // Everything synchronous happens before the first await, and no borrow is
     // held into it.
     let config = store::config();
-    let dpk = public_key().await?;
+
+    // The public key `decrypt_and_verify` checks the reply against. Asking the
+    // subnet rather than deriving from a compiled-in constant is what lets one
+    // build run against both a local network and mainnet with no configuration
+    // saying which; see `reported_public_key` on why the circularity is cheap.
+    let dpk = DerivedPublicKey::deserialize(&reported_public_key().await?)
+        .map_err(|e| SealedSecretsError::Internal(format!("malformed public key: {e:?}")))?;
 
     let seed = ic_cdk_management_canister::raw_rand()
         .await
@@ -142,8 +128,11 @@ pub async fn decrypt(ciphertext: &[u8]) -> Result<Zeroizing<Vec<u8>>, SealedSecr
 
 /// Asks the subnet for this canister's public key.
 ///
-/// This is authoritative — it is what [`public_key`] caches and what
-/// `decrypt_and_verify` checks against.
+/// This is what `decrypt_and_verify` checks a derived vetKey against, which
+/// makes the check circular — the subnet vouching for itself. Cheaply so: a
+/// subnet that would lie here already holds the master key and could decrypt
+/// everything anyway. The non-circular check is the client's, which derives the
+/// key offline from a master key it ships.
 pub async fn reported_public_key() -> Result<Vec<u8>, SealedSecretsError> {
     let config = store::config();
     ic_cdk_management_canister::vetkd_public_key(&VetKDPublicKeyArgs {
