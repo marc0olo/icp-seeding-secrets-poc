@@ -147,8 +147,9 @@ module {
   ///
   /// Verifying against this is admittedly circular — a subnet that would lie
   /// about its public key already holds the master key and could decrypt
-  /// everything anyway. The non-circular check is the client's, which derives
-  /// the key offline from a master key it ships.
+  /// everything anyway. The client does not depend on this value at all — it
+  /// derives its own offline and never asks — which is what makes the
+  /// circularity affordable here.
   public func publicKey(ctx : Context) : async* Types.Result<G2.Affine> {
     let reported = try {
       await IC.vetkd_public_key({

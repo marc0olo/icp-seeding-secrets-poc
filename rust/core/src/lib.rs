@@ -54,10 +54,6 @@ pub const CONTEXT: &[u8] = SUITE;
 /// time.
 pub const KEY_LABEL: &[u8] = b"icp-sealed-secrets-v1.keys";
 
-/// Fixed overhead `IbeCiphertext` adds to the plaintext: an 8-byte header,
-/// a 32-byte seed and a 96-byte G2 element.
-pub const IBE_OVERHEAD: usize = 8 + 32 + 96;
-
 /// Longest accepted secret name.
 pub const MAX_NAME_LEN: usize = 64;
 
@@ -179,9 +175,4 @@ pub fn derive_public_key(
         .master_public_key(key_id)?
         .derive_canister_key(canister_id.as_slice())
         .derive_sub_key(context))
-}
-
-/// Recovers the plaintext length a ciphertext of this size must have had.
-pub fn plaintext_len(ciphertext_len: usize) -> Option<usize> {
-    ciphertext_len.checked_sub(IBE_OVERHEAD)
 }

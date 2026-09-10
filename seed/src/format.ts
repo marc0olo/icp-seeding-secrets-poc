@@ -40,9 +40,6 @@ export const CONTEXT = new TextEncoder().encode(SUITE_TEXT);
  */
 export const KEY_LABEL = new TextEncoder().encode("icp-sealed-secrets-v1.keys");
 
-/** Fixed IBE overhead: 8-byte header + 32-byte seed + 96-byte G2 element. */
-export const IBE_OVERHEAD = 136;
-
 export const MAX_NAME_LEN = 64;
 
 /**
@@ -110,13 +107,6 @@ function pocketIcKeyId(keyName: string): PocketIcMasterPublicKeyId {
     default:
       throw new Error(`no PocketIC master public key is compiled in for key "${keyName}"`);
   }
-}
-
-export function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a[i]! ^ b[i]!;
-  return diff === 0;
 }
 
 export function toHex(bytes: Uint8Array): string {

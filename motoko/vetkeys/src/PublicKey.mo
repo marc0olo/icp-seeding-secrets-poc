@@ -2,12 +2,18 @@
 ///
 /// # ⚠️ EXPERIMENTAL AND UNAUDITED — see ../README.md
 ///
-/// Given a master public key that is *compiled into the canister*, this computes
-/// the public key belonging to a (canister, context) pair without asking anyone.
-/// That is the whole point: `VetKey.decryptAndVerify` is only as trustworthy as
-/// the derived public key handed to it, and a canister that fetches that key
-/// from `vetkd_public_key` is asking the subnet to vouch for itself. Deriving it
-/// here closes the loop against a constant an auditor can read in the source.
+/// Given a compiled-in master public key, this computes the public key belonging
+/// to a (canister, context) pair without asking anyone.
+///
+/// A **client** has no choice: it cannot call `vetkd_public_key`, and trusting a
+/// key some canister reported would defeat the point of sealing. Offline
+/// derivation is the only way it can encrypt to a canister, and it is what
+/// `mo:ic-vetkeys` has no equivalent of.
+///
+/// A **canister** may use this too, to check the subnet's reply against a
+/// constant an auditor can read rather than asking the subnet to vouch for
+/// itself. The canisters in this repo deliberately do not — see `../README.md`
+/// for that trade.
 ///
 /// Ported from `ic_vetkeys::MasterPublicKey` (`utils/mod.rs:355`) and
 /// `DerivedPublicKey::derive_sub_key` (`:486`).

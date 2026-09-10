@@ -138,8 +138,8 @@ test(
 test(
   "a wrong derived public key is rejected",
   func() {
-    // The DPK is what the canister derived from its own compiled-in master key.
-    // Substituting another one is exactly the forgery this check exists to stop.
+    // Substituting a different public key is exactly the forgery this check
+    // exists to stop, whichever way the caller obtained the real one.
     let other = G2.toAffine(G2.mul(G2.fromAffine(G2.generator), 12345));
     assert VetKey.decryptAndVerify(ek(), tsk(), other, identity) == null;
   },

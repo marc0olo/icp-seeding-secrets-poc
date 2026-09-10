@@ -18,10 +18,11 @@
 //! public key already holds the master key and could decrypt everything anyway,
 //! so the circularity costs little.
 //!
-//! The check that actually matters is on the client, which derives the key
-//! offline and refuses to encrypt if the canister disagrees — because that
-//! response travels over HTTP through boundary nodes, where the canister's
-//! inter-canister call does not.
+//! What keeps the client honest is not a comparison but the absence of one: it
+//! derives the key offline from a master key it ships and never asks this
+//! canister for one, so there is no reply for anyone in between to substitute.
+//! That matters precisely because a reply to the client would cross boundary
+//! nodes, where this canister's inter-canister call does not.
 
 use ic_cdk_management_canister::{VetKDDeriveKeyArgs, VetKDPublicKeyArgs};
 use ic_vetkeys::{DerivedPublicKey, EncryptedVetKey, TransportSecretKey, VetKey};
@@ -131,8 +132,9 @@ pub async fn decrypt(ciphertext: &[u8]) -> Result<Zeroizing<Vec<u8>>, SealedSecr
 /// This is what `decrypt_and_verify` checks a derived vetKey against, which
 /// makes the check circular — the subnet vouching for itself. Cheaply so: a
 /// subnet that would lie here already holds the master key and could decrypt
-/// everything anyway. The non-circular check is the client's, which derives the
-/// key offline from a master key it ships.
+/// everything anyway. The client does not depend on this value at all — it
+/// derives its own offline and never asks — which is what makes the circularity
+/// affordable here.
 pub async fn reported_public_key() -> Result<Vec<u8>, SealedSecretsError> {
     let config = store::config();
     ic_cdk_management_canister::vetkd_public_key(&VetKDPublicKeyArgs {

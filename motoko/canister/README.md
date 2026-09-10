@@ -21,7 +21,7 @@ thing here that talks to a live subnet. Verified end to end on a local network:
 | | |
 |---|---|
 | `vetkd_public_key` and `vetkd_derive_key` from Motoko | ✅ |
-| The reply **verified** against a master key compiled into the Wasm — `public_key_matches_master = opt true` | ✅ |
+| The reply **verified** — a BLS signature check against the canister's derived public key, in pure Motoko | ✅ |
 | The unmodified TypeScript seeder seals to it, and it decrypts before storing | ✅ |
 | An authenticated HTTPS outcall returns **200**, and **401** with a wrong credential | ✅ |
 | The secret survives an upgrade with no re-seeding | ✅ |

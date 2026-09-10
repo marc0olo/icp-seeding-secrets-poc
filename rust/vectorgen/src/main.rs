@@ -309,9 +309,9 @@ fn emit_encrypted_vetkey_vector() {
 
 /// Offline derived-public-key computation.
 ///
-/// This is how a canister checks the subnet's reply against a master key
-/// compiled into its own Wasm rather than asking the subnet to vouch for itself,
-/// so a port that cannot reproduce these bytes cannot implement the check.
+/// This is the calculation a client runs before encrypting: master public key ->
+/// canister id -> context, with no network call. A port that cannot reproduce
+/// these bytes cannot seal anything a canister here could open.
 ///
 /// Generated through `sealed_secrets_core::derive_public_key`, the same path the
 /// Rust canister takes — not by calling `ic-vetkeys` directly — so these vectors
