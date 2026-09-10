@@ -12,7 +12,7 @@ canister has it, plus the offline derivation that makes verifying one meaningful
 |---|---|---|
 | `VetKey` | `EncryptedVetKey`, `TransportSecretKey` | Parses the subnet's 192-byte reply, unwraps it with the transport key, and **verifies** the result is a genuine BLS signature. |
 | `Ibe` | `IbeCiphertext` | Decrypts a secret sealed to this canister's identity. Decryption only — a canister never encrypts. |
-| `PublicKey` | `MasterPublicKey`, `DerivedPublicKey` | Computes a derived public key offline from a master key compiled into the canister. |
+| `PublicKey` | `MasterPublicKey`, `DerivedPublicKey` | Computes a derived public key offline from a compiled-in master key. What a client needs in order to seal. |
 
 ## Why this is a separate package
 
@@ -41,14 +41,23 @@ per canister lifetime.
 
 ## The trust story
 
-`VetKey.decryptAndVerify` is only as good as the derived public key handed to it.
-A canister that fetches that key from `vetkd_public_key` is asking the subnet to
-vouch for itself. `PublicKey` closes that loop: it derives the same key from a
-master public key compiled into the Wasm, which an auditor can read in the
-source.
+`VetKey.decryptAndVerify` is only as good as the derived public key handed to it,
+and there are two places that key can come from.
 
-That is the one check in the whole design that is not circular, and it is why
-these two modules belong together.
+A **canister** normally asks `vetkd_public_key`, which means the subnet vouches
+for itself. That is circular, and cheaply so — a subnet willing to lie there
+already holds the master key — and it buys something real: one build runs on any
+network with no configuration naming which. The canister in
+[`../canister`](../canister) takes that route.
+
+A **client** cannot. It has no `vetkd_public_key` to call, and trusting a key a
+canister reported would defeat the point of sealing. It must derive offline, from
+a master public key compiled into its own binary, which is what `PublicKey` is
+for — and what `mo:ic-vetkeys` has no equivalent of, so a Motoko client cannot
+seal anything today without it.
+
+That is why these two modules belong together: `VetKey` opens the reply,
+`PublicKey` is how a non-canister decides which key it is opening it under.
 
 ## Cost
 
