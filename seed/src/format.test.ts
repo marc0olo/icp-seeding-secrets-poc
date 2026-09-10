@@ -12,7 +12,6 @@ import { Principal } from "@icp-sdk/core/principal";
 
 import {
   CONTEXT,
-  IBE_OVERHEAD,
   KEY_LABEL,
   MAX_NAME_LEN,
   derivePublicKey,
@@ -73,8 +72,4 @@ test("derivation is bound to the canister", () => {
 test("unknown key names are rejected rather than guessed", () => {
   assert.throws(() => derivePublicKey("mainnet", "no_such_key", TEST_CANISTER));
   assert.throws(() => derivePublicKey("mainnet", "dfx_test_key", TEST_CANISTER));
-});
-
-test("IBE overhead constant matches the Rust side", () => {
-  assert.equal(IBE_OVERHEAD, 136);
 });

@@ -10,9 +10,14 @@
 ///
 /// **The verification is the point.** Without it a canister accepts whatever
 /// the management-canister reply contained. The check is a BLS signature
-/// verification against a derived public key the canister computed itself, from
-/// a master key compiled into its own Wasm — so a forged reply fails even if
-/// everything between the canister and the subnet is hostile.
+/// verification against a derived public key the caller supplies, so a forged
+/// reply fails even if everything between the canister and the subnet is
+/// hostile.
+///
+/// Where that public key comes from decides how much the check is worth. Taking
+/// it from `vetkd_public_key` — what the canisters in this repo do — means the
+/// subnet vouches for itself; deriving it from a compiled-in master key with
+/// `PublicKey` does not. `../README.md` weighs the two.
 ///
 /// Ported from `ic_vetkeys::EncryptedVetKey` (`utils/mod.rs:789`) and
 /// `verify_bls_signature_pt` (`:1379`).

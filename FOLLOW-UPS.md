@@ -467,11 +467,10 @@ the reference multiplies. Fixing that, not switching to a limb representation, i
 the optimisation if anyone ever needs one.
 
 **What is missing.** An audit. Nothing functional: `motoko/canister/` calls
-`vetkd_derive_key` against a live subnet, verifies the reply against a master key
-compiled into its own Wasm, decrypts, and authenticates an HTTPS outcall with the
-result — the full round trip, on the identical Candid interface, driven by the
-same seeding script as the Rust canister and checked by `local-test.sh` on every
-CI build.
+`vetkd_derive_key` against a live subnet, verifies the reply, decrypts, and
+authenticates an HTTPS outcall with the result — the full round trip, on the
+identical Candid interface, driven by the same seeding script as the Rust
+canister and checked by `local-test.sh` on every CI build.
 
 **And it is unaudited.** Nothing here should reach production before a
 cryptographer has been through it. The value is that the conversation can be

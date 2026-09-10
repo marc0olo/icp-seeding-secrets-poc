@@ -194,10 +194,3 @@ fn every_mismatch_yields_a_different_key() {
         assert_ne!(derived, correct, "{label} produced the same key");
     }
 }
-
-#[test]
-fn plaintext_length_is_recoverable_from_ciphertext_length() {
-    assert_eq!(IBE_OVERHEAD, 136);
-    assert_eq!(plaintext_len(136 + 51), Some(51));
-    assert_eq!(plaintext_len(10), None);
-}

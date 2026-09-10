@@ -62,10 +62,6 @@ module {
     0x79, 0x73 // ys
   ];
 
-  /// Fixed overhead `IbeCiphertext` adds: 8-byte header, 32-byte seed, 96-byte
-  /// `G2` element.
-  public let IBE_OVERHEAD : Nat = 136;
-
   public let MAX_NAME_LEN : Nat = 64;
 
   public type FormatError = {
