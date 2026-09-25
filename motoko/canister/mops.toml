@@ -13,7 +13,7 @@ ic = "4.2.0"
 # floor mops resolves 0.8.2, which predates moc 1.15's system-capability types
 # and fails to type-check. The two libraries already resolve this version.
 base = "0.14.5"
-sealed-secrets-bls = "../bls12-381"
+ic-bls12-381 = "../bls12-381"
 sealed-secrets-vetkeys = "../vetkeys"
 
 [canisters.sealed_secrets_motoko]

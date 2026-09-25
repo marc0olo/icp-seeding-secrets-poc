@@ -22,10 +22,12 @@
 /// `SSWU_A`/`SSWU_B` come out equal to the `E'` coefficients RFC 9380 publishes
 /// for this suite. `SSWU_XI` agreeing with the RFC's `Z = 11` is a third.
 
+import Bits "Bits";
 import Fp "Fp";
 import G1 "G1";
 import Hash "Hash";
 import Array "mo:core/Array";
+import Nat "mo:core/Nat";
 import Nat8 "mo:core/Nat8";
 import Blob "mo:core/Blob";
 import Text "mo:core/Text";
@@ -115,7 +117,7 @@ module {
   /// The sign convention RFC 9380 calls `sgn0`: the low bit of the canonical
   /// representative. It is what makes the map deterministic about which of the
   /// two roots to take.
-  func sgn0(a : Fp.Fp) : Bool = a % 2 == 1;
+  func sgn0(a : Fp.Fp) : Bool = Bits.isOdd(a);
 
   /// Expands a message to `count` field elements, per RFC 9380 §5.2.
   ///
@@ -128,7 +130,7 @@ module {
       count,
       func i {
         var acc : Nat = 0;
-        for (j in Array.tabulate(l, func k = k).keys()) {
+        for (j in Nat.range(0, l)) {
           acc := acc * 256 + expanded[i * l + j].toNat();
         };
         acc % Fp.P;

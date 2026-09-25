@@ -1,12 +1,12 @@
 /// Tests for offline derived-public-key computation.
 ///
 /// The vectors come from `vectorgen`, which derives them with `ic-vetkeys` —
-/// the audited Rust implementation. Agreeing with them means a Motoko canister
+/// DFINITY's Rust implementation. Agreeing with them means a Motoko canister
 /// derives the identical key a Rust one does, under the same context the
 /// canisters in this repo use.
 
 import { test } "mo:test";
-import G2 "mo:sealed-secrets-bls/G2";
+import G2 "mo:ic-bls12-381/G2";
 import PublicKey "../src/PublicKey";
 import Array "mo:core/Array";
 import Nat "mo:core/Nat";

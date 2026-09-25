@@ -5,27 +5,23 @@
 /// This is a proof-of-concept port. It has not been reviewed by a cryptographer
 /// and must not be used in production. See the repository README.
 ///
-/// # Why this does not mirror the Rust representation
+/// # Representation
 ///
 /// The reference (`ic_bls12_381::fp`) stores an element as `[u64; 6]` in
-/// Montgomery form, with hand-written carry propagation built on 64×64→128
-/// multiplication. Motoko has no `Nat128`, so every such multiply would have to
-/// be split into 32-bit halves and reassembled — roughly four multiplications
-/// and a carry chain each, across ~1000 lines whose correctness lives entirely
-/// in those carries.
+/// Montgomery form, built on 64×64→128 multiplication. Motoko has no widening
+/// 64-bit multiply, so each partial product of a limb representation would
+/// round-trip through `Nat` anyway.
 ///
-/// This port keeps the *semantics* and drops the representation: an element is a
-/// `Nat` in `[0, p)`, and the operations are ordinary modular arithmetic. That is
-/// a fraction of the code, it is reviewable by reading it, and it is validated
-/// against the reference's own test vectors. The cost is speed — see
-/// `test/Bench.mo` for measured instruction counts against the 40 billion
-/// per-update budget.
-///
-/// If the benchmark ever says this is too slow, the limb representation is the
-/// escape hatch, and the test vectors here are what would make that port safe.
+/// So an element is a `Nat` in `[0, p)`. Multiplication is a bignum product
+/// followed by **Barrett reduction**: two multiplications and two shifts in
+/// place of the division `%` would perform. `Nat.bitshiftRight` is an order of
+/// magnitude cheaper than dividing by a power of two, which is what makes this
+/// pay — `bench/Why.bench.mo` measures the split.
 
+import Bits "Bits";
 import Nat "mo:core/Nat";
 import Nat8 "mo:core/Nat8";
+import Int "mo:core/Int";
 import Blob "mo:core/Blob";
 import Array "mo:core/Array";
 
@@ -37,6 +33,11 @@ module {
   /// (`fp.rs:70`); `test/Fp.test.mo` pins it against the published hex.
   public let P : Nat =
     4002409555221667393417789825735904156556882819939007885332058136124031650490837864442687629129015664037894272559787;
+
+  /// `floor(2^762 / P)`, the Barrett constant for `P`'s 381-bit width.
+  /// `test/Fp.test.mo` re-derives it.
+  public let BARRETT_MU : Nat =
+    6060872796126202341416486485954650311182547756064496405659909846341149209992573236889604617486802525004416140330728;
 
   /// An element of `F_p`, always reduced into `[0, P)`.
   public type Fp = Nat;
@@ -64,35 +65,58 @@ module {
 
   public func neg(a : Fp) : Fp = if (a == 0) { 0 } else { P - a : Nat };
 
-  public func mul(a : Fp, b : Fp) : Fp = (a * b) % P;
+  /// Reduces a product of two field elements, `x < P^2`, by Barrett's method
+  /// (Handbook of Applied Cryptography, 14.42).
+  ///
+  /// `q` never exceeds `x / P` and falls short of it by at most two, so the
+  /// subtraction cannot underflow and at most two corrections follow.
+  func reduce(x : Nat) : Fp {
+    let q = Nat.bitshiftRight(Nat.bitshiftRight(x, 380) * BARRETT_MU, 382);
+    var r : Nat = x - q * P;
+    if (r >= P) { r -= P };
+    if (r >= P) { r -= P };
+    r;
+  };
 
-  public func square(a : Fp) : Fp = (a * a) % P;
+  public func mul(a : Fp, b : Fp) : Fp = reduce(a * b);
+
+  public func square(a : Fp) : Fp = reduce(a * a);
 
   public func double(a : Fp) : Fp = add(a, a);
 
-  /// `a^e mod P`, by square-and-multiply.
+  /// `a^e mod P`, by left-to-right square-and-multiply.
   ///
   /// The exponent is public in every use here (it is always a fixed constant
   /// such as `(p-3)/4`), so a data-independent ladder is not required. Do not
   /// reuse this with a secret exponent.
   public func pow(a : Fp, e : Nat) : Fp {
     var result : Fp = 1;
-    var base = a % P;
-    var exp = e;
-    while (exp > 0) {
-      if (exp % 2 == 1) { result := (result * base) % P };
-      base := (base * base) % P;
-      exp /= 2;
+    for (bit in Bits.msbFirst(e).vals()) {
+      result := square(result);
+      if (bit) { result := mul(result, a) };
     };
     result;
   };
 
-  /// Multiplicative inverse via Fermat's little theorem: `a^(p-2)`.
+  /// Multiplicative inverse, by the extended Euclidean algorithm.
   ///
   /// Returns `null` for zero, which has no inverse.
   public func inverse(a : Fp) : ?Fp {
     if (a == 0) { return null };
-    ?pow(a, P - 2 : Nat);
+    var r0 : Int = P;
+    var r1 : Int = a;
+    var t0 : Int = 0;
+    var t1 : Int = 1;
+    while (r1 != 0) {
+      let q = r0 / r1;
+      let r2 = r0 - q * r1;
+      r0 := r1;
+      r1 := r2;
+      let t2 = t0 - q * t1;
+      t0 := t1;
+      t1 := t2;
+    };
+    ?Int.abs(if (t0 < 0) { t0 + P } else { t0 });
   };
 
   /// The square root, when one exists.
@@ -115,8 +139,7 @@ module {
     let out = Array.tabulate(
       BYTES,
       func i {
-        let shift = (BYTES - 1 - i : Nat) * 8;
-        Nat.toNat8((a / (2 ** shift)) % 256);
+        Bits.byteAt(a, (BYTES - 1 - i : Nat) * 8);
       },
     );
     out.toBlob();

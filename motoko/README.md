@@ -16,16 +16,19 @@ rather than a paragraph:
   `key_manager`, `encrypted_maps`, `ManagementCanister` and `Types`, and no way
   to decrypt anything — because it has no BLS12-381 underneath.
 - **`bls12-381/` is what would have to exist first**, as a package in its own
-  right, and what would have to be audited.
+  right, and what would have to be audited. ICDevs has since published a
+  separate [`bls12-381`](https://github.com/icdevsorg/bls12-381.mo) on mops;
+  `vetkeys/` could sit on that instead once it is shown to agree with
+  `ic_bls12_381` on [`vectors.json`](./vectors.json).
 
 `vetkeys/` reaches into `bls12-381/`'s `Hash` for HKDF and SHAKE256. Upstream
-those come from the `sha2` and `sha3` crates rather than from `ic_bls12_381`, so
+those come from the `hkdf` and `sha3` crates rather than from `ic_bls12_381`, so
 that one import is a convenience of this port, not part of the boundary.
 
 [`vectors.json`](./vectors.json) is shared, and covers both layers. It was
-generated from `ic_bls12_381` and `ic-vetkeys` — the audited Rust
+generated from `ic_bls12_381` and `ic-vetkeys` — DFINITY's Rust
 implementations — so what these packages assert against is not their own
-arithmetic restated, but values a reviewed implementation produced.
+arithmetic restated, but values an independent implementation produced.
 
 The generator is **not** in this branch. It is a 400-line dev tool that nobody
 reading the PoC needs, and it lives on the

@@ -7,7 +7,7 @@
 ///
 /// Ported from `ic_bls12_381::fp6`.
 
-import Fp "Fp";
+import Bits "Bits";
 import Fp2 "Fp2";
 
 module {
@@ -169,19 +169,10 @@ module {
 
   public func pow(a : Fp6, e : Nat) : Fp6 {
     var result = one;
-    var base = a;
-    var exp = e;
-    while (exp > 0) {
-      if (exp % 2 == 1) { result := mul(result, base) };
-      base := square(base);
-      exp /= 2;
+    for (bit in Bits.msbFirst(e).vals()) {
+      result := square(result);
+      if (bit) { result := mul(result, a) };
     };
     result;
-  };
-
-  /// Unused here but kept for parity with the reference's surface.
-  public func mulByFp(a : Fp6, s : Fp.Fp) : Fp6 {
-    let m = Fp2.fromFp(s);
-    { c0 = Fp2.mul(a.c0, m); c1 = Fp2.mul(a.c1, m); c2 = Fp2.mul(a.c2, m) };
   };
 }

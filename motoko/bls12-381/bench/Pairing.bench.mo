@@ -14,7 +14,7 @@ module {
     let bench = Bench.Bench();
     bench.name("BLS12-381 pairing");
     bench.description("Against the 40B-instruction update budget.");
-    bench.rows(["millerLoop", "finalExponentiation", "pairing"]);
+    bench.rows(["millerLoop", "finalExponentiation", "pairing", "multiMillerLoop2"]);
     bench.cols(["1"]);
 
     let g1 = G1.generator;
@@ -27,6 +27,7 @@ module {
           case ("millerLoop") { ignore Pairing.millerLoop(g1, g2) };
           case ("finalExponentiation") { ignore Pairing.finalExponentiation(ml) };
           case ("pairing") { ignore Pairing.pairing(g1, g2) };
+          case ("multiMillerLoop2") { ignore Pairing.multiMillerLoop([(g1, g2), (g1, g2)]) };
           case (_) {};
         };
       }

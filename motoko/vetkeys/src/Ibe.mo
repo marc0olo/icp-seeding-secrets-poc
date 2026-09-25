@@ -12,12 +12,12 @@
 ///
 /// Ported from `ic_vetkeys::IbeCiphertext`.
 
-import Fp12 "mo:sealed-secrets-bls/Fp12";
-import G1 "mo:sealed-secrets-bls/G1";
-import G2 "mo:sealed-secrets-bls/G2";
-import Pairing "mo:sealed-secrets-bls/Pairing";
-import Scalar "mo:sealed-secrets-bls/Scalar";
-import Hash "mo:sealed-secrets-bls/Hash";
+import Fp12 "mo:ic-bls12-381/Fp12";
+import G1 "mo:ic-bls12-381/G1";
+import G2 "mo:ic-bls12-381/G2";
+import Pairing "mo:ic-bls12-381/Pairing";
+import Scalar "mo:ic-bls12-381/Scalar";
+import Hash "mo:ic-bls12-381/Hash";
 import Array "mo:core/Array";
 import Nat8 "mo:core/Nat8";
 import Nat "mo:core/Nat";
@@ -55,7 +55,7 @@ module {
   };
 
   /// Parses the wire format: header ‖ compressed `G2` ‖ masked seed ‖ masked
-  /// message (`utils/mod.rs:1013`).
+  /// message (`utils/mod.rs:1027`).
   public func deserialize(bytes : [Nat8]) : ?Ciphertext {
     if (bytes.size() < OVERHEAD) { return null };
 
