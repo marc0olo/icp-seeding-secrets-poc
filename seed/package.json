@@ -7,7 +7,7 @@
   "scripts": {
     "seal": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
-    "check:diagrams": "node ../scripts/check-diagrams.mjs ../README.md"
+    "check:diagrams": "node ../scripts/check-diagrams.mjs ../README.md ../docs/design.md"
   },
   "dependencies": {
     "@icp-sdk/core": "^6.1.0",
@@ -20,6 +20,6 @@
     "typescript": "^5.7.2"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20.19"
   }
 }
