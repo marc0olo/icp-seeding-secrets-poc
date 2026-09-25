@@ -17,7 +17,7 @@ repository.workspace = true
 # already proves the canister can decrypt, and `icp_sealed_secret_matches`
 # answers "is the right value set?" without disclosing anything.
 #
-# Never enable this for a real deployment; see README "Can I just add a getter?".
+# Never enable this for a real deployment; see docs/interface.md, "Can I just add a getter?".
 test-hooks = []
 
 [lib]

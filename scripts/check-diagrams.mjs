@@ -7,7 +7,7 @@
  * `;` as a statement separator, so a semicolon inside message text terminates
  * the line and the rest fails to parse.
  *
- *   node scripts/check-diagrams.mjs README.md FOLLOW-UPS.md
+ *   node scripts/check-diagrams.mjs README.md FOLLOW-UPS.md docs/*.md
  */
 
 import { readFileSync } from "node:fs";

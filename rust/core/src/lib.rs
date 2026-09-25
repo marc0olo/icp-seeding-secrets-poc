@@ -4,7 +4,7 @@
 //! It is shared by the canister (which decrypts) and by any client (which seals),
 //! so that both sides derive byte-identical `context` and `key_label` values.
 //!
-//! See `README.md` for the protocol description and `tests/golden.rs` for the
+//! See `docs/design.md` for the protocol description and `tests/golden.rs` for the
 //! vectors that pin the encodings down.
 
 use ic_vetkeys::{DerivedPublicKey, MasterPublicKey};

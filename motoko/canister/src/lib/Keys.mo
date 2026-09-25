@@ -20,7 +20,7 @@
 /// `transient` only clears state at an *upgrade*; between upgrades a transient
 /// value sits in the heap and is checkpointed like everything else. Nothing here
 /// keeps a secret off disk — only SEV-SNP changes who can read it. See the
-/// security model in `../../../../README.md`.
+/// security model in `../../../../docs/security.md`.
 ///
 /// The cost being avoided is real: a cache miss means a `vetkd_derive_key` —
 /// an inter-canister call, a fee of 26 billion cycles for `key_1`, and a round

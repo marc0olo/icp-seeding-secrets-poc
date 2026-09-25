@@ -15,7 +15,7 @@
     "typecheck": "tsc --noEmit",
     "e2e": "tsx src/e2e.ts",
     "bindings": "icp-bindgen --did-file ../rust/canister/sealed_secrets_canister.did --out-dir src/declarations --declarations-typescript --declarations-flat --force",
-    "check:diagrams": "node ../scripts/check-diagrams.mjs ../README.md ../FOLLOW-UPS.md"
+    "check:diagrams": "node ../scripts/check-diagrams.mjs ../README.md ../FOLLOW-UPS.md ../docs/design.md ../docs/interface.md ../docs/deployment.md ../docs/outcalls.md ../docs/security.md"
   },
   "dependencies": {
     "@icp-sdk/core": "^6.1.0",
