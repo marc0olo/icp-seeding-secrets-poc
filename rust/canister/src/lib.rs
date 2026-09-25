@@ -7,7 +7,7 @@
 //!
 //! The client encrypts to a public key it derives **offline** — no network call,
 //! nothing to trust — and only this canister can have the matching private key
-//! derived for it. See ../../README.md.
+//! derived for it. See the repository README.
 
 use ic_cdk::{query, update};
 use ic_cdk_management_canister::{
@@ -83,8 +83,8 @@ fn key_id() -> VetKDKeyId {
 /// Two concurrent callers on a cold cache will both derive. That is accepted
 /// rather than prevented: derivation is deterministic, so both get the identical
 /// key and the only cost is a duplicate fee. Rejecting the second is bad UX on a
-/// write path, and making it wait is not implementable — they are separate
-/// message executions and neither can await the other.
+/// write path, and making it wait would need a lock and a wakeup shared across
+/// separate message executions — more machinery than a duplicate fee justifies.
 async fn vetkey() -> Result<VetKey, String> {
     // Read and drop the borrow before any await; holding one across a call
     // would panic when the canister re-enters.
@@ -102,7 +102,8 @@ async fn vetkey() -> Result<VetKey, String> {
     //    memory — replicated and checkpointed like any other canister state, and
     //    protected there by SEV-SNP alone. What the transport key buys is that
     //    the plaintext never leaves here: not in a message, not in a
-    //    cross-subnet stream, and not known to the subnet that derived it.
+    //    cross-subnet stream, and not known to the subnet that derived it unless a
+    //    threshold of its nodes collude.
     let seed = raw_rand().await.map_err(|e| format!("raw_rand: {e}"))?;
     let tsk = TransportSecretKey::from_seed(seed).map_err(|e| format!("transport key: {e}"))?;
 

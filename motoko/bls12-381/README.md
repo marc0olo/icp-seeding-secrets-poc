@@ -56,8 +56,9 @@ one, say) will look far cheaper than real use.
 
 Measured as canister instructions, on the same vector, for IBE decryption alone.
 Native benchmarks would not compare, because what the replica charges is
-wasm-specific. The Rust side is `bench_ibe_decrypt` in `rust/canister`, behind
-`test-hooks`.
+wasm-specific. The Rust side is `bench_ibe_decrypt`, a `test-hooks` endpoint of
+the Rust canister on the
+[`standardization-proposal`](../../../../tree/standardization-proposal) branch.
 
 | | Instructions | |
 |---|---:|---|

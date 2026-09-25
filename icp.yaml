@@ -2,7 +2,8 @@
 
 canisters:
   # Two implementations of the same thing, so you can read whichever language
-  # you think in. They share one interface and one seeding script.
+  # you think in. They share one seeding script and the same Candid types;
+  # method names follow each language's convention.
   - name: dummy-secret-rust
     build:
       steps:
@@ -27,8 +28,7 @@ canisters:
             - cd motoko/canister && mops install
             - cd motoko/canister && "$(mops toolchain bin moc)" $(mops sources) --enhanced-orthogonal-persistence -o "$ICP_WASM_OUTPUT_PATH" src/Main.mo
             # No metadata step, unlike the Rust canister: moc already embeds
-            # candid:service, and `ic-wasm metadata` appends rather than
-            # replaces, so a second section makes the replica reject the module.
+            # candid:service.
             - ic-wasm "$ICP_WASM_OUTPUT_PATH" -o "$ICP_WASM_OUTPUT_PATH" shrink --keep-name-section
 
 networks:

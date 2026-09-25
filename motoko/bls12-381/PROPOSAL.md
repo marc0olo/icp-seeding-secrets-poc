@@ -119,7 +119,9 @@ mops bench VetKey   # unwrapping and verifying a real vetKD reply
 mops test           # 23 tests
 ```
 
-The Rust side of the comparison is `bench_ibe_decrypt` in `rust/canister`,
+The Rust side of the comparison is `bench_ibe_decrypt`, a `test-hooks` endpoint
+of the Rust canister on the
+[`standardization-proposal`](../../../../tree/standardization-proposal) branch,
 measured with `ic0.performance_counter` inside a deployed canister on the same
 vector — native benchmarks would not be comparable, since what matters is what
 the replica charges.

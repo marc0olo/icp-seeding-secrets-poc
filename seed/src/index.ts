@@ -68,7 +68,7 @@ Encrypt a secret for a canister, and print the call argument.
 
 Then send it as a controller of the canister. scripts/seal.sh does both steps:
 
-  DUMMY_SECRET=<value> ./scripts/seal.sh dummy-secret-rust
+  DUMMY_SECRET=<value> ./scripts/seal.sh dummy-secret-rust <secret-name>
 
 Or by hand:
 
@@ -142,10 +142,11 @@ function main() {
   const publicKey = derivePublicKey(source, keyName, canisterId);
 
   // 2. encrypt
+  const plaintext = new TextEncoder().encode(secret);
   const ciphertext = IbeCiphertext.encrypt(
     publicKey,
     IbeIdentity.fromBytes(KEY_LABEL),
-    new TextEncoder().encode(secret),
+    plaintext,
     IbeSeed.random(),
   ).serialize();
 
@@ -154,7 +155,7 @@ function main() {
     writeFileSync(out, candid);
     console.error(
       `derived ${source}:${keyName} key for ${canisterId.toText()} offline, ` +
-        `encrypted ${secret.length} bytes -> ${ciphertext.length} as "${name}", wrote ${out}`,
+        `encrypted ${plaintext.length} bytes -> ${ciphertext.length} as "${name}", wrote ${out}`,
     );
   } else {
     console.log(candid);

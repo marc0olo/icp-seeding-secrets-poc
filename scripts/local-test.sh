@@ -37,9 +37,9 @@ say "1. start the local network and deploy (as $(icp identity default 2>/dev/nul
 icp network status "$ENV" >/dev/null 2>&1 || icp network start "$ENV" --background
 
 # Repeated runs drain these: a cold `vetkd_derive_key` costs 26 billion cycles,
-# and a reinstall resets the cache so the next run derives again. Cycles are free
-# on a local network, so top up when the canisters already exist — otherwise the
-# fourth or fifth run fails on install with "out of cycles" and looks like a bug.
+# and the upgrade each deploy performs clears the cached vetKey, so every run
+# derives again. Cycles are free on a local network, so top up when the
+# canisters already exist rather than let repeated runs run them dry.
 for c in dummy-secret-rust dummy-secret-motoko; do
   icp canister top-up "$c" --amount 5t -e "$ENV" >/dev/null 2>&1 || true
 done

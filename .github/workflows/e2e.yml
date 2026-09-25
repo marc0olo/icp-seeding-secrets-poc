@@ -1,4 +1,4 @@
-# The real thing: a local replica, a deploy, and a secret sealed and spent.
+# The real thing: a local replica, a deploy, and secrets sealed and read back.
 #
 name: End-to-end
 
@@ -14,13 +14,10 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  # A local network needs no cycles ledger top-up, but icp-cli still prompts
-  # without this in a non-interactive shell.
-  ICP_ENVIRONMENT: local
 
 jobs:
   e2e:
-    name: seal and spend, against a local replica
+    name: seal and read back, against a local replica
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/dfinity/icp-dev-env-all:v2.0.0
@@ -49,8 +46,8 @@ jobs:
         working-directory: seed
         run: npm ci
 
-      # Deploys both canisters, seals a secret into each with the seeding
-      # script, reads it back, and checks it round-tripped.
+      # Deploys both canisters, seals two secrets into each with the seeding
+      # script, reads them back, and checks they round-tripped.
       - name: Seal and read back, both canisters
         run: ./scripts/local-test.sh
 
