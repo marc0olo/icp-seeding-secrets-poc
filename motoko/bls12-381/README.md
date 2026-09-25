@@ -170,7 +170,8 @@ does.
 
 It is a library, not a canister, and nothing in it is IC-specific: the curve is
 the curve. Anything needing BLS12-381 pairings could use it, once it has been
-audited.
+audited — and once decompression checks subgroup membership, which
+`ic_bls12_381` does and this port does not yet.
 
 The largest single piece is `hash_to_curve` — 3,314 lines of the reference,
 across `map_g1.rs`, `expand_msg.rs`, `chain.rs` and `mod.rs`. It is easy to

@@ -173,6 +173,8 @@ module {
     );
   };
 
+  /// Parses the 96-byte compressed form, with the same checks as
+  /// `G1.fromCompressed` — and the same gap: no subgroup check.
   public func fromCompressed(b : Blob) : ?Affine {
     let arr = b.toArray();
     if (arr.size() != BYTES_COMPRESSED) { return null };

@@ -182,9 +182,13 @@ module {
 
   /// Parses the 48-byte compressed form, recovering `y` from `x`.
   ///
-  /// Rejects anything the reference rejects: a clear compression flag, an
-  /// infinity encoding with a non-zero `x` or a set sort bit, a non-canonical
-  /// `x`, or an `x` for which `x^3 + 4` is not a square.
+  /// Rejects a clear compression flag, an infinity encoding with a non-zero `x`
+  /// or a set sort bit, a non-canonical `x`, or an `x` for which `x^3 + 4` is
+  /// not a square.
+  ///
+  /// Unlike the reference, it does **not** check that the point is in the
+  /// prime-order subgroup, so a point on the curve but outside `G1` is
+  /// accepted.
   public func fromCompressed(b : Blob) : ?Affine {
     let arr = b.toArray();
     if (arr.size() != BYTES_COMPRESSED) { return null };
