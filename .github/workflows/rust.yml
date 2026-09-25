@@ -13,9 +13,6 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  # A local network needs no cycles ledger top-up, but icp-cli still prompts
-  # without this in a non-interactive shell.
-  ICP_ENVIRONMENT: local
 
 jobs:
   rust:

@@ -40,8 +40,7 @@ done
 
 step "typescript: typecheck, and the diagram parses"
 # GitHub renders a broken mermaid block as an error box rather than a diagram,
-# so it fails silently and visibly at the same time. One `;` in message text
-# already did it once.
+# so it fails silently and visibly at the same time.
 ( cd seed && npm run --silent typecheck && npm run --silent check:diagrams )
 
 printf '\n\033[1mall checks passed\033[0m\n'

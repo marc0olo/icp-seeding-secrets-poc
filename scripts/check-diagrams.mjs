@@ -3,11 +3,11 @@
  * Validates that every ```mermaid block in the docs actually parses.
  *
  * GitHub renders mermaid, but a block with a syntax error renders as an error
- * box rather than a diagram — so this is silently user-visible. It caught a real
- * one: mermaid treats `;` as a statement separator, so a semicolon inside message
- * text terminates the line and the rest fails to parse.
+ * box rather than a diagram — so this is silently user-visible. Mermaid treats
+ * `;` as a statement separator, so a semicolon inside message text terminates
+ * the line and the rest fails to parse.
  *
- *   node scripts/check-diagrams.mjs README.md FOLLOW-UPS.md
+ *   node scripts/check-diagrams.mjs README.md
  */
 
 import { readFileSync } from "node:fs";

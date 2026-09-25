@@ -193,7 +193,8 @@ that trade; a PoC should not hand you the sharp edge.
 ## Try it
 
 Needs [icp-cli](https://github.com/dfinity/icp-cli), a Rust toolchain with the
-`wasm32-unknown-unknown` target, [mops](https://mops.one), and Node 18+.
+`wasm32-unknown-unknown` target, `candid-extractor` and `ic-wasm`, [mops](https://mops.one),
+and Node 18+.
 
 ```bash
 ./scripts/local-test.sh
@@ -289,9 +290,9 @@ Four things are, and only the first is specific to seeding:
 
 - **The public key is derivable offline.** A client computes it from a published
   master key and the canister id. With a self-generated key it has to _fetch_
-  one, over a path that boundary nodes terminate — so it must either trust that
-  reply or verify a certificate. Recoverable with certified data, at the cost of
-  building and reviewing that.
+  one from the canister first — certified if it asks with an update call, but
+  a round trip to a canister that must already be running, and whose code it
+  is trusting to report its real key.
 - **You can seal before the canister has ever run.** The id is enough. A
   self-generated key needs deploy, execute, and fetch first.
 - **The key outlives the canister's memory.** Reinstall and vetKD returns the
@@ -299,7 +300,7 @@ Four things are, and only the first is specific to seeding:
 - **Key quality does not depend on the canister's code.** A weak seed, or a key
   that leaks into a log, is invisible to whoever is encrypting. With vetKD the
   key comes from the protocol and the client never asks the canister for it at
-  all, so there is nothing about the canister's implementation to get right.
+  all, so there is no key-generation code in the canister to get right.
 
 For one credential in a canister you control, this is a close call. It stops
 being one as soon as clients should not have to trust the canister's code, or

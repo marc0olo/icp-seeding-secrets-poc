@@ -1,6 +1,6 @@
 [package]
 name = "dummy-secret-canister"
-description = "PoC canister that receives one vetKD-sealed secret and decrypts it"
+description = "PoC canister that receives vetKD-sealed secrets and decrypts them"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -2,7 +2,7 @@
 ///
 /// The Motoko counterpart of `rust/canister`, endpoint for endpoint, so the
 /// same seeding script drives either one. It decrypts using this repo's
-/// **experimental, unaudited** BLS12-381 implementation — see `../README.md`.
+/// **experimental, unaudited** BLS12-381 implementation — see `motoko/README.md`.
 ///
 ///   setDummySecret(name, ciphertext)  decrypt and store under that name
 ///   getDummySecret(name)              hand the plaintext back so you can see it worked
@@ -109,7 +109,8 @@ persistent actor DummySecret {
     //    memory — replicated and checkpointed like any other canister state, and
     //    protected there by SEV-SNP alone. What the transport key buys is that
     //    the plaintext never leaves here: not in a message, not in a
-    //    cross-subnet stream, and not known to the subnet that derived it.
+    //    cross-subnet stream, and not known to the subnet that derived it unless a
+    //    threshold of its nodes collude.
     let seed = try { await ic.raw_rand() } catch (e) {
       return #Err("raw_rand: " # e.message());
     };
