@@ -22,13 +22,13 @@ rather than a paragraph:
   `ic_bls12_381` on [`vectors.json`](./vectors.json).
 
 `vetkeys/` reaches into `bls12-381/`'s `Hash` for HKDF and SHAKE256. Upstream
-those come from the `sha2` and `sha3` crates rather than from `ic_bls12_381`, so
+those come from the `hkdf` and `sha3` crates rather than from `ic_bls12_381`, so
 that one import is a convenience of this port, not part of the boundary.
 
 [`vectors.json`](./vectors.json) is shared, and covers both layers. It was
-generated from `ic_bls12_381` and `ic-vetkeys` — the audited Rust
+generated from `ic_bls12_381` and `ic-vetkeys` — DFINITY's Rust
 implementations — so what these packages assert against is not their own
-arithmetic restated, but values a reviewed implementation produced.
+arithmetic restated, but values an independent implementation produced.
 
 The generator is **not** in this branch. It is a 400-line dev tool that nobody
 reading the PoC needs, and it lives on the

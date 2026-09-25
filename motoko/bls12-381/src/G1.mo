@@ -161,7 +161,7 @@ module {
   ///
   /// The top three bits of the first byte are flags: bit 7 compression (always
   /// set here), bit 6 infinity, bit 5 the sort bit that selects which of the two
-  /// roots `y` is (`g1.rs:337`).
+  /// roots `y` is (`g1.rs:221`).
   public func toCompressed(a : Affine) : Blob {
     if (a.infinity) {
       let bytes = Array.tabulate<Nat8>(

@@ -1,7 +1,7 @@
 /// Tests for offline derived-public-key computation.
 ///
 /// The vectors come from `vectorgen`, which derives them with `ic-vetkeys` —
-/// the audited Rust implementation. Agreeing with them means a Motoko canister
+/// DFINITY's Rust implementation. Agreeing with them means a Motoko canister
 /// derives the identical key a Rust one does, under the same context the
 /// canisters in this repo use.
 

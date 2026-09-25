@@ -40,7 +40,7 @@ module {
   /// HKDF-SHA256 with an empty salt, matching `ic-vetkeys`' `hkdf`
   /// (`utils/mod.rs:224`), which passes `None` for the salt.
   public func hkdf(input : [Nat8], domainSep : Text, len : Nat) : [Nat8] {
-    // Extract: an absent salt is a block of zeros.
+    // Extract: an absent salt is HashLen zero bytes (RFC 5869).
     let salt = Array.tabulate<Nat8>(32, func _ = 0);
     let prk = hmacSha256(salt, input);
 
@@ -107,7 +107,9 @@ module {
     let ell = (lenInBytes + bInBytes - 1 : Nat) / bInBytes;
     assert ell <= 255;
 
-    // DST longer than 255 bytes is hashed down; short ones are used as-is.
+    // RFC 9380 hashes a DST longer than 255 bytes down first. Every DST here is
+    // short, so that branch is not implemented.
+    assert dst.size() <= 255;
     let dstPrime = dst.concat([dst.size().toNat8()]);
     let zPad = Array.tabulate<Nat8>(sInBytes, func _ = 0);
     let lIBStr : [Nat8] = [

@@ -15,7 +15,7 @@
 Canister-side vetKD decryption needs BLS12-381 pairings, and `mo:ic-vetkeys` 0.6
 has none — the vetKeys skill states it directly: *"Motoko has no low-level
 crypto. No IBE, transport keys, `MasterPublicKey`/`DerivedPublicKey`, or vetKey
-decryption."* The curves that are on mops for signatures (`ecdsa`,
+decryption in the Motoko library."* The curves that are on mops for signatures (`ecdsa`,
 `libsecp256k1`, `tweetnacl`) are the wrong family; nothing in them is reusable
 for a 381-bit pairing-friendly curve.
 

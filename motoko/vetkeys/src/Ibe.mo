@@ -55,7 +55,7 @@ module {
   };
 
   /// Parses the wire format: header ‖ compressed `G2` ‖ masked seed ‖ masked
-  /// message (`utils/mod.rs:1013`).
+  /// message (`utils/mod.rs:1027`).
   public func deserialize(bytes : [Nat8]) : ?Ciphertext {
     if (bytes.size() < OVERHEAD) { return null };
 

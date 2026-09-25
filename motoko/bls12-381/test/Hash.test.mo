@@ -63,9 +63,9 @@ test(
 test(
   "hkdf-sha256 with an absent salt",
   func() {
-    // ic-vetkeys passes None for the salt, which RFC 5869 defines as a block of
-    // zeros. Reading that as an empty byte string instead is a classic slip and
-    // produces entirely different output.
+    // ic-vetkeys passes None for the salt, which RFC 5869 defines as HashLen
+    // (32) zero bytes. HMAC zero-pads short keys, so an empty salt happens to
+    // give the same output; this pins that output.
     assert toHex(Hash.hkdf(bytes("abc"), "ds", 32))
     == "af6d4a916e044446945b520ec6b3c70a31281a9c571bf86dc0a186871407eddf";
   },

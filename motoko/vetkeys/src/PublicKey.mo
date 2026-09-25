@@ -32,9 +32,10 @@ module {
   /// Which table of master keys to use.
   ///
   /// **Never infer this from the key name.** `key_1` exists in both tables and
-  /// they are different keys. Selecting by name is a live bug in `ic-vetkeys`'
-  /// own `compute_vrf` (`utils/mod.rs:411` against `:422`), and the failure mode
-  /// is quiet: everything works on the network you tested, and the ciphertext is
+  /// they are different keys. `ic-vetkeys`' own `compute_vrf`
+  /// (`utils/mod.rs:1566`) gets this wrong, always taking the mainnet table
+  /// (`:1580`). There the reply fails to verify; for encryption the failure is
+  /// quiet — everything works on the network you tested, and the ciphertext is
   /// permanently undecryptable on the other one.
   public type KeySource = { #Mainnet; #PocketIc };
 

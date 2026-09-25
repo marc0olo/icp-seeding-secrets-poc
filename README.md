@@ -323,7 +323,7 @@ motoko/vectors.json    what those two test against, generated from the Rust
 The two Motoko libraries exist because `mo:ic-vetkeys` has no BLS12-381, so
 Motoko cannot decrypt a vetKey without them. **They are a proof of concept, not
 reviewed by a cryptographer, and must not be used in production** — see
-[motoko/README.md](./motoko/README.md). The Rust canister uses the audited
+[motoko/README.md](./motoko/README.md). The Rust canister uses DFINITY's
 `ic-vetkeys` crate and needs none of this.
 
 ## Licence
