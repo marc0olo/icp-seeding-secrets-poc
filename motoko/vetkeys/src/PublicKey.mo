@@ -18,8 +18,8 @@
 /// Ported from `ic_vetkeys::MasterPublicKey` (`utils/mod.rs:355`) and
 /// `DerivedPublicKey::derive_sub_key` (`:486`).
 
-import G2 "mo:sealed-secrets-bls/G2";
-import Scalar "mo:sealed-secrets-bls/Scalar";
+import G2 "mo:ic-bls12-381/G2";
+import Scalar "mo:ic-bls12-381/Scalar";
 import Array "mo:core/Array";
 import Nat "mo:core/Nat";
 import Nat32 "mo:core/Nat32";

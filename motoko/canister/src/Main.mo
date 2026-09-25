@@ -10,9 +10,9 @@
 /// One file on purpose: the point of this PoC is that a person can read it
 /// start to finish.
 
-import G1 "mo:sealed-secrets-bls/G1";
-import G2 "mo:sealed-secrets-bls/G2";
-import Scalar "mo:sealed-secrets-bls/Scalar";
+import G1 "mo:ic-bls12-381/G1";
+import G2 "mo:ic-bls12-381/G2";
+import Scalar "mo:ic-bls12-381/Scalar";
 import Ibe "mo:sealed-secrets-vetkeys/Ibe";
 import VetKey "mo:sealed-secrets-vetkeys/VetKey";
 

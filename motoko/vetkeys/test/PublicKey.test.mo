@@ -6,7 +6,7 @@
 /// canisters in this repo use.
 
 import { test } "mo:test";
-import G2 "mo:sealed-secrets-bls/G2";
+import G2 "mo:ic-bls12-381/G2";
 import PublicKey "../src/PublicKey";
 import Array "mo:core/Array";
 import Nat "mo:core/Nat";

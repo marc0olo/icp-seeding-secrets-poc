@@ -22,12 +22,12 @@
 /// Ported from `ic_vetkeys::EncryptedVetKey` (`utils/mod.rs:789`) and
 /// `verify_bls_signature_pt` (`:1379`).
 
-import Fp12 "mo:sealed-secrets-bls/Fp12";
-import G1 "mo:sealed-secrets-bls/G1";
-import G2 "mo:sealed-secrets-bls/G2";
-import Pairing "mo:sealed-secrets-bls/Pairing";
-import HashToCurve "mo:sealed-secrets-bls/HashToCurve";
-import Scalar "mo:sealed-secrets-bls/Scalar";
+import Fp12 "mo:ic-bls12-381/Fp12";
+import G1 "mo:ic-bls12-381/G1";
+import G2 "mo:ic-bls12-381/G2";
+import Pairing "mo:ic-bls12-381/Pairing";
+import HashToCurve "mo:ic-bls12-381/HashToCurve";
+import Scalar "mo:ic-bls12-381/Scalar";
 import Array "mo:core/Array";
 import Blob "mo:core/Blob";
 import Nat8 "mo:core/Nat8";

@@ -13,9 +13,9 @@
 /// identically.
 
 import { test } "mo:test";
-import G1 "mo:sealed-secrets-bls/G1";
-import G2 "mo:sealed-secrets-bls/G2";
-import Scalar "mo:sealed-secrets-bls/Scalar";
+import G1 "mo:ic-bls12-381/G1";
+import G2 "mo:ic-bls12-381/G2";
+import Scalar "mo:ic-bls12-381/Scalar";
 import VetKey "../src/VetKey";
 import Array "mo:core/Array";
 import Nat8 "mo:core/Nat8";

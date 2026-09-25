@@ -11,7 +11,7 @@
 /// authenticated check at the end of `decrypt` to succeed.
 
 import { test } "mo:test";
-import G1 "mo:sealed-secrets-bls/G1";
+import G1 "mo:ic-bls12-381/G1";
 import Ibe "../src/Ibe";
 import Array "mo:core/Array";
 import Nat8 "mo:core/Nat8";
