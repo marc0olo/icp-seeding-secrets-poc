@@ -1,13 +1,10 @@
-# What would make BLS12-381 fast in Motoko
+# What would make BLS12-381 faster in Motoko
 
 A note for the Motoko team, from porting `ic_bls12_381` to Motoko so that a
 Motoko canister can decrypt a vetKD-sealed secret. The port works — it verifies a
 real `vetkd_derive_key` reply and decrypts a ciphertext produced by the Rust
-reference — at about **10.8× the instruction cost of the same operation in
+reference — at about **6.6× the instruction cost of the same operation in
 Rust**, measured inside a canister on the same vector.
-
-That ratio is better than we expected. But almost all of it comes from **one
-missing capability**, and the fix appears to be cheap.
 
 Everything below is measured on `moc` 1.15.1. Reproduce with `mops bench` in this
 directory.
@@ -16,138 +13,105 @@ directory.
 
 ## The finding
 
-A base-field multiplication is `(a * b) % P` where `P` is the 381-bit BLS12-381
-prime. Split in two:
+A base-field multiplication is a product of two 381-bit numbers followed by a
+reduction modulo the BLS12-381 prime `P`. Per operation:
 
-| | Instructions | Share |
-|---|---:|---:|
-| `(a * b) % P` | 53,789 | 100% |
-| the multiplication | 8,868 | 16% |
-| **the reduction (`%`)** | **46,010** | **85%** |
+| | Instructions |
+|---|---:|
+| `(a * b) % P` | 53,789 |
+| `Fp.mul` — the product, then Barrett reduction | 31,717 |
+| the product alone | 9,182 |
 
-The arithmetic is not the problem. **The modular reduction is.** A pairing
-performs tens of thousands of these, so 85% of a 1.79-billion-instruction
-decryption is spent dividing.
+**The reduction is the cost, not the arithmetic.** With `%` it is 85% of a
+multiplication. Barrett reduction brings that down to about 70%, and a pairing
+performs tens of thousands of these.
 
-This is exactly the cost that Montgomery and Barrett reduction exist to remove.
-Neither is reachable from Motoko.
-
-## Why it cannot be worked around in userland
+## What userland can already do
 
 Barrett reduction replaces the division with two multiplications and two shifts
-by a power of two. Motoko `Nat` has no shift operator, so a shift must be written
-as `x / (2 ** k)` — and that turns out to cost nearly as much as the division it
-was meant to replace:
+by a power of two. That only pays because `Nat.bitshiftRight` is cheap — the
+runtime implements it with libtommath's `mp_div_2d`:
 
 | | Instructions |
 |---:|---:|
 | `big % P` | 45,440 |
-| `big / (2 ** 381)` | **39,532** |
-| `x * y` | 8,849 |
+| `big / (2 ** 381)` | 39,532 |
+| `Nat.bitshiftRight(big, 381)` | 3,070 |
 
-So a userland Barrett would cost roughly `2 × 8,849 + 2 × 39,532 ≈ 97,000`
-against the 45,440 it replaces — **more than twice as expensive as doing
-nothing**. The workaround is closed off.
+`Nat` division does not special-case powers of two, so code that writes a shift
+as `x / (2 ** k)` — or tests a bit with `n % 2` — pays for a full division.
+Recognising those forms in the compiler would help any code that has not been
+rewritten to use the shift functions.
 
-`Nat` division does not appear to special-case powers of two.
+What userland cannot avoid is that every intermediate is a freshly allocated
+bignum, and that Barrett needs two full-width products on top of the one being
+reduced.
 
-## Why this is cheap to fix
+## Why runtime support would be cheap to add
 
 Motoko's `Nat` is [libtommath](https://github.com/libtom/libtommath) with 64-bit
 digits (`rts/Makefile`, `-DMP_64BIT`), and `%` maps to `mp_div` with the quotient
 discarded (`rts/motoko-rts/src/bigint.rs`, `bigint_rem`).
 
-**libtommath already implements everything needed here.** The runtime simply does
-not compile it in. `rts/Makefile` carries an explicit list:
-
-```make
-# We manually list all the .c files of libtommath that we care about.
-TOMMATHFILES = \
-   mp_init mp_zero mp_add mp_sub mp_mul mp_cmp \
-   ...
-   mp_div mp_init_copy mp_neg mp_abs mp_2expt mp_expt_u32 mp_set mp_sqr \
-   ... mp_mul_2d mp_rshd mp_mul_d mp_div_2d mp_mod_2d \
-   ...
-```
-
-Absent from that list, and all present upstream:
+**libtommath already implements the missing operations.** The runtime simply does
+not compile them in. `rts/Makefile` carries an explicit list (`TOMMATHFILES`),
+and absent from it, all present upstream:
 
 | libtommath | what it would give Motoko |
 |---|---|
-| `mp_reduce`, `mp_reduce_setup` | Barrett reduction |
 | `mp_montgomery_reduce`, `mp_montgomery_setup` | Montgomery reduction |
+| `mp_reduce`, `mp_reduce_setup` | Barrett reduction, without allocating the intermediates |
 | `mp_exptmod` | modular exponentiation, windowed |
-| `mp_invmod` | modular inverse by extended Euclid |
-| `mp_mod` | remainder without computing the quotient |
+| `mp_invmod` | modular inverse |
 | `mp_sqrtmod_prime` | modular square root |
 
 ## What we would ask for, in order of value per unit of work
 
-### 1. Expose shifts on `Nat` — cheapest, and unblocks userland work
+### 1. `Nat.mulMod(a, b, m)`
 
-`mp_mul_2d`, `mp_div_2d` and `mp_mod_2d` are **already compiled in**. They are
-simply not reachable from Motoko. Surfacing them as `Nat.shiftLeft` /
-`Nat.shiftRight` (or making `/` and `%` recognise powers of two) would:
-
-- turn a 39,532-instruction "shift" into something proportional to a memory move;
-- make a **userland** Barrett or Montgomery implementation viable, so libraries
-  could solve this without waiting for anything else on this list.
-
-This looks like the smallest change with the largest unblocking effect.
-
-### 2. `Nat.mulMod(a, b, m)`
-
-The operation this whole port is bottlenecked on. Backed by `mp_reduce` or
-`mp_montgomery_reduce`, it should approach the cost of the multiplication alone —
-plausibly a **4–5× reduction** in the dominant cost of every elliptic-curve and
-pairing operation in Motoko.
+The operation this port is bottlenecked on. Backed by `mp_montgomery_reduce` or
+`mp_reduce`, it would do the reduction in place, with no intermediate `Nat`s. We
+have not measured how close to the 9,182-instruction product that gets.
 
 If a modulus-specific setup cost is a concern, an opaque prepared-modulus value
 (`Nat.prepareModulus(m)` returning a handle reused across calls) would match how
 `mp_reduce_setup` and `mp_montgomery_setup` are meant to be used, and matters
 here because the modulus is fixed for the lifetime of the program.
 
-### 3. `Nat.powMod(base, exp, modulus)`
+### 2. `Nat.powMod(base, exp, modulus)`
 
-`mp_exptmod`. Our square-and-multiply costs **43 million instructions** for a
-381-bit exponent; a windowed implementation over Montgomery arithmetic should be
-several times cheaper. Modular exponentiation is ubiquitous well beyond this port
-— RSA, Diffie–Hellman, and every "is this a quadratic residue" test.
+`mp_exptmod`. Our square-and-multiply costs **19 million instructions** for a
+381-bit exponent; a windowed implementation over native Montgomery arithmetic
+should be several times cheaper. Modular exponentiation is ubiquitous well
+beyond this port — RSA, Diffie–Hellman, and every "is this a quadratic residue"
+test.
 
-### 4. `Nat.invMod(a, m)` and `Nat.sqrtMod(a, p)`
+### 3. `Nat.invMod(a, m)` and `Nat.sqrtMod(a, p)`
 
-`mp_invmod` and `mp_sqrtmod_prime`. We currently compute an inverse as
-`a^(P-2)`, which is 43 million instructions where extended Euclid would be a
-fraction of that. Square roots are needed to decompress any elliptic-curve point.
+`mp_invmod` and `mp_sqrtmod_prime`. Our extended Euclid costs about 4 million
+instructions and our square root 19 million. Square roots are needed to
+decompress any elliptic-curve point.
 
-### 5. Longer term: a 64×64→128 multiply
+### 4. Longer term: a 64×64→128 multiply
 
 Not needed for the above, but it is what would let someone write a
-limb-representation field implementation that competes with Rust's directly. Rust
-gets much of its advantage from `[u64; 6]` Montgomery arithmetic; wasm lacks a
-widening 64-bit multiply too, which is a large part of why the gap is 10× rather
-than 100×.
+limb-representation field implementation that competes with Rust's directly.
 
 ## What this would be worth
 
-The port currently spends **1.79 billion instructions** per IBE decryption, about
-4.5% of an update call's budget — already usable. Items 1 and 2 alone would
-plausibly bring that under 500 million, which is the difference between "a
-canister can do this" and "a canister can do this without thinking about it".
-
-More broadly: **no pairing-friendly cryptography exists on mops today**, and the
-reason is not that nobody wants it. `sha2`, `hmac`, `ecdsa`, `libsecp256k1` and
-`tweetnacl` are all there. What is missing is the arithmetic layer underneath, and
-what makes that layer slow is one missing primitive that the runtime's own
-dependency already implements.
+The port spends **1.09 billion instructions** per IBE decryption, about 2.7% of
+an update call's budget, and 3.1 billion for the full cold path of verifying a
+vetKey and then decrypting — already usable. Native modular multiplication
+would target the reduction, which is about 70% of every base-field
+multiplication.
 
 ## Reproducing
 
 ```bash
 cd motoko/bls12-381
-mops bench Why      # the 85% split
-mops bench Shift    # shifts cost as much as reductions
-mops test           # 79 tests, the curve layer
+mops bench Why      # the product/reduction split
+mops bench Shift    # division versus shift
+mops test           # 85 tests, the curve layer
 
 cd ../vetkeys
 mops bench Ibe      # end-to-end decryption

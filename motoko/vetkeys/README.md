@@ -66,16 +66,16 @@ gets. Both results are cached, so a canister pays this once.
 
 | | Instructions | Share of an update call |
 |---|---:|---:|
-| `decryptAndVerify` — two multipairings and a hash-to-curve | 3,572,979,653 | 8.9% |
-| `Ibe.decrypt` — one pairing | 1,792,820,565 | 4.5% |
-| **The cold path — both** | **≈ 5,365,800,218** | **≈ 13.4%** |
+| `decryptAndVerify` — two multipairings and a hash-to-curve | 2,040,014,425 | 5.1% |
+| `Ibe.decrypt` — one pairing and a `G2` scalar multiplication | 1,094,607,711 | 2.7% |
+| **The cold path — both** | **≈ 3,134,622,136** | **≈ 7.8%** |
 
-Quoting the decryption figure alone understates the real cost by a third: a
-canister cannot just decrypt, it must first establish that the key it is
-decrypting with is its own.
+Quoting the decryption figure alone understates the real cost threefold:
+verification is about two thirds of it, and a canister cannot skip it — it must
+establish that the key it is decrypting with is its own.
 
 For where that cost comes from and what would remove it, see
-[`../bls12-381/README.md`](../bls12-381/README.md#where-the-performance-gap-actually-is)
+[`../bls12-381/README.md`](../bls12-381/README.md#where-the-cost-is)
 and [`../bls12-381/PROPOSAL.md`](../bls12-381/PROPOSAL.md).
 
 ## Status
