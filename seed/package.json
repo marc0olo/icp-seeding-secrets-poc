@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Host-side tool that seals a secret with vetKD IBE and submits it to the canister",
+  "description": "Host-side tool that seals a secret with vetKD IBE and writes the Candid argument that sends it",
   "bin": {
     "seal": "./dist/index.js"
   },

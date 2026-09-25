@@ -20,7 +20,7 @@
 /// `transient` only clears state at an *upgrade*; between upgrades a transient
 /// value sits in the heap and is checkpointed like everything else. Nothing here
 /// keeps a secret off disk — only SEV-SNP changes who can read it. See the
-/// security model in `../../../README.md`.
+/// security model in `../../../../README.md`.
 ///
 /// The cost being avoided is real: a cache miss means a `vetkd_derive_key` —
 /// an inter-canister call, a fee of 26 billion cycles for `key_1`, and a round
@@ -58,8 +58,8 @@ module {
   ///
   /// Declared here rather than taken from `mo:ic-vetkeys`' `ManagementCanister`
   /// for two reasons: that wrapper hardcodes the `key_1` fee for every key name,
-  /// and it traps on a reject where this canister wants a typed
-  /// `VetKdUnavailable` error.
+  /// and it lets a reject propagate as an untyped error where this canister
+  /// wants a typed `VetKdUnavailable`.
   type VetKdSystemApi = actor {
     vetkd_public_key : ({
       canister_id : ?Principal;
@@ -86,11 +86,11 @@ module {
   /// the corresponding public key.
   let DS_TRANSPORT_KEY = "icp-sealed-secrets-v1-transport-key";
 
-  /// The vetKD fee, which is charged per call and scales with subnet size.
+  /// The vetKD fee, charged per call.
   ///
   /// Overpaying is safe — the management canister refunds the remainder — but
-  /// underpaying is rejected outright, so these are the published figures for
-  /// the 13-node reference subnet.
+  /// underpaying is rejected outright, so these are the published per-key
+  /// figures.
   func vetkdFee(keyName : Text) : Nat = switch (keyName) {
     case ("test_key_1") 10_000_000_000;
     case (_) 26_153_846_153;
@@ -173,8 +173,9 @@ module {
   /// prevented: derivation is deterministic in
   /// `(canister_id, context, input, key_id)`, so both get the identical key and
   /// the only cost is a duplicate fee. Rejecting the second caller is bad UX in
-  /// a business path, and making it wait is not implementable — they are
-  /// separate message executions and neither can await the other.
+  /// a business path, and making it wait would need a lock and a wakeup shared
+  /// across separate message executions — more machinery than a duplicate fee
+  /// justifies.
   public func vetkey(ctx : Context) : async* Types.Result<G1.Affine> {
     switch (ctx.caches.vetkey) {
       case (?k) { return #Ok(k) };

@@ -33,8 +33,7 @@
  *
  * Note this is a property of being in-process, not of the assertions themselves.
  * `icp canister call --identity anonymous` works, so a shell harness could test
- * the gate with no key at all — which is what the minimal PoC on `main` does,
- * driving everything through icp-cli. The trade is that shell assertions parse
+ * the gate with no key at all. The trade is that shell assertions parse
  * Candid text where these branch on discriminated unions, and one client here
  * drives both canisters unchanged, which is the interoperability claim this
  * repo makes.

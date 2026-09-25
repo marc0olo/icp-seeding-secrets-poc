@@ -10,7 +10,8 @@
  * One property, checked before it is worth sealing anything: **the subnet's
  * nodes are SEV-SNP**. Without that, the plaintext is readable by node operators
  * out of a checkpoint once the canister decrypts it, which defeats the purpose
- * of sealing it. Read from a single `get_subnet` query on the NNS registry.
+ * of sealing it. Read from the NNS registry: `get_subnet_for_canister`, then
+ * `get_subnet`.
  *
  * Deliberately **not** checked: whether this subnet holds the vetKD key.
  * `vetkd_derive_key` is routed like any other chain-key request, to a subnet

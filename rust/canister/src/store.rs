@@ -119,7 +119,7 @@ thread_local! {
 
 /// Writes the configuration. Called from `init` only; `post_upgrade` deliberately
 /// does not, so that an upgrade cannot silently change the derivation and orphan
-/// every stored ciphertext.
+/// every ciphertext clients have already sealed to it.
 pub fn set_config(config: Config) {
     CONFIG.with_borrow_mut(|c| {
         c.set(config);

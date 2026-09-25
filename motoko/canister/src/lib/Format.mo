@@ -21,8 +21,9 @@ import Iter "mo:core/Iter";
 module {
   /// Ciphersuite label, and the version of this protocol.
   ///
-  /// Bumping it is a hard break: it changes both the vetKD context (and so the
-  /// keypair) and the key label, orphaning every sealed ciphertext.
+  /// Bumping it is a hard break: it changes the vetKD context and so the
+  /// keypair, orphaning every sealed ciphertext. `KEY_LABEL` carries the same
+  /// version and is bumped with it.
   public let SUITE_TEXT : Text = "icp-sealed-secrets-v1";
 
   /// The vetKD `context`: which keypair this canister derives under.

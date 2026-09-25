@@ -13,7 +13,7 @@ canisters:
         - type: script
           commands:
             - command -v candid-extractor >/dev/null 2>&1 || { echo >&2 "candid-extractor not found. Run 'cargo install candid-extractor'."; exit 1; }
-            - command -v ic-wasm >/dev/null 2>&1 || { echo >&2 "ic-wasm not found; it ships with icp-cli."; exit 1; }
+            - command -v ic-wasm >/dev/null 2>&1 || { echo >&2 "ic-wasm not found; install it with cargo install ic-wasm."; exit 1; }
 
         # --features test-hooks adds secret_reveal, so a human can look at a
         # decrypted secret and believe the round trip worked. A real deployment
@@ -52,7 +52,7 @@ canisters:
         - type: script
           commands:
             - command -v mops >/dev/null 2>&1 || { echo >&2 "mops not found. See https://mops.one"; exit 1; }
-            - command -v ic-wasm >/dev/null 2>&1 || { echo >&2 "ic-wasm not found; it ships with icp-cli."; exit 1; }
+            - command -v ic-wasm >/dev/null 2>&1 || { echo >&2 "ic-wasm not found; install it with cargo install ic-wasm."; exit 1; }
 
         # Script steps run from the project root, so the cd is explicit.
         # $ICP_WASM_OUTPUT_PATH is absolute, so it survives it.

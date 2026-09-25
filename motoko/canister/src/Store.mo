@@ -1,4 +1,4 @@
-/// Persisted state: configuration and the sealed ciphertexts.
+/// Persisted state: configuration and the decrypted secrets.
 ///
 /// Mirrors `rust/canister/src/store.rs`, with one structural difference. There,
 /// `Config` and `SealedRecord` need `Storable` implementations that encode

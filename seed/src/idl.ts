@@ -9,7 +9,7 @@
  * `test-hooks` endpoints appeared).
  *
  * The registry is hand-written on purpose. There is no `.did` for it in this
- * repo, we need two of its ~20 methods, and its `SubnetRecord` has some 25
+ * repo, we need two of its methods, and its `SubnetRecord` has some 25
  * fields of which we read two. Candid decoding is structural and permits
  * dropping record fields, so a partial declaration is valid. Variants are the
  * exception — `MasterPublicKeyId` must list every case, or decoding a subnet

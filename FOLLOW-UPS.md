@@ -96,12 +96,12 @@ adopters will hit are all downstream of `sealed_secret(...)` returning a plainte
 none of them are obvious. The PoC's `call_api_with_secret` is a worked example of all four;
 the library should carry them as documentation, and possibly as a helper.
 
-- **Outcalls fan out to every node**, so one logical call becomes N real HTTP requests. A
+- **Replicated outcalls fan out to every node**, so one logical call becomes N real HTTP requests. A
   `GET` does not care; a `POST` that charges a card or sends an email happens N times
   unless the API deduplicates. Any non-idempotent call needs an idempotency key, and it
   belongs in the *caller's* hands — only they know whether this is a retry of one
   operation or a new one.
-- **A transform is mandatory**, because consensus needs byte-identical responses and
+- **A transform is mandatory for a replicated call**, because consensus needs byte-identical responses and
   `Date`, request ids and cookies are not. Stripping response headers also stops a hostile
   endpoint reflecting the credential into replicated state.
 - **Never return the response body** to the caller of a canister method. Endpoints that
@@ -170,10 +170,9 @@ and so a `vetkd_derive_key` whenever the cache is cold.
 icp_sealed_secret_matches : (text, blob) -> (variant { Ok : bool; Err : … });
 ```
 
-The client re-encrypts its candidate with a fresh seed; the canister decrypts both and
-compares in constant time. A deploy would call it per declared secret and re-seal only
-what differs. No new key material, nothing plaintext-derived at rest, and
-the oracle is confined to principals who could already read the plaintext by upgrading
+The client re-encrypts its candidate with a fresh seed; the canister decrypts it and
+compares it with the stored plaintext in constant time. A deploy would call it per
+declared secret and re-seal only what differs. No new key material, and the oracle is confined to principals who could already read the plaintext by upgrading
 the canister.
 
 Rejected alternatives, and why:
@@ -201,7 +200,7 @@ threaded through the wire format, both canisters, every stored record and every 
 vector, permanently pinned at zero.
 
 If rotation is ever wanted, the suite string is the version: `icp-sealed-secrets-v2`
-derives a different keypair and a different label, which is what a format break should
+derives a different keypair, with `KEY_LABEL` bumped alongside it, which is what a format break should
 look like. A library adopting this should reach the same conclusion before adding a
 field back.
 
@@ -209,17 +208,17 @@ field back.
 
 - **`StableCell::init` keeps an existing value.** Editing a config constant in source
   and upgrading is a silent no-op — deliberately, so an upgrade cannot change the
-  derivation under stored secrets. With `key_name` the only configuration left, that is
+  derivation under ciphertexts clients have already sealed. With `key_name` the only configuration left, that is
   a one-field concern rather than a general hazard.
 - **Concurrency.** Two cold callers both derive. Accept it: derivation is deterministic
   in `(canister_id, context, input, key_id)`, so both get the identical key and the only
   cost is a duplicate fee. Rejecting the second caller is bad UX in a business path, and
-  making it wait is not implementable — the two are separate message executions and
-  neither can await the other's future.
+  making it wait would need a lock and a wakeup shared across separate message
+  executions — more machinery than a duplicate fee justifies.
 - **The `async fn get(&self, …)` trap.** It cannot compile against state in
   `thread_local! { RefCell<…> }`: the borrow would be held across the await and panic on
-  re-entry. `KeyManager` already works around this; the PoC splits into a synchronous
-  stable-state type plus a `Clone` handle that owns its config and borrows nothing.
+  re-entry. `KeyManager` already works around this; the PoC uses free functions over
+  `thread_local!` state and drops every borrow before it awaits.
 
 ### A bug to fix while in there
 
@@ -266,8 +265,7 @@ wrong in a way that costs adopters rotation.
 
 The README should also say plainly that `basic_timelock_ibe`'s all-zero transport seed
 is correct *there* — the key is meant to become public — and wrong for confidential
-secrets, since it makes the derived key readable by anyone who can read subnet state
-and skips `decrypt_and_verify` entirely.
+secrets, since it makes the derived key readable by anyone who can read subnet state.
 
 ---
 
@@ -363,12 +361,12 @@ commit, and bundles are trivially safe because there is nothing to inline.
 
 Placement is a **sibling of `settings`**, not inside it: `Settings` is the manifest
 projection of the management canister's `canister_settings` record
-(`impl From<Settings> for CanisterSettings`, `rust/icp/src/canister/mod.rs:230`), and
+(`impl From<Settings> for CanisterSettings`, `crates/icp-project/src/canister/mod.rs:231`), and
 `icp canister settings show/sync` treat it as such. A sealed secret is application state
 written through an application endpoint.
 
 **A trap worth knowing:** `icp project show` does `serde_yaml::to_string(&project)`
-(`commands/project/show.rs:25`), and today already prints file-backed
+(`crates/icp-cli/src/commands/project/show.rs:30`), and today already prints file-backed
 `environment_variables` values in the clear. The canonical `Canister` model must
 therefore carry the *source*, never the resolved value; resolution happens inside the
 operation, at seal time.
@@ -377,7 +375,7 @@ operation, at seal time.
 
 The CLI should hard-fail on mainnet when the canister's subnet is not SEV-SNP, with an
 explicit override flag. It already resolves canister → subnet via
-`get_subnet_for_canister` (`rust/icp/src/operations/canister_migration.rs:113`), so
+`get_subnet_for_canister` (`crates/icp-app/src/operations/canister_migration.rs:122`), so
 this is one extra registry query — the same check
 [`seed/src/preflight.ts`](./seed/src/preflight.ts) makes.
 
@@ -389,18 +387,20 @@ established by the seal call itself, which decrypts before storing.
 
 ### Deploy integration
 
-A new `Task::phase("Sealing secrets:")` in `operations/deploy.rs::deploy()`, after
+A new `Task::phase("Sealing secrets:")` in `crates/icp-project/src/operations/deploy.rs::deploy()`, after
 install and before `sync()` — secrets are configuration, and a failure should not come
 after a full asset upload.
 
 Note `install_code` is **status-preserving**: a canister left Stopped is still Stopped
 after install, so the update call would reject. The existing `start_canister` +
-`wait_until_serving_queries` block lives inside `sync()` (`deploy.rs:528-578`) and only
+`wait_until_serving_queries` block lives inside `sync()`
+(`crates/icp-project/src/operations/deploy.rs`) and only
 covers canisters that have sync steps; it needs extracting into a shared
 `ensure_running` helper.
 
-Not a `SyncStep`: those only run during `icp deploy`, so one could never back
-`icp canister secret set`, and you would end up with two implementations.
+Not a `SyncStep`: those run from `icp deploy` or `icp sync` over what `icp.yaml`
+declares, so one could not back an ad-hoc `icp canister secret set`, and you would end up
+with two implementations.
 
 Values should be updatable rather than write-once — seal only what is missing by
 default, `--reseal-secrets` to force, moving to `matches`-based diffing once available.
@@ -444,10 +444,10 @@ the reply, decrypts, and authenticates an HTTPS outcall with the result. See
 [motoko/README.md](./motoko/README.md).
 
 Upstream has none of this. `backend/mo/ic_vetkeys/src/` has `key_manager`,
-`encrypted_maps`, `ManagementCanister` and `Types`. The only other pairing
-implementation on mops is ICDevs'
-[`bls12-381`](https://github.com/icdevsorg/bls12-381.mo), aimed at EIP-2537; it
-has no RFC 9380 hash-to-curve or `G2` compression, which vetKD needs. **`motoko/vetkeys/` is precisely the gap** — three modules,
+`encrypted_maps`, `ManagementCanister` and `Types`. ICDevs'
+[`bls12-381`](https://github.com/icdevsorg/bls12-381.mo) on mops implements pairings for
+EIP-2537; it maps field elements to curves but has no `hash_to_field`, so no full RFC
+9380 hash-to-curve, and no `G2` compression, both of which vetKD needs. **`motoko/vetkeys/` is precisely the gap** — three modules,
 about 390 lines — and `motoko/bls12-381/` is what would have to exist and be audited
 underneath it first. The split is deliberate, so the upstreaming scope is a
 directory rather than a description.
@@ -456,7 +456,7 @@ directory rather than a description.
 itself; the hash layer additionally against Python's `hashlib`, a third
 implementation unrelated to either; and `decrypt_and_verify` against a real
 `vetkd_derive_key` reply lifted from `ic-vetkeys`' own tests, where it is
-annotated as having been produced by the replica's threshold implementation.
+annotated "generated by internal library".
 
 **What it costs.** 2.04 billion instructions to unwrap and verify the subnet's
 reply, plus 1.09 billion to decrypt — about 3.1 billion cold against the 40
@@ -517,7 +517,7 @@ macro has to generate them. Motoko has a language feature for exactly this, and
 // in mo:ic-vetkeys
 mixin (config : SealedSecrets.Config, secrets : SealedSecrets.Store, keyCtx : Keys.Context) {
   public shared ({ caller }) func icp_sealed_secret_set(name : Text, ct : Blob) : async ... { ... };
-  // ... the other five
+  // ... the other three
 };
 ```
 
@@ -588,8 +588,8 @@ There is no pairing-free route to "encrypt to a public key" with IBE.
 
 [`rust/core/tests/golden.rs`](./rust/core/tests/golden.rs) and
 [`seed/src/format.test.ts`](./seed/src/format.test.ts) assert byte-for-byte identical
-values. A Motoko port asserting the same vectors is provably interoperable with both,
-before any integration test is written.
+values. A Motoko port asserting the same vectors agrees with both on the format
+constants before any integration test is written.
 
 ---
 

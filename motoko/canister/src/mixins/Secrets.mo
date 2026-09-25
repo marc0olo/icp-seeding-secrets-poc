@@ -1,6 +1,6 @@
 /// The sealed-secrets interface.
 ///
-/// Four required endpoints plus one optional (`matches`). This is the part that
+/// Three required endpoints plus one optional (`matches`). This is the part that
 /// is meant to be a standard, and it is the whole reason `seed/` can drive this
 /// canister and the Rust one without changes.
 ///
@@ -10,6 +10,7 @@
 ///
 /// Mirrors the endpoints in `rust/canister/src/lib.rs`.
 
+import Bytes "../lib/Bytes";
 import Guard "../lib/Guard";
 import Keys "../lib/Keys";
 import Store "../Store";
@@ -102,7 +103,7 @@ mixin (
       case (#Ok(p)) p;
       case (#Err(e)) { return #Err(e) };
     };
-    #Ok(record.plaintext == theirs);
+    #Ok(Bytes.equalConstantTime(record.plaintext, theirs));
   };
 
   /// Removes a secret.
