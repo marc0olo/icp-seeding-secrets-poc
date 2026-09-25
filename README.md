@@ -24,11 +24,13 @@ sequenceDiagram
     participant Can as canister, on a SEV-SNP subnet
     Dev->>BN: set_secret("sk-live-…")
     BN->>Can: set_secret("sk-live-…")
-    Note over Dev,BN: outside the SEV-SNP boundary, and both see the plaintext:<br/>shell history, CI logs, the boundary node terminating TLS
+    Note over BN: outside the SEV-SNP boundary.<br/>It terminates TLS, so it sees the plaintext
 ```
 
-**So the secret must never be sent in plaintext.** It has to be encrypted before
-it leaves your machine, to a key that only the target canister can use.
+The same plaintext also sits in the call's arguments, and from there in shell
+history and CI logs. **So the secret must never be sent in plaintext.** It has to
+be encrypted before it leaves your machine, to a key that only the target canister
+can use.
 
 ## Why vetKD
 
@@ -36,31 +38,32 @@ That needs a keypair for the canister: a public key you can encrypt to, and a
 private key only the canister can use. vetKD provides exactly that.
 
 - **Anyone** can compute a canister's public key **offline**, from a published
-  master public key, the canister id and a context. No network call, nothing to
-  trust.
+  master public key, the canister id and a context. No network call, and nothing
+  to trust beyond the master public key the client ships.
 - **Only that canister** can obtain the matching private key, by calling
   `vetkd_derive_key`. The derivation takes the caller's canister id as an input,
   so no other canister can ask for it.
 
 So everything on the way sees only ciphertext, and it is useless to anyone but
-the one canister it was sealed to.
+the one canister it was sealed to. As always with vetKD, that holds as long as
+fewer than a threshold of the key-holding subnet's nodes collude.
 
 ### Couldn't the canister just generate a keypair?
 
-Almost. On a SEV-SNP subnet a key made from `raw_rand` is protected exactly as
-well as a vetKey, so confidentiality is not the reason to choose vetKD.
-Everything around the key is:
+Almost. `raw_rand` cannot be read from outside the subnet, so on a SEV-SNP subnet
+a key made from it is protected exactly as well as a vetKey. Confidentiality is
+not the reason to choose vetKD. Everything around the key is:
 
 | | vetKD | a key the canister generates |
 |---|---|---|
-| where the client gets the public key | computes it offline | fetches it from the canister, trusting its code to report the real key |
+| where the client gets the public key | computes it offline | fetches it from the canister (certified, with an update call), trusting its code to report the real key |
 | sealing before the canister has run | yes, the id is enough | no: deploy, run, fetch first |
 | after a reinstall | the same key | gone, with every ciphertext sealed to it |
-| key generation to get right | none, it is the protocol's | the canister's |
+| generating the long-term key | the protocol's job | the canister's code |
 
 For one credential in a canister you control, that is a close call. It stops
-being one once clients should not have to trust the canister's code, or
-ciphertexts have to survive a reinstall.
+being one once clients should not have to trust the canister's code, ciphertexts
+have to survive a reinstall, or different readers need different keys.
 
 ## How it works
 
@@ -76,7 +79,7 @@ sequenceDiagram
     Seed->>Seed: encrypt the secret to it
     Dev->>Can: set_dummy_secret(name, ciphertext)
     Note over Dev,Can: only ciphertext on the wire
-    Can->>Mgmt: vetkd_derive_key, once, then cached
+    Can->>Mgmt: vetkd_derive_key, unless cached since the last upgrade
     Mgmt-->>Can: the canister's key, encrypted to a one-time transport key
     Can->>Can: unwrap and verify the key, then decrypt the secret
 ```
@@ -107,7 +110,7 @@ Each is short enough to read start to finish.
 
 Needs [icp-cli](https://github.com/dfinity/icp-cli), a Rust toolchain with the
 `wasm32-unknown-unknown` target, `candid-extractor` and `ic-wasm`,
-[mops](https://mops.one), and Node 18+.
+[mops](https://mops.one), and Node 20.19+.
 
 ```bash
 ./scripts/local-test.sh
@@ -125,17 +128,22 @@ icp canister call dummy-secret-rust get_dummy_secret '("exchange-rate-api-key")'
 # (variant { Ok = opt "super-secret-value" })
 ```
 
-`seal.sh` encrypts offline, then sends the call. When encrypting by hand,
-`--source` must match the network: mainnet and a local network both have a
-`key_1`, backed by different master keys, and encrypting to the wrong one gives
-a ciphertext nobody can open.
+`seal.sh` encrypts offline, then sends the call. Pass `ic` as a third argument to
+target mainnet. That also switches the master-key table, which must match the
+network: mainnet and a local network both have a `key_1`, backed by different
+master keys, and encrypting to the wrong one gives a ciphertext nobody can open.
+Encrypting by hand, that is `npm --prefix seed run seal -- --source mainnet …`.
+
+The examples set `DUMMY_SECRET` inline for brevity. For a real secret, take it from
+a secret store, so it stays out of your shell history too.
 
 ## What this PoC does not do
 
 - **Check that the subnet is SEV-SNP.** Without SEV-SNP, node operators can read
   the secret once the canister has decrypted it. A real deployment must check.
 - **Protect against the controller.** A controller can install code that reads
-  the secret: vetKD binds the key to the canister id, not to its code.
+  the secret, since vetKD binds the key to the canister id and not to its code, or
+  read it out of a canister snapshot.
 
 The [`standardization-proposal`](../../tree/standardization-proposal) branch
 builds this out: a proposed standard interface, the SEV-SNP preflight, a way to

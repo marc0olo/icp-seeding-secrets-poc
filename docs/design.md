@@ -26,9 +26,10 @@ sequenceDiagram
   transport key before it leaves its node, and only the canister holds the
   transport private key.
 - **"Only the canister" means among everyone outside its subnet.** `raw_rand` is
-  deterministic given the subnet's random tape, so its own nodes could
-  recompute the transport key. That changes nothing: they can read the
-  canister's memory anyway, which is why this belongs on a SEV-SNP subnet.
+  deterministic given the subnet's random tape, so the replicas running the
+  canister could recompute the transport key. That changes nothing: they execute
+  the canister and read its memory anyway. SEV-SNP is what keeps that memory from
+  the node operators.
 
 The request is routed to a subnet holding the key, which need not be the
 canister's own. What binds the key to your canister is that the derivation takes
