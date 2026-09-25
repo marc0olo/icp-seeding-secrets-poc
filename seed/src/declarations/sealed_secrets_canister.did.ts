@@ -217,7 +217,7 @@ export interface _SERVICE {
    * varying per node — `Date`, request ids, cookies — must be stripped or the call
    * fails.
    * 
-   * Note the exposure, which the README covers in full: the request context,
+   * Note the exposure, which docs/outcalls.md covers in full: the request context,
    * headers included, enters replicated state on **every** node of the subnet
    * before any of them executes the call. On a SEV-SNP subnet that memory and the
    * checkpoints behind it are encrypted; on any other subnet the secret is

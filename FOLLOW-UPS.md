@@ -102,8 +102,9 @@ the library should carry them as documentation, and possibly as a helper.
   belongs in the *caller's* hands — only they know whether this is a retry of one
   operation or a new one.
 - **A transform is mandatory for a replicated call**, because consensus needs byte-identical responses and
-  `Date`, request ids and cookies are not. Stripping response headers also stops a hostile
-  endpoint reflecting the credential into replicated state.
+  `Date`, request ids and cookies are not. Stripping response headers also stops an
+  endpoint echoing the credential back in a header; one that echoes it in the body needs
+  the body normalised too.
 - **Never return the response body** to the caller of a canister method. Endpoints that
   echo request headers are common, and echoing your own `Authorization` header back
   through a reply undoes the sealing entirely.
@@ -408,7 +409,8 @@ default, `--reseal-secrets` to force, moving to `matches`-based diffing once ava
 **The CLI needs no read-back endpoint to know it worked.** `set` decrypts before
 storing, so a successful `set` *is* the proof that the canister can read the secret. That
 is worth stating explicitly, because the obvious alternative — a getter the tool calls to
-confirm — is exactly the endpoint that must not exist (see the README on why). The
+confirm — is exactly the endpoint that must not exist (see
+[docs/interface.md](./docs/interface.md#can-i-just-add-a-getter) on why). The
 verification and the no-getter rule are the same design decision viewed from two sides.
 
 ### Two mechanical gotchas
