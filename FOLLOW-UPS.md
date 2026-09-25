@@ -435,7 +435,7 @@ mirroring how Rust splits `ic_bls12_381` from `ic-vetkeys`.
 Between them: the whole field tower (`Fp`, `Fp2`, `Fp6`, `Fp12`), both curve
 groups with compression, the optimal ate pairing, HKDF-SHA256, SHAKE256,
 `expand_message_xmd`, `hash_to_scalar`, RFC 9380 `hash_to_curve`, IBE decryption,
-`decrypt_and_verify`, and offline derived-public-key computation — 102 tests, 79
+`decrypt_and_verify`, and offline derived-public-key computation — 108 tests, 85
 for the curve and 23 for the vetKD layer.
 
 [`motoko/canister/`](./motoko/canister) uses them, and is the thing that proves
@@ -444,9 +444,11 @@ the reply, decrypts, and authenticates an HTTPS outcall with the result. See
 [motoko/README.md](./motoko/README.md).
 
 Upstream has none of this. `backend/mo/ic_vetkeys/src/` has `key_manager`,
-`encrypted_maps`, `ManagementCanister` and `Types`, and no mops package provides
-pairing arithmetic. **`motoko/vetkeys/` is precisely the gap** — three modules,
-380 lines — and `motoko/bls12-381/` is what would have to exist and be audited
+`encrypted_maps`, `ManagementCanister` and `Types`. The only other pairing
+implementation on mops is ICDevs'
+[`bls12-381`](https://github.com/icdevsorg/bls12-381.mo), aimed at EIP-2537; it
+has no RFC 9380 hash-to-curve or `G2` compression, which vetKD needs. **`motoko/vetkeys/` is precisely the gap** — three modules,
+about 390 lines — and `motoko/bls12-381/` is what would have to exist and be audited
 underneath it first. The split is deliberate, so the upstreaming scope is a
 directory rather than a description.
 
@@ -456,15 +458,15 @@ implementation unrelated to either; and `decrypt_and_verify` against a real
 `vetkd_derive_key` reply lifted from `ic-vetkeys`' own tests, where it is
 annotated as having been produced by the replica's threshold implementation.
 
-**What it costs.** 3.57 billion instructions to unwrap and verify the subnet's
-reply, plus 1.79 billion to decrypt — about 5.4 billion cold against the 40
+**What it costs.** 2.04 billion instructions to unwrap and verify the subnet's
+reply, plus 1.09 billion to decrypt — about 3.1 billion cold against the 40
 billion an update call gets, and paid on `set` and `matches` only — the vetKey is
 cached and the decrypted value is stored, so spending a secret costs neither. On the
-decryption alone, the like-for-like comparison, that is about 10.8× the Rust
-implementation measured the same way. 85% of the gap is one thing: this port
-reduces with `%` where the reference uses Montgomery form, so it divides where
-the reference multiplies. Fixing that, not switching to a limb representation, is
-the optimisation if anyone ever needs one.
+decryption alone, the like-for-like comparison, that is about 6.6× the Rust
+implementation measured the same way. The field keeps a plain `Nat` and reduces
+by Barrett's method through `Nat.bitshiftRight`; the reduction is still about 70%
+of a multiplication, and a precomputed `G2` table — which the reference has —
+would take about a third off decryption.
 
 **What is missing.** An audit. Nothing functional: `motoko/canister/` calls
 `vetkd_derive_key` against a live subnet, verifies the reply, decrypts, and
@@ -486,13 +488,12 @@ BLS12-381 underneath, which is the harder half. See
 [What `mo:ic-vetkeys` should actually gain](#what-moic-vetkeys-should-actually-gain)
 for the three pieces and why the third is cheaper in Motoko than in Rust.
 
-*Motoko team:* [motoko/bls12-381/PROPOSAL.md](./motoko/bls12-381/PROPOSAL.md) — a measured case that
-one missing runtime primitive accounts for most of the 10× gap. Motoko's `Nat` is
-libtommath, which already implements Barrett and Montgomery reduction, modular
-exponentiation and modular inversion; the runtime compiles in an explicit subset
-that excludes all of them. The cheapest ask is bit shifts on `Nat`, because
-`mp_div_2d` and `mp_mul_2d` are *already linked* and just unreachable — exposing
-them would let libraries fix the rest themselves.
+*Motoko team:* [motoko/bls12-381/PROPOSAL.md](./motoko/bls12-381/PROPOSAL.md) — a measured case for
+native modular arithmetic on `Nat`. Motoko's `Nat` is libtommath, which already
+implements Montgomery reduction, modular exponentiation, modular inversion and
+modular square roots; the runtime compiles in an explicit subset that excludes
+all of them. Shifts are already exposed, as `Nat.bitshiftLeft/Right`, and are
+what the port's Barrett reduction is built on.
 
 ### What `mo:ic-vetkeys` should actually gain
 
@@ -502,7 +503,7 @@ Three things, in dependency order. Only the first is hard.
 piece that needs an audit. Everything else is small by comparison.
 
 **2. The vetKD layer.** [`motoko/vetkeys`](./motoko/vetkeys) — `Ibe`, `VetKey`,
-`PublicKey`, 380 lines. This is what `mo:ic-vetkeys` is missing today, and why a Motoko
+`PublicKey`, about 390 lines. This is what `mo:ic-vetkeys` is missing today, and why a Motoko
 canister currently cannot decrypt anything.
 
 **3. A `mixin`, which is where Motoko has it easier than Rust.**
@@ -540,8 +541,8 @@ Three consequences worth planning for:
 
 ### Reusing the Rust implementation instead
 
-Worth pursuing in parallel, since reusing audited Rust beats maintaining a second
-implementation. Not usable today.
+Worth pursuing in parallel, since reusing the Rust implementation `ic-vetkeys`
+already depends on beats maintaining a second one. Not usable today.
 
 In **`dfinity/motoko`**, branch **`bartosz/components-mvp`** (`168f5265`,
 2025-10-23; siblings `bartosz/mo-wit-wac`, `bartosz/no-prims`, and the older
@@ -602,8 +603,8 @@ and let clients do standard ECIES. Motoko would then need one scalar multiplicat
 
 Rejected on three grounds, and the case has got stronger since.
 
-**It is cryptography we would be inventing.** IBE as shipped in `ic-vetkeys` is reviewed
-on both sides and implemented in Rust and TypeScript already.
+**It is cryptography we would be inventing.** IBE ships in `ic-vetkeys`, implemented in
+Rust and TypeScript already.
 
 **The cost argument that motivated it does not hold.** One `vetkd_derive_key` with `key_1`
 costs 26_153_846_153 cycles (`test_key_1`: 10_000_000_000), and both canisters here pay it
@@ -613,7 +614,7 @@ with how many you hold.
 
 **The reason it was tempting is gone.** The pull was that Motoko had no pairings. It does
 now: [`motoko/bls12-381`](./motoko/bls12-381) implements them, and the full cold path —
-verify a vetKD reply, then decrypt — measures about 13% of a single update call, paid once.
+verify a vetKD reply, then decrypt — measures about 7.8% of a single update call, paid once.
 Avoiding pairings no longer buys anything a Motoko canister needs.
 
 Recorded here so the decision is not relitigated.

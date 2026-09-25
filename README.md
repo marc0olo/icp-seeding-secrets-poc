@@ -91,8 +91,8 @@ instruction.
 private half, and vetKD is the only mechanism on the IC that gives a canister a
 private key at all. Threshold ECDSA and Schnorr produce *signing* keys, and the
 management canister exposes no decryption operation for them, so they cannot receive
-a secret. Given vetKD, IBE is both the natural fit and the one already implemented
-and reviewed on both sides by `ic-vetkeys`.
+a secret. Given vetKD, IBE is both the natural fit and the one `ic-vetkeys` already
+implements on both sides.
 
 ### This uses vetKeys in the less common direction
 
@@ -983,7 +983,7 @@ splits it — [`bls12-381/`](./motoko/bls12-381) for the curve,
 [`vetkeys/`](./motoko/vetkeys) for the vetKD layer on top, so the second is
 exactly what `mo:ic-vetkeys` is missing. Between them: the
 field tower, both curve groups, the optimal ate pairing, RFC 9380 hash-to-curve,
-IBE decryption and vetKey verification. It costs about 5.4 billion instructions
+IBE decryption and vetKey verification. It costs about 3.1 billion instructions
 cold (verify plus decrypt) against the 40 billion an update call gets, and it is
 paid once.
 

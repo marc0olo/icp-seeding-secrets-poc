@@ -1,12 +1,12 @@
 {
   "version": 3,
-  "mopsTomlDepsHash": "75dd13ac45f07776aa7f58f8c2eacbb2e0d41b3d6dabb61b6c7016f81dd4cd27",
-  "localDepsHash": "4b5b02fc2ee6fe222a5fadbb5ea10f0d2756d56a41f12692e12e77a56457d4d7",
+  "mopsTomlDepsHash": "9ae491cbe6042e43d25cbbc7cfc5cd34f227b2f16f1b634db8f832ac186d1a1f",
+  "localDepsHash": "85af16ea7e9de40ad79a277c6744b863362ec81ff389ae47da9e046f7f3d338a",
   "deps": {
     "base": "0.14.5",
     "core": "2.6.1",
+    "ic-bls12-381": "../bls12-381",
     "iterext": "https://github.com/timohanke/motoko-iterext#v2.0.0",
-    "sealed-secrets-bls": "../bls12-381",
     "sealed-secrets-vetkeys": "../vetkeys",
     "sha2": "0.2.5",
     "sha3": "0.1.1",

@@ -8,6 +8,7 @@
 ///
 /// Ported from `ic_bls12_381::g2`.
 
+import Bits "Bits";
 import Fp2 "Fp2";
 import Blob "mo:core/Blob";
 import Array "mo:core/Array";
@@ -138,14 +139,12 @@ module {
 
   public func sub(p : Point, q : Point) : Point = add(p, neg(q));
 
+  /// Scalar multiplication; public scalars only, as for `G1.mul`.
   public func mul(p : Point, k : Nat) : Point {
     var result = identity;
-    var addend = p;
-    var n = k;
-    while (n > 0) {
-      if (n % 2 == 1) { result := add(result, addend) };
-      addend := double(addend);
-      n /= 2;
+    for (bit in Bits.msbFirst(k).vals()) {
+      result := double(result);
+      if (bit) { result := add(result, p) };
     };
     result;
   };
@@ -174,6 +173,8 @@ module {
     );
   };
 
+  /// Parses the 96-byte compressed form, with the same checks as
+  /// `G1.fromCompressed` — and the same gap: no subgroup check.
   public func fromCompressed(b : Blob) : ?Affine {
     let arr = b.toArray();
     if (arr.size() != BYTES_COMPRESSED) { return null };

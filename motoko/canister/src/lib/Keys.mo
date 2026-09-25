@@ -38,10 +38,10 @@
 ///
 /// Mirrors `rust/canister/src/keys.rs`.
 
-import G1 "mo:sealed-secrets-bls/G1";
-import G2 "mo:sealed-secrets-bls/G2";
+import G1 "mo:ic-bls12-381/G1";
+import G2 "mo:ic-bls12-381/G2";
 import Ibe "mo:sealed-secrets-vetkeys/Ibe";
-import Scalar "mo:sealed-secrets-bls/Scalar";
+import Scalar "mo:ic-bls12-381/Scalar";
 import VetKey "mo:sealed-secrets-vetkeys/VetKey";
 
 import Format "Format";

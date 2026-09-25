@@ -8,6 +8,7 @@
 ///
 /// Ported from `ic_bls12_381::fp12`.
 
+import Bits "Bits";
 import Fp2 "Fp2";
 import Fp6 "Fp6";
 import Array "mo:core/Array";
@@ -141,21 +142,10 @@ module {
 
   public func pow(a : Fp12, e : Nat) : Fp12 {
     var result = one;
-    var base = a;
-    var exp = e;
-    while (exp > 0) {
-      if (exp % 2 == 1) { result := mul(result, base) };
-      base := square(base);
-      exp /= 2;
+    for (bit in Bits.msbFirst(e).vals()) {
+      result := square(result);
+      if (bit) { result := mul(result, a) };
     };
     result;
-  };
-
-  /// `a^e` where the exponent is given as a `Nat` and the result is inverted if
-  /// `negative` — the shape the BLS parameter needs, since `x` is negative for
-  /// this curve.
-  public func powSigned(a : Fp12, e : Nat, negative : Bool) : ?Fp12 {
-    let r = pow(a, e);
-    if (negative) { inverse(r) } else { ?r };
   };
 }
