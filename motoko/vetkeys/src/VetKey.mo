@@ -94,10 +94,8 @@ module {
   /// True when `signature` is a valid BLS signature on `input` under `dpk`.
   ///
   /// Checks `e(sig, g2) == e(H(pk ‖ input), dpk)`, rearranged into
-  /// `e(sig, -g2) · e(msg, dpk) == 1` so one final exponentiation covers both
-  /// terms instead of two. Measured, that is about 27% off the cost of running
-  /// the two pairings separately — the final exponentiation is over half of a
-  /// pairing, and this shares one across both.
+  /// `e(sig, -g2) · e(msg, dpk) == 1` so both terms share one Miller loop and
+  /// one final exponentiation instead of paying for two of each.
   public func verifyBlsSignature(
     dpk : G2.Affine,
     input : [Nat8],

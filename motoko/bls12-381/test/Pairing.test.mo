@@ -109,3 +109,18 @@ test(
     };
   },
 );
+
+test(
+  "a multi-Miller loop is exactly the product of the single loops",
+  func() {
+    let p2 = g1Mul(5);
+    let q2 = g2Mul(7);
+    let product = Fp12.mul(Pairing.millerLoop(g1, q2), Pairing.millerLoop(p2, g2));
+    assert Fp12.equal(Pairing.multiMillerLoop([(g1, q2), (p2, g2)]), product);
+    assert Fp12.equal(
+      Pairing.multiMillerLoop([(g1, q2), (G1.affineIdentity, g2), (p2, g2)]),
+      product,
+    );
+    assert Fp12.equal(Pairing.multiMillerLoop([]), Fp12.one);
+  },
+);
