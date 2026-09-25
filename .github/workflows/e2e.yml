@@ -19,6 +19,9 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # icp-cli downloads the network launcher from GitHub; authenticated requests
+  # get 5000 an hour instead of 60 per runner IP.
+  ICP_CLI_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
   e2e:
