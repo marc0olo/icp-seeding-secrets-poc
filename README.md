@@ -50,20 +50,21 @@ fewer than a threshold of the key-holding subnet's nodes collude.
 
 ### Couldn't the canister just generate a keypair?
 
-Almost. `raw_rand` cannot be read from outside the subnet, so on a SEV-SNP subnet
-a key made from it is protected exactly as well as a vetKey. Confidentiality is
-not the reason to choose vetKD. Everything around the key is:
+It could. `raw_rand` cannot be read from outside the subnet, and a key made from it
+would sit in the same SEV-SNP-protected memory as the secrets themselves, so
+confidentiality is not what decides it. The trade-offs are:
 
 | | vetKD | a key the canister generates |
 |---|---|---|
-| where the client gets the public key | computes it offline | fetches it from the canister (certified, with an update call), trusting its code to report the real key |
+| getting the public key | the client computes it offline | the client fetches it from the running canister, as a certified reply |
 | sealing before the canister has run | yes, the id is enough | no: deploy, run, fetch first |
-| after a reinstall | the same key | gone, with every ciphertext sealed to it |
-| generating the long-term key | the protocol's job | the canister's code |
+| after a reinstall | the same key, so earlier ciphertexts stay readable | a new key, so earlier ciphertexts are unreadable |
+| where the key lives | derived when needed, never stored | in canister memory, which must be kept |
+| what it rests on | a threshold of the key-holding subnet's nodes | the canister's own subnet |
+| cost | 26 billion cycles per derivation, then cached | none |
 
-For one credential in a canister you control, that is a close call. It stops
-being one once clients should not have to trust the canister's code, ciphertexts
-have to survive a reinstall, or different readers need different keys.
+For one credential in a canister you control, that is a close call. vetKD wins once
+you want to seal before deploying, or need ciphertexts to outlive a reinstall.
 
 ## How it works
 
