@@ -5,6 +5,7 @@
 /// `r` is the order of both `G1` and `G2`, so scalars are what multiplies a
 /// point. Distinct from `Fp`, whose modulus is the larger base-field prime.
 
+import Bits "Bits";
 import Hash "Hash";
 import Array "mo:core/Array";
 import Nat "mo:core/Nat";
@@ -29,8 +30,7 @@ module {
     Array.tabulate(
       BYTES,
       func i {
-        let shift = (BYTES - 1 - i : Nat) * 8;
-        Nat.toNat8((s / (2 ** shift)) % 256);
+        Bits.byteAt(s, (BYTES - 1 - i : Nat) * 8);
       },
     );
   };

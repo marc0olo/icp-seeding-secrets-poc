@@ -178,8 +178,7 @@ npm --prefix seed run --silent preflight -- --canister "$CID" --host "$HOST" --l
 say "7. seal a secret — which is also the health check"
 # There is no separate health-check endpoint. set() derives the vetKey, verifies
 # it and decrypts, so a subnet that cannot serve vetKD, a wrong key name or a
-# mis-derived key all fail right here. And the seeder refuses to encrypt at all
-# unless its own offline derivation matches what the canister reports."
+# mis-derived key all fail right here.
 seal "$CANISTER" "$CID" "$SECRET_NAME" "$SECRET_VALUE"
 
 say "8. read it back IN THE CLEAR (test-hooks build only)"

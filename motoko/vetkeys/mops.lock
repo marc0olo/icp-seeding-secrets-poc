@@ -1,13 +1,13 @@
 {
   "version": 3,
-  "mopsTomlDepsHash": "4d26508dc29dbabcb3f12844fb463ad58f14de2b26884d520fb8de52ee3896ac",
+  "mopsTomlDepsHash": "5a52210202410c5ac3fba904b41a760f1d076a3a2aec4c4f3d3a24d5995e48ca",
   "localDepsHash": "9b6cfd26681bdac4b9171bd88440662a138b3c10685e098eb4f5a443c542d5ff",
   "deps": {
     "base": "0.14.5",
     "bench": "2.0.1",
     "core": "2.6.1",
+    "ic-bls12-381": "../bls12-381",
     "iterext": "https://github.com/timohanke/motoko-iterext#v2.0.0",
-    "sealed-secrets-bls": "../bls12-381",
     "sha2": "0.2.5",
     "sha3": "0.1.1",
     "test": "2.1.1"

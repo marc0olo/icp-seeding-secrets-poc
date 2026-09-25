@@ -19,9 +19,6 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  # A local network needs no cycles ledger top-up, but icp-cli still prompts
-  # without this in a non-interactive shell.
-  ICP_ENVIRONMENT: local
 
 jobs:
   e2e:
@@ -62,7 +59,7 @@ jobs:
 
       # Seals a secret, reads the plaintext back through the test-hooks build so
       # a silent decryption failure cannot pass, makes a real authenticated
-      # HTTPS outcall, upgrades, and runs the 17 negative cases.
+      # HTTPS outcall, upgrades, and runs the shared assertion suite.
       #
       # The outcall reaches postman-echo.com. An unreachable API is treated as a
       # skip rather than a failure, so a third-party outage cannot turn this red

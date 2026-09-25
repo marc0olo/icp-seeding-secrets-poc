@@ -1,5 +1,5 @@
 [package]
-name = "sealed-secrets-bls"
+name = "ic-bls12-381"
 version = "0.0.1"
 description = "EXPERIMENTAL, UNAUDITED BLS12-381 for Motoko — PoC only, do not use in production"
 repository = "https://github.com/marc0olo/icp-seeding-secrets-poc"

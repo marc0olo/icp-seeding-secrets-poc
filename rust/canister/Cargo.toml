@@ -1,6 +1,6 @@
 [package]
 name = "sealed-secrets-canister"
-description = "PoC canister that receives vetKD-sealed secrets and decrypts them in enclave memory"
+description = "PoC canister that receives vetKD-sealed secrets and decrypts them in canister memory"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,7 +9,7 @@ repository.workspace = true
 
 [features]
 # Adds `secret_reveal`, which returns a decrypted secret in the clear so a human
-# can see the round trip worked. That is its only purpose.
+# can see the round trip worked, and `bench_ibe_decrypt`, which measures one.
 #
 # OFF by default, so a plain `cargo build` produces a canister with no way to
 # disclose a secret at all — asserted against the wasm bytes by

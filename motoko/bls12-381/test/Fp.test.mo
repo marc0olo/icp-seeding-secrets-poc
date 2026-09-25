@@ -7,7 +7,7 @@
 /// share, so porting them literally would assert nothing about agreement.
 ///
 /// What matters is that the two implementations agree on *values*. The vectors
-/// below are real curve points emitted by `cargo run -p vectorgen`, and the
+/// below are real curve points emitted by the `vectorgen` generator, and the
 /// checks are the properties that must hold of them:
 ///
 ///   - every coordinate decodes as a canonical field element;
@@ -73,7 +73,7 @@ func toHex(b : Blob) : Text {
 
 type Vector = { scalar : Nat; x : Text; y : Text };
 
-/// Real G1 points from the reference; see `test/vectors.json`.
+/// Real G1 points from the reference; see `motoko/vectors.json`.
 let points : [Vector] = [
   { scalar = 1; x = "17f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb"; y = "08b3f481e3aaa0f1a09e30ed741d8ae4fcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e1" },
   { scalar = 2; x = "0572cbea904d67468808c8eb50a9450c9721db309128012543902d0ac358a62ae28f75bb8f1c7c42c39a8c5529bf0f4e"; y = "166a9d8cabc673a322fda673779d8e3822ba3ecb8670e461f73bb9021d5fd76a4c56d9d4cd16bd1bba86881979749d28" },
@@ -213,5 +213,45 @@ test(
         assert Fp.lexicographicallyLargest(y) != Fp.lexicographicallyLargest(Fp.neg(y));
       };
     };
+  },
+);
+
+test(
+  "the Barrett constant is floor(2^762 / p)",
+  func() {
+    assert Fp.BARRETT_MU == 2 ** 762 / Fp.P;
+  },
+);
+
+test(
+  "Barrett reduction agrees with division, including at the edges",
+  func() {
+    let pm1 : Nat = Fp.P - 1;
+    let values : [Fp.Fp] = [0, 1, 2, pm1, pm1 - 1, Fp.P / 2, 2 ** 380, 2 ** 380 - 1];
+    for (a in values.vals()) {
+      for (b in values.vals()) {
+        assert Fp.mul(a, b) == (a * b) % Fp.P;
+      };
+      assert Fp.square(a) == (a * a) % Fp.P;
+    };
+    for (v in points.vals()) {
+      let x = hexToFp(v.x);
+      let y = hexToFp(v.y);
+      assert Fp.mul(x, y) == (x * y) % Fp.P;
+      assert Fp.square(y) == (y * y) % Fp.P;
+    };
+  },
+);
+
+test(
+  "the Euclidean inverse agrees with Fermat's little theorem",
+  func() {
+    for (v in points.vals()) {
+      let x = hexToFp(v.x);
+      assert Fp.inverse(x) == ?Fp.pow(x, Fp.P - 2 : Nat);
+    };
+    assert Fp.inverse(1) == ?1;
+    assert Fp.inverse(Fp.P - 1 : Nat) == ?(Fp.P - 1 : Nat);
+    assert Fp.inverse(0) == null;
   },
 );

@@ -10,7 +10,7 @@ The same design as [`../../rust/canister`](../../rust/canister), on this repo's
 pure-Motoko crypto instead of `ic-vetkeys`. It speaks the identical Candid
 interface, so [`../../seed`](../../seed) drives it with no changes — which is the
 claim worth testing, and `scripts/local-test.sh motoko` tests it — including the
-same 17 negative-case assertions the Rust canister faces, from the same suite,
+same assertion suite the Rust canister faces,
 with nothing changed but the canister id.
 
 ## What it proves
@@ -27,7 +27,7 @@ thing here that talks to a live subnet. Verified end to end on a local network:
 | The secret survives an upgrade with no re-seeding | ✅ |
 | A record-shape change is refused at install rather than breaking later | ✅ |
 
-That last row matters more than it looks: `401` with a wrong credential is what
+The `401` row matters more than it looks: `401` with a wrong credential is what
 shows the *value* of the secret is what authenticated, rather than merely that a
 request went out.
 
@@ -45,7 +45,7 @@ state and composition.
 | `lib/Keys.mo` | vetKD calls, verification, and the vetKey cache. Read the header comment — it is where the two canisters deliberately diverge. |
 | `lib/Guard.mo` | Endpoint guards. In a module rather than at mixin top level, because a bare `func` there is implicitly stable and traps at runtime. |
 | `lib/Http.mo` | The outcall surface, for the same reason. |
-| `mixins/Secrets.mo` | The six endpoints meant to be a standard. |
+| `mixins/Secrets.mo` | The four endpoints meant to be a standard. |
 | `mixins/Demo.mo` | `call_api_with_secret` and its transform — one application's answer to "now what", which a real canister replaces. |
 | `Main.mo` | The composition root: state declarations and two `include`s, nothing else. |
 

@@ -243,7 +243,8 @@ export interface _SERVICE {
    * 
    * The caller seals its candidate exactly as it would for `set` — a fresh IBE
    * seed, so the ciphertext is unlinkable to any other — and the canister decrypts
-   * both and compares in constant time. One bit comes back.
+   * it and compares it with the stored plaintext in constant time. One bit comes
+   * back.
    * 
    * This is the endpoint an operator should reach for when they want to confirm
    * the right secret is deployed, and it is deliberately *not* "return me a

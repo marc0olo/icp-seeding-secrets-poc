@@ -14,11 +14,15 @@
 /// almost for free, and a hard part expressed through `cyclotomicExp`, which
 /// exploits the fact that inversion in the cyclotomic subgroup is conjugation.
 
+import Bits "Bits";
 import Fp "Fp";
 import Fp2 "Fp2";
 import Fp12 "Fp12";
 import G1 "G1";
 import G2 "G2";
+import Array "mo:core/Array";
+import Nat "mo:core/Nat";
+import VarArray "mo:core/VarArray";
 
 module {
   /// The BLS12-381 curve parameter, `x = -0xd201000000010000`. Negative, which
@@ -117,51 +121,54 @@ module {
     Fp12.mulBy014(f, c2, c1, c0);
   };
 
-  /// Is bit `i` of `n` set?
-  func bit(n : Nat, i : Nat) : Bool = (n / (2 ** i)) % 2 == 1;
-
-  /// The Miller loop for a single pair (`pairings.rs:680`).
+  /// The Miller loop over any number of pairs, sharing one accumulator
+  /// (`pairings.rs:680`).
   ///
-  /// It walks the bits of `x >> 1` from the top, skipping until the first set
-  /// bit, doubling every step and adding where the bit is set.
-  public func millerLoop(p : G1.Affine, q : G2.Affine) : Fp12.Fp12 {
-    // The identity in either argument gives the identity in the target. The
-    // reference substitutes the generator and masks the result; branching is
-    // equivalent here and clearer.
-    if (p.infinity or q.infinity) { return Fp12.one };
+  /// It walks the bits of `x >> 1` from the top, skipping the leading one,
+  /// doubling every step and adding where the bit is set. With several pairs
+  /// each step applies every pair's line to the same `f`, so the `Fp12`
+  /// squaring is paid once per step rather than once per pair.
+  ///
+  /// The identity in either argument contributes the identity in the target,
+  /// so such pairs are skipped. The reference substitutes the generator and
+  /// masks the result; skipping is equivalent here and clearer.
+  public func multiMillerLoop(pairs : [(G1.Affine, G2.Affine)]) : Fp12.Fp12 {
+    let active = pairs.filter(func((p, q)) = not (p.infinity or q.infinity));
+    if (active.size() == 0) { return Fp12.one };
 
+    let rs = VarArray.tabulate<G2.Point>(active.size(), func i = G2.fromAffine(active[i].1));
     var f = Fp12.one;
-    var r = G2.fromAffine(q);
-    var foundOne = false;
 
-    let shifted = BLS_X / 2;
-    var i : Nat = 64;
-    while (i > 0) {
-      i -= 1;
-      let b = bit(shifted, i);
-      if (not foundOne) {
-        foundOne := b;
-      } else {
-        let (r1, c1) = doublingStep(r);
-        r := r1;
-        f := ell(f, c1, p);
-
-        if (b) {
-          let (r2, c2) = additionStep(r, q);
-          r := r2;
-          f := ell(f, c2, p);
-        };
-
-        f := Fp12.square(f);
+    func doublingSteps() {
+      for (i in rs.keys()) {
+        let (r, coeffs) = doublingStep(rs[i]);
+        rs[i] := r;
+        f := ell(f, coeffs, active[i].0);
       };
     };
 
-    let (r3, c3) = doublingStep(r);
-    r := r3;
-    f := ell(f, c3, p);
+    func additionSteps() {
+      for (i in rs.keys()) {
+        let (r, coeffs) = additionStep(rs[i], active[i].1);
+        rs[i] := r;
+        f := ell(f, coeffs, active[i].0);
+      };
+    };
+
+    let bits = Bits.msbFirst(Nat.bitshiftRight(BLS_X, 1));
+    for (bit in bits.sliceToArray(1, bits.size()).vals()) {
+      doublingSteps();
+      if (bit) { additionSteps() };
+      f := Fp12.square(f);
+    };
+    doublingSteps();
 
     if (BLS_X_IS_NEGATIVE) { Fp12.conjugate(f) } else { f };
   };
+
+  /// The Miller loop for a single pair.
+  public func millerLoop(p : G1.Affine, q : G2.Affine) : Fp12.Fp12 =
+    multiMillerLoop([(p, q)]);
 
   /// `fp4_square` from `pairings.rs:52`, a helper for cyclotomic squaring.
   func fp4Square(a : Fp2.Fp2, b : Fp2.Fp2) : (Fp2.Fp2, Fp2.Fp2) {
@@ -218,13 +225,11 @@ module {
   /// (`pairings.rs:118`).
   func cyclotomicExp(f : Fp12.Fp12) : Fp12.Fp12 {
     var tmp = Fp12.one;
-    var foundOne = false;
-    var i : Nat = 64;
-    while (i > 0) {
-      i -= 1;
-      let b = bit(BLS_X, i);
-      if (foundOne) { tmp := cyclotomicSquare(tmp) } else { foundOne := b };
-      if (b) { tmp := Fp12.mul(tmp, f) };
+    var first = true;
+    for (bit in Bits.msbFirst(BLS_X).vals()) {
+      if (not first) { tmp := cyclotomicSquare(tmp) };
+      first := false;
+      if (bit) { tmp := Fp12.mul(tmp, f) };
     };
     Fp12.conjugate(tmp);
   };
@@ -284,20 +289,5 @@ module {
       case (?r) r;
       case null Fp12.one;
     };
-  };
-
-  /// The product of several Miller loops, exponentiated once.
-  ///
-  /// Verifying a pairing equation this way costs one final exponentiation
-  /// instead of two, which is roughly a third of the total — and it is the shape
-  /// `decrypt_and_verify` needs.
-  public func multiMillerLoop(pairs : [(G1.Affine, G2.Affine)]) : Fp12.Fp12 {
-    var acc = Fp12.one;
-    for ((p, q) in pairs.vals()) {
-      if (not (p.infinity or q.infinity)) {
-        acc := Fp12.mul(acc, millerLoop(p, q));
-      };
-    };
-    acc;
   };
 }

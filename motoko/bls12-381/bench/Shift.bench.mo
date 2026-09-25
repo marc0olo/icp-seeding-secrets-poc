@@ -1,19 +1,20 @@
-/// Is a userland Barrett reduction possible?
+/// Why `Fp` can use Barrett reduction.
 ///
-/// Barrett replaces a division by `P` with two multiplications and two shifts.
-/// Motoko `Nat` has no shift operator, so a shift has to be written as division
-/// by a power of two — and if that is just as expensive as any other division,
-/// the whole approach is a dead end without runtime support.
+/// Barrett replaces a division by `P` with two multiplications and two shifts,
+/// which only pays if a shift is much cheaper than a division. Writing the
+/// shift as division by a power of two is not: `Nat` division does not
+/// special-case it. `Nat.bitshiftRight` is.
 
 import Bench "mo:bench";
 import Fp "../src/Fp";
+import Nat "mo:core/Nat";
 
 module {
   public func init() : Bench.Bench {
     let bench = Bench.Bench();
     bench.name("is a shift cheaper than a reduction?");
     bench.description("100 iterations each.");
-    bench.rows(["mod_p", "div_by_power_of_two", "mul"]);
+    bench.rows(["mod_p", "div_by_power_of_two", "bitshiftRight", "mul"]);
     bench.cols(["100"]);
 
     let x : Fp.Fp = 3685416753713387016781088315183077757961620795782546409894578378688607592378376318836054947676345821548104185464507;
@@ -28,6 +29,7 @@ module {
           switch (row) {
             case ("mod_p") { ignore big % Fp.P };
             case ("div_by_power_of_two") { ignore big / twoTo381 };
+            case ("bitshiftRight") { ignore Nat.bitshiftRight(big, 381) };
             case ("mul") { ignore x * y };
             case (_) {};
           };

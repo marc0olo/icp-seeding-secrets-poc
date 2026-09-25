@@ -77,8 +77,7 @@ pub async fn vetkey() -> Result<Rc<VetKey>, SealedSecretsError> {
 
     // A real, single-use transport key. The alternative used by the timelock
     // example — an all-zero seed, or the G1 identity element — makes the derived
-    // key readable by anyone who can read the subnet's messages, and skips the
-    // verification below entirely.
+    // key readable by anyone who can read the subnet's messages.
     let tsk = TransportSecretKey::from_seed(seed)
         .map_err(|e| SealedSecretsError::Internal(format!("bad transport seed: {e}")))?;
 

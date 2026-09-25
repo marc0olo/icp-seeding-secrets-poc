@@ -4,10 +4,11 @@
 ///
 /// Points are held in Jacobian projective coordinates `(X, Y, Z)` representing
 /// the affine point `(X/Z^2, Y/Z^3)`, with `Z = 0` meaning the identity. That
-/// avoids a field inversion — 43 million instructions here — on every addition.
+/// avoids a field inversion on every addition.
 ///
 /// Ported from `ic_bls12_381::g1`.
 
+import Bits "Bits";
 import Fp "Fp";
 import Blob "mo:core/Blob";
 import Array "mo:core/Array";
@@ -143,18 +144,15 @@ module {
 
   public func sub(p : Point, q : Point) : Point = add(p, neg(q));
 
-  /// Scalar multiplication by double-and-add.
+  /// Scalar multiplication by left-to-right double-and-add.
   ///
   /// The ladder is data-dependent, so this leaks the scalar through timing. It
   /// is used here only with public scalars; see the crate warning.
   public func mul(p : Point, k : Nat) : Point {
     var result = identity;
-    var addend = p;
-    var n = k;
-    while (n > 0) {
-      if (n % 2 == 1) { result := add(result, addend) };
-      addend := double(addend);
-      n /= 2;
+    for (bit in Bits.msbFirst(k).vals()) {
+      result := double(result);
+      if (bit) { result := add(result, p) };
     };
     result;
   };
@@ -163,7 +161,7 @@ module {
   ///
   /// The top three bits of the first byte are flags: bit 7 compression (always
   /// set here), bit 6 infinity, bit 5 the sort bit that selects which of the two
-  /// roots `y` is (`g1.rs:337`).
+  /// roots `y` is (`g1.rs:221`).
   public func toCompressed(a : Affine) : Blob {
     if (a.infinity) {
       let bytes = Array.tabulate<Nat8>(
@@ -184,9 +182,13 @@ module {
 
   /// Parses the 48-byte compressed form, recovering `y` from `x`.
   ///
-  /// Rejects anything the reference rejects: a clear compression flag, an
-  /// infinity encoding with a non-zero `x` or a set sort bit, a non-canonical
-  /// `x`, or an `x` for which `x^3 + 4` is not a square.
+  /// Rejects a clear compression flag, an infinity encoding with a non-zero `x`
+  /// or a set sort bit, a non-canonical `x`, or an `x` for which `x^3 + 4` is
+  /// not a square.
+  ///
+  /// Unlike the reference, it does **not** check that the point is in the
+  /// prime-order subgroup, so a point on the curve but outside `G1` is
+  /// accepted.
   public func fromCompressed(b : Blob) : ?Affine {
     let arr = b.toArray();
     if (arr.size() != BYTES_COMPRESSED) { return null };

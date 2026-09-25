@@ -1,13 +1,12 @@
 /// Tests for offline derived-public-key computation.
 ///
 /// The vectors come from `vectorgen`, which computes them through
-/// `sealed_secrets_core::derive_public_key` — the same path the Rust canister
-/// takes. Agreeing with them means a Motoko canister derives the identical key
-/// the Rust one does, and therefore checks the subnet's reply against the same
-/// constant.
+/// `sealed_secrets_core::derive_public_key` — the offline derivation a client
+/// runs. Agreeing with them means a Motoko client derives the identical key a
+/// Rust one does.
 
 import { test } "mo:test";
-import G2 "mo:sealed-secrets-bls/G2";
+import G2 "mo:ic-bls12-381/G2";
 import PublicKey "../src/PublicKey";
 import Array "mo:core/Array";
 import Nat "mo:core/Nat";

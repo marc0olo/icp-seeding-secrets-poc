@@ -8,7 +8,7 @@ license = "Apache-2.0"
 
 [dependencies]
 core = "2.6.1"
-sealed-secrets-bls = "../bls12-381"
+ic-bls12-381 = "../bls12-381"
 
 [dev-dependencies]
 test = "2.1.1"

@@ -8,6 +8,7 @@
 /// Ported from `ic_bls12_381::fp2`, semantics preserved, representation not —
 /// see `Fp.mo` for why.
 
+import Bits "Bits";
 import Fp "Fp";
 import Blob "mo:core/Blob";
 import Array "mo:core/Array";
@@ -93,12 +94,9 @@ module {
   /// `a^e`, exponent public — see `Fp.pow`.
   public func pow(a : Fp2, e : Nat) : Fp2 {
     var result = one;
-    var base = a;
-    var exp = e;
-    while (exp > 0) {
-      if (exp % 2 == 1) { result := mul(result, base) };
-      base := square(base);
-      exp /= 2;
+    for (bit in Bits.msbFirst(e).vals()) {
+      result := square(result);
+      if (bit) { result := mul(result, a) };
     };
     result;
   };

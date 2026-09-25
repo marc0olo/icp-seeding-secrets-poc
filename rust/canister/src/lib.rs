@@ -9,15 +9,16 @@
 //!
 //! The endpoints fall into three groups:
 //!
-//! - **The proposed standard.** `icp_sealed_secret_{info,set}` are what any tool
-//!   needs to seal; `matches` is what an operator needs to confirm the right
-//!   value is deployed; `list` and `unset` are convenience.
+//! - **The proposed standard.** `icp_sealed_secret_{set,unset,list}` are required;
+//!   `matches` is optional, and is what an operator needs to confirm the right
+//!   value is deployed.
 //! - **The worked example**, and the reason any of this exists:
 //!   `call_api_with_secret` authenticates an outbound HTTPS request with a sealed
 //!   secret, and `strip_response` makes its reply deterministic enough for
 //!   consensus. Neither is part of the standard — a real canister writes its own.
-//! - **A test hook.** `secret_reveal` returns a plaintext and exists only behind
-//!   `--features test-hooks`, so a human can watch the round trip work.
+//! - **Test hooks**, behind `--features test-hooks` only. `secret_reveal`
+//!   returns a plaintext so a human can watch the round trip work, and
+//!   `bench_ibe_decrypt` measures a decryption.
 //!
 //! Read `README.md` before deploying this anywhere real. In particular: a
 //! controller can read the plaintext — by installing code that decrypts, or by
@@ -160,7 +161,8 @@ fn icp_sealed_secret_unset(name: String) -> Result<(), SealedSecretsError> {
 ///
 /// The caller seals its candidate exactly as it would for `set` — a fresh IBE
 /// seed, so the ciphertext is unlinkable to any other — and the canister decrypts
-/// both and compares in constant time. One bit comes back.
+/// it and compares it with the stored plaintext in constant time. One bit comes
+/// back.
 ///
 /// This is the endpoint an operator should reach for when they want to confirm
 /// the right secret is deployed, and it is deliberately *not* "return me a

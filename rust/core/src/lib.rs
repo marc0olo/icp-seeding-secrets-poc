@@ -26,7 +26,8 @@ pub fn key_id(name: impl Into<String>) -> VetKDKeyId {
 
 /// Ciphersuite label, and the version of this protocol. Bumping it is a hard
 /// break: every previously sealed ciphertext becomes undecryptable, because it
-/// changes both the vetKD context (and hence the keypair) and the key label.
+/// changes the vetKD context and hence the keypair. `KEY_LABEL` carries the same
+/// version and is bumped with it.
 pub const SUITE: &[u8] = b"icp-sealed-secrets-v1";
 
 /// The vetKD `context`: which keypair this canister derives under.

@@ -1,7 +1,7 @@
 /// What an IBE decryption actually costs, against the 40B update budget.
 
 import Bench "mo:bench";
-import G1 "mo:sealed-secrets-bls/G1";
+import G1 "mo:ic-bls12-381/G1";
 import Ibe "../src/Ibe";
 import Array "mo:core/Array";
 import Nat8 "mo:core/Nat8";

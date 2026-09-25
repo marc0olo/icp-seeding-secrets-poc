@@ -1,6 +1,6 @@
 /// The finish line.
 ///
-/// `test/vectors.json` carries a complete IBE triple produced by the Rust
+/// `motoko/vectors.json` carries a complete IBE triple produced by the Rust
 /// reference — a derived public key, an identity, a vetKey, a ciphertext, and
 /// the plaintext it must yield. The generator decrypts it in Rust before
 /// emitting it, so a failure here is this implementation's, not the vector's.
@@ -11,7 +11,7 @@
 /// authenticated check at the end of `decrypt` to succeed.
 
 import { test } "mo:test";
-import G1 "mo:sealed-secrets-bls/G1";
+import G1 "mo:ic-bls12-381/G1";
 import Ibe "../src/Ibe";
 import Array "mo:core/Array";
 import Nat8 "mo:core/Nat8";

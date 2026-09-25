@@ -1,6 +1,6 @@
 /// The demo use case: spending a sealed secret on an outbound call.
 ///
-/// Deliberately separate from `Secrets.mo`. Those six endpoints are the part
+/// Deliberately separate from `Secrets.mo`. Those four endpoints are the part
 /// meant to be a standard — the part a client can rely on across
 /// implementations. This is one application's answer to "now what do I do with
 /// the secret", and a real canister writes its own. The mixin boundary is what
